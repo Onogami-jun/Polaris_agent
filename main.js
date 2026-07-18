@@ -42,8 +42,8 @@ function createTray() {
 
 // ── IPC: AI Query ────────────────────────────────────────────
 
-ipcMain.handle('polaris:query', async (_event, { text, strategy, systemPrompt }) => {
-  return executeQuery(text, strategy, systemPrompt);
+ipcMain.handle('polaris:query', async (_event, { text, strategy, systemPrompt, images }) => {
+  return executeQuery(text, strategy, systemPrompt, images);
 });
 
 // ── IPC: Window Controls ─────────────────────────────────────

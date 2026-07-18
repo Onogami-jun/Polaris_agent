@@ -78,17 +78,27 @@ async function callModel(modelId, messages) {
   throw new Error('未知供应商: ' + def.provider);
 }
 
-async function executeQuery(text, strategy, systemPrompt) {
+async function executeQuery(text, strategy, systemPrompt, images) {
   const classification = classifyIntent(text);
   const routing = selectModels(classification.top_intent, strategy);
   const messages = [];
   if (systemPrompt) messages.push({ role: 'system', content: systemPrompt });
-  messages.push({ role: 'user', content: text });
+
+  // Build user message — support multimodal images
+  if (images && images.length > 0) {
+    const parts = images.map(img => ({ type: 'image_url', image_url: { url: img } }));
+    parts.unshift({ type: 'text', text });
+    messages.push({ role: 'user', content: parts });
+  } else {
+    messages.push({ role: 'user', content: text });
+  }
 
   const responses = [];
   for (const m of routing.models) {
     try {
-      const content = await callModel(m.id, messages);
+      // Only DeepSeek and OpenAI support vision natively
+      const modelId = images && images.length > 0 && m.provider !== 'anthropic' ? m.id : m.id;
+      const content = await callModel(modelId, messages);
       responses.push({ model_id: m.id, model_display: m.display, content, latency_ms: 0 });
     } catch (e) {
       responses.push({ model_id: m.id, model_display: m.display, content: '', error: e.message });

@@ -3,6 +3,7 @@ import { useAppSelector, useAppDispatch } from './store';
 import { addMessage, newSession as ns, setActiveSession, setStreaming, setStrategy, toggleSidebar, toggleSettings, setLanguage } from './store/chatSlice';
 import type { ChatMessage, Strategy } from './store/chatSlice';
 import SettingsPanel from './components/SettingsPanel';
+import ImageInput from './components/ImageInput';
 
 const T = {
   newChat: '新对话',
@@ -57,6 +58,7 @@ const App: React.FC = () => {
   const [deskMode, setDeskMode] = useState(false); const [deskAction, setDeskAction] = useState('');
   const [ripples, setRipples] = useState<{ id: number; x: number; y: number }[]>([]);
   const [doingDesk, setDoingDesk] = useState(false);
+  const [pastedImage, setPastedImage] = useState<{ dataUrl: string; name: string } | null>(null);
   const active = sessions.find(s => s.id === activeSessionId);
 
   useEffect(() => { chatRef.current?.scrollTo({ top: chatRef.current.scrollHeight, behavior: 'smooth' }); }, [active?.messages, thinkText, deskAction]);
@@ -67,7 +69,7 @@ const App: React.FC = () => {
 
   const send = useCallback(async () => {
     const t = input.trim(); if (!t || streaming) return;
-    setInput(''); dispatch(setStreaming(true)); setThinkText(T.analyzing);
+    setInput(''); const img = pastedImage; setPastedImage(null); dispatch(setStreaming(true)); setThinkText(T.analyzing);
     const um: ChatMessage = { id: 'u'+Date.now(), role:'user', content:t, timestamp:Date.now() };
     dispatch(addMessage({ sessionId: activeSessionId!, message:um }));
 
@@ -110,7 +112,8 @@ const App: React.FC = () => {
       setDoingDesk(false);
     } else {
       try {
-        const result = await window.electronAPI!.query({ text:t, strategy });
+        const images = pastedImage ? [pastedImage.dataUrl] : undefined;
+        const result = await window.electronAPI!.query({ text:t, strategy, images: img ? [img.dataUrl] : undefined });
         setThinkText(T.routingTo + result.routing.selected_models.join(', ') + '…');
         const resps = result.responses||[];
         const content = resps.length===1 ? resps[0].content||'(空)' : resps.map(r=>'**▸ '+r.model_id+'**\n\n'+(r.content||'')).join('\n\n---\n\n');
@@ -166,7 +169,7 @@ const App: React.FC = () => {
           </div>):(active.messages.map(m=><MsgBubble key={m.id} msg={m}/>))}
           {thinkText&&(<div className="think-msg"><div className="think-dot"/><span>{thinkText}</span></div>)}
         </div>
-        <div className="input-area"><div className="input-row"><textarea value={input} onChange={e=>{setInput(e.target.value);e.target.style.height='auto';e.target.style.height=Math.min(e.target.scrollHeight,150)+'px'}} onKeyDown={onKeyDown} placeholder={T.placeholder} rows={1} disabled={streaming||doingDesk}/><button className="send-btn" onClick={send} disabled={(streaming||doingDesk)||!input.trim()}><svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor"><path d="M2 2l12 5.5L2 14l3-6.5L2 2z"/></svg></button></div>
+        <div className="input-area"><div className="input-row"><ImageInput onImage={(d,f) => setPastedImage({dataUrl:d,name:f})} disabled={streaming||doingDesk} /><textarea value={input} onChange={e=>{setInput(e.target.value);e.target.style.height='auto';e.target.style.height=Math.min(e.target.scrollHeight,150)+'px'}} onKeyDown={onKeyDown} placeholder={T.placeholder} rows={1} disabled={streaming||doingDesk}/><button className="send-btn" onClick={send} disabled={(streaming||doingDesk)||!input.trim()}><svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor"><path d="M2 2l12 5.5L2 14l3-6.5L2 2z"/></svg></button></div>
         <div className="input-options"><div className="strat-picker" onMouseEnter={()=>setShowStrats(true)} onMouseLeave={()=>setShowStrats(false)}><span className="sp-label">{{best_quality:T.quality,cost_optimized:T.cost,ensemble:T.ensemble}[strategy]}</span>{showStrats&&(<div className="sp-drop">{(['best_quality','cost_optimized','ensemble'] as Strategy[]).map(s=><div key={s} className={'sp-item'+(strategy===s?' sel':'')} onClick={()=>{dispatch(setStrategy(s));setShowStrats(false)}}>{{best_quality:T.quality,cost_optimized:T.cost,ensemble:T.ensemble}[s]}</div>)}</div>)}</div><span className="input-hint">{T.sendHint}</span></div></div>
       </div>
     </div>
