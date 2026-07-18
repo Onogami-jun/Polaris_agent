@@ -1,12 +1,12 @@
 {
   "name": "polaris-agent",
   "version": "0.9.0",
-  "description": "Polaris — The Desktop AI Agent · Embedded Model Router",
-  "main": "main.js",
+  "description": "Polaris — The Desktop AI Agent",
+  "main": "electron/main.js",
   "scripts": {
     "start": "electron .",
-    "dev": "concurrently \"webpack serve --mode development\" \"wait-on http://localhost:3000 && electron .\"",
-    "build:renderer": "cross-env NODE_ENV=production webpack --mode production",
+    "dev": "concurrently \"webpack serve --mode development --config config/webpack.config.js\" \"wait-on http://localhost:3000 && electron .\"",
+    "build:renderer": "cross-env NODE_ENV=production webpack --mode production --config config/webpack.config.js",
     "build": "npm run build:renderer && electron-builder build --win --x64 --publish=never",
     "postinstall": "electron-builder install-app-deps"
   },
@@ -14,17 +14,17 @@
     "appId": "com.bitwool.polaris-agent",
     "productName": "Polaris",
     "directories": { "output": "dist", "buildResources": "build" },
-    "files": ["main.js","preload.js","router.js","desktop.js","build/**/*","icon.png","package.json"],
+    "files": ["electron/**/*","build/**/*","icon.png","package.json"],
     "win": {
       "target": "nsis",
       "icon": "icon.png",
-      "artifactName": "Polaris-Agent-Setup-${version}.${ext}"
+      "artifactName": "Polaris-Setup-${version}.${ext}"
     },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
-      "shortcutName": "Polaris Agent"
+      "shortcutName": "Polaris"
     }
   },
   "dependencies": {
