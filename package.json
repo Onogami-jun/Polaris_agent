@@ -1,0 +1,55 @@
+{
+  "name": "polaris-agent",
+  "version": "0.2.0",
+  "description": "Polaris — The Desktop AI Agent · Model Router + Ensemble Engine",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "concurrently \"webpack serve --mode development\" \"wait-on http://localhost:3000 && electron .\"",
+    "build:renderer": "cross-env NODE_ENV=production webpack --mode production",
+    "build": "npm run build:renderer && electron-builder build --win --x64 --publish=never",
+    "postinstall": "electron-builder install-app-deps"
+  },
+  "build": {
+    "appId": "com.bitwool.polaris-agent",
+    "productName": "Polaris Agent",
+    "directories": { "output": "dist", "buildResources": "build" },
+    "files": ["main.js","preload.js","build/**/*","package.json"],
+    "win": {
+      "target": "nsis",
+      "icon": "build/icon.png",
+      "artifactName": "Polaris-Agent-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "Polaris Agent"
+    }
+  },
+  "dependencies": {
+    "electron-updater": "^6.1.0",
+    "electron-log": "^5.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0",
+    "@reduxjs/toolkit": "^2.0.0",
+    "concurrently": "^8.0.0",
+    "cross-env": "^7.0.0",
+    "css-loader": "^6.8.0",
+    "electron": "^31.0.0",
+    "electron-builder": "^24.0.0",
+    "html-webpack-plugin": "^5.5.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-redux": "^9.0.0",
+    "style-loader": "^3.3.0",
+    "ts-loader": "^9.5.0",
+    "typescript": "^5.3.0",
+    "wait-on": "^7.0.0",
+    "webpack": "^5.89.0",
+    "webpack-cli": "^5.1.0",
+    "webpack-dev-server": "^4.15.0"
+  }
+}
