@@ -14,10 +14,10 @@
     "appId": "com.bitwool.polaris-agent",
     "productName": "Polaris Agent",
     "directories": { "output": "dist", "buildResources": "build" },
-    "files": ["main.js","preload.js","build/**/*","package.json"],
+    "files": ["main.js","preload.js","router.js","build/**/*","icon.png","package.json"],
     "win": {
       "target": "nsis",
-      "icon": "build/icon.png",
+      "icon": "icon.png",
       "artifactName": "Polaris-Agent-Setup-${version}.${ext}"
     },
     "nsis": {
