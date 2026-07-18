@@ -131,3 +131,13 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
 
 /* Mermaid */
 .mermaid-block{background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:16px;margin:8px 0;text-align:center;font-family:var(--mono);font-size:11px;color:var(--text2);overflow-x:auto}
+.mermaid-block svg{max-width:100%;height:auto}
+
+/* Dashboard */
+.db-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.db-card{padding:14px;background:var(--card);border:1px solid var(--border);border-radius:8px;text-align:center}.db-val{font-family:var(--mono);font-size:22px;font-weight:700;color:var(--amber)}.db-label{font-size:10px;color:var(--text3);margin-top:4px;font-family:var(--mono)}
+.db-bar-wrap{margin:8px 0}
+.db-bar{height:6px;border-radius:3px;background:var(--border);overflow:hidden;margin-bottom:4px}
+.db-bar-fill{height:100%;border-radius:3px;transition:width .4s}
+.db-bar-label{font-family:var(--mono);font-size:10px;color:var(--text3)}
+.db-status{font-family:var(--mono);font-size:11px}.db-status.on{color:var(--green)}.db-status.off{color:var(--text3)}
