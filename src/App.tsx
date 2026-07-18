@@ -4,6 +4,8 @@ import { addMessage, editMessage, newSession as ns, setActiveSession, setStreami
 import type { ChatMessage, Strategy } from './store/chatSlice';
 import SettingsPanel from './components/SettingsPanel';
 import ImageInput from './components/ImageInput';
+import AgentDashboard from './components/AgentDashboard';
+import TaskScheduler from './components/TaskScheduler';
 
 const T = { newChat:'新对话',placeholder:'问点什么... 拖拽文件到此处上传',welcome:'有什么我可以帮你的？',desktopHint:'我也可以控制你的桌面',analyzing:'正在分析意图…',error:'出错了: ',quality:'✦ 优质',cost:'◆ 省钱',ensemble:'◈ 协同',copied:'已复制',branch:'分支',edit:'编辑',regen:'重新生成',save:'保存',cancel:'取消',memory:'记忆',export:'导出',stop:'停止',templates:'模板',search:'联网搜索',};
 const SUGS = ['帮我写一封给投资人的项目介绍邮件','解释一下量子计算的基本原理','用 Python 写一个多线程下载器','帮我分析最近压力大的原因并给出建议'];
@@ -45,6 +47,7 @@ const App: React.FC = () => {
   const [copiedId, setCopiedId] = useState(''); const [showTemplates, setShowTemplates] = useState(false);
   const [webSearchOn, setWebSearchOn] = useState(false);
   const [dragOver, setDragOver] = useState(false);
+  const [showDash, setShowDash] = useState(false); const [showSched, setShowSched] = useState(false);
   const stopRef = useRef(false); const inputRef = useRef<HTMLTextAreaElement>(null);
   const active = sessions.find(s => s.id === activeSessionId);
 
@@ -52,6 +55,13 @@ const App: React.FC = () => {
   useEffect(() => { dispatch(setLanguage('zh-CN')); }, [dispatch]);
   useEffect(() => { chatRef.current?.scrollTo({ top: chatRef.current.scrollHeight, behavior: 'smooth' }); }, [active?.messages, thinkText, deskAction]);
   useEffect(() => { if (ripples.length > 0) { const t = setTimeout(() => setRipples([]), 700); return () => clearTimeout(t); } }, [ripples]);
+  // Render Mermaid and KaTeX on message changes
+  useEffect(() => { if (!active) return;
+    setTimeout(() => {
+      try { (window as any).mermaid?.run?.({ querySelector: '.mermaid-block' }); } catch {}
+      try { (window as any).renderMathInElement?.(chatRef.current, { delimiters: [{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false}] }); } catch {}
+    }, 300);
+  }, [active?.messages]);
   useEffect(() => { const h = (e: KeyboardEvent) => { if ((e.ctrlKey||e.metaKey)&&e.key==='n') { e.preventDefault(); dispatch(ns()); } if (e.key==='Escape') { stopRef.current = true; dispatch(setStreaming(false)); setThinkText(''); } if ((e.ctrlKey||e.metaKey)&&e.key==='k') { e.preventDefault(); document.getElementById('chat-input')?.focus(); } }; window.addEventListener('keydown', h); return () => window.removeEventListener('keydown', h); }, [dispatch]);
 
   const executeDesktopAction = useCallback(async (action: any) => {
@@ -101,7 +111,7 @@ const App: React.FC = () => {
   const pct = contextTokens.total > 0 ? Math.min(Math.round(contextTokens.used / contextTokens.total * 100), 100) : 0;
 
   return (<div className="polaris-app" onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}>
-    <div className="titlebar"><div className="titlebar-left"><span className="tb-logo">{'✦ Polaris'}</span><div className="token-bar" style={{width:80,height:3,borderRadius:2,background:'var(--border)',overflow:'hidden',marginLeft:12}}><div style={{width:pct+'%',height:'100%',background:pct>80?'var(--red)':pct>50?'var(--amber)':'var(--green)',transition:'width .3s'}}/></div></div><div className="titlebar-center"/><div className="titlebar-right"><button className="tb-btn" onClick={()=>dispatch(toggleSidebar())} title="侧边栏">{'☰'}</button><button className="tb-btn" onClick={exportChat} title={T.export}>↓</button><button className="tb-btn" onClick={()=>dispatch(toggleSettings())} title="设置">{'⚙'}</button><WinBtns/></div></div>
+    <div className="titlebar"><div className="titlebar-left"><span className="tb-logo">{'✦ Polaris'}</span><div className="token-bar" style={{width:80,height:3,borderRadius:2,background:'var(--border)',overflow:'hidden',marginLeft:12}}><div style={{width:pct+'%',height:'100%',background:pct>80?'var(--red)':pct>50?'var(--amber)':'var(--green)',transition:'width .3s'}}/></div></div><div className="titlebar-center"/><div className="titlebar-right"><button className="tb-btn" onClick={()=>dispatch(toggleSidebar())} title="侧边栏">{'☰'}</button><button className="tb-btn" onClick={()=>setShowDash(true)} title="仪表盘">⬡</button><button className="tb-btn" onClick={()=>setShowSched(true)} title="定时任务">⏱</button><button className="tb-btn" onClick={exportChat} title={T.export}>↓</button><button className="tb-btn" onClick={()=>dispatch(toggleSettings())} title="设置">{'⚙'}</button><WinBtns/></div></div>
     {dragOver && <div className="drag-overlay"><div className="drag-zone"><div className="empty-icon">{'✦'}</div><p>拖拽文件到此处上传</p></div></div>}
     {deskMode && (<div className="desk-overlay"><div className="desk-banner"><div className="desk-dot" /><span>{deskAction}</span></div></div>)}
     {ripples.map(r => <div key={r.id} className="click-ripple" style={{ left: r.x - 15, top: r.y - 15, position:'fixed', zIndex: 9999 }} />)}
@@ -138,6 +148,8 @@ const App: React.FC = () => {
       </div>
     </div>
     {settingsOpen && <SettingsPanel/>}
+    {showDash && <AgentDashboard onClose={()=>setShowDash(false)}/>}
+    {showSched && <TaskScheduler/>}
   </div>);
 };
 
