@@ -6,7 +6,7 @@ module.exports = (env, argv) => {
   return {
     entry: './src/index.tsx',
     target: 'web',
-    output: { path: path.resolve(__dirname, 'build'), filename: 'bundle.[contenthash:8].js', clean: true, publicPath: isDev ? '/' : './' },
+    output: { path: path.resolve(__dirname, '..', 'build'), filename: 'bundle.[contenthash:8].js', clean: true, publicPath: isDev ? '/' : './' },
     resolve: { extensions: ['.ts', '.tsx', '.js', '.jsx'] },
     module: {
       rules: [
@@ -15,7 +15,7 @@ module.exports = (env, argv) => {
         { test: /\.(png|svg|jpg|jpeg|gif)$/, type: 'asset/resource' },
       ],
     },
-    plugins: [new HtmlWebpackPlugin({ template: './public/index.html', title: 'Polaris Agent' })],
+    plugins: [new HtmlWebpackPlugin({ template: './public/index.html', title: 'Polaris' })],
     devServer: { port: 3000, hot: true, historyApiFallback: true },
     devtool: isDev ? 'eval-source-map' : false,
   };
