@@ -12,7 +12,7 @@
   },
   "build": {
     "appId": "com.bitwool.polaris-agent",
-    "productName": "Polaris Agent",
+    "productName": "Polaris",
     "directories": { "output": "dist", "buildResources": "build" },
     "files": ["main.js","preload.js","router.js","desktop.js","build/**/*","icon.png","package.json"],
     "win": {
