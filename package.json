@@ -1,6 +1,6 @@
 {
   "name": "polaris-agent",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Polaris — The Desktop AI Agent · Embedded Model Router",
   "main": "main.js",
   "scripts": {
@@ -14,7 +14,7 @@
     "appId": "com.bitwool.polaris-agent",
     "productName": "Polaris Agent",
     "directories": { "output": "dist", "buildResources": "build" },
-    "files": ["main.js","preload.js","router.js","build/**/*","icon.png","package.json"],
+    "files": ["main.js","preload.js","router.js","desktop.js","build/**/*","icon.png","package.json"],
     "win": {
       "target": "nsis",
       "icon": "icon.png",
