@@ -1,7 +1,7 @@
 {
   "name": "polaris-agent",
-  "version": "0.2.0",
-  "description": "Polaris — The Desktop AI Agent · Model Router + Ensemble Engine",
+  "version": "0.3.0",
+  "description": "Polaris — The Desktop AI Agent · Embedded Model Router",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
