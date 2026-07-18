@@ -53,6 +53,7 @@ const chatSlice = createSlice({
   reducers: {
     addMessage: (s, a: PayloadAction<{ sessionId: string; message: ChatMessage }>) => { const sesh = s.sessions.find(x => x.id === a.payload.sessionId); if (sesh) { sesh.messages.push(a.payload.message); if (sesh.messages.length === 1) sesh.name = a.payload.message.content.slice(0, 30) || '新对话'; } },
     newSession: (s) => { const ns: ChatSession = { id: 's_' + Date.now(), name: '新对话', messages: [], createdAt: Date.now() }; s.sessions.unshift(ns); s.activeSessionId = ns.id; },
+    deleteSession: (s, a: PayloadAction<string>) => { s.sessions = s.sessions.filter(x => x.id !== a.payload); if (s.activeSessionId === a.payload) s.activeSessionId = s.sessions[0]?.id || null; },
     setActiveSession: (s, a: PayloadAction<string>) => { s.activeSessionId = a.payload; },
     setStreaming: (s, a: PayloadAction<boolean>) => { s.streaming = a.payload; },
     setStrategy: (s, a: PayloadAction<Strategy>) => { s.strategy = a.payload; },
@@ -72,5 +73,5 @@ const chatSlice = createSlice({
   },
 });
 
-export const { addMessage, newSession, setActiveSession, setStreaming, setStrategy, toggleSidebar, toggleSettings, setApiKey, setTheme, setLanguage, setFontSize, updateAgentConfig, updateThirdParty, updateMobileLink, updateProxy, togglePlugin, addPlugin, removePlugin } = chatSlice.actions;
+export const { addMessage, newSession, deleteSession, setActiveSession, setStreaming, setStrategy, toggleSidebar, toggleSettings, setApiKey, setTheme, setLanguage, setFontSize, updateAgentConfig, updateThirdParty, updateMobileLink, updateProxy, togglePlugin, addPlugin, removePlugin } = chatSlice.actions;
 export default chatSlice.reducer;
