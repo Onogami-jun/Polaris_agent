@@ -1,23 +1,44 @@
-/** localStorage-based chat persistence. No server needed. */
+/* localStorage chat persistence */
 import type { ChatSession } from './chatSlice';
 
-const PREFIX = 'polaris_session_';
+const IDX = 'ps_idx';
+function pkey(id: string) { return 'ps_' + id; }
 
 export function saveSessions(sessions: ChatSession[]): void {
-  try { sessions.forEach(s => { localStorage.setItem(PREFIX + s.id, JSON.stringify(s)); }); localStorage.setItem(PREFIX + '_index', JSON.stringify(sessions.map(s => s.id))); } catch {}
+  try {
+    const ids: string[] = [];
+    sessions.forEach(s => {
+      if (s.messages.length === 0) return;
+      localStorage.setItem(pkey(s.id), JSON.stringify(s));
+      ids.push(s.id);
+    });
+    localStorage.setItem(IDX, JSON.stringify(ids));
+  } catch {}
 }
 
 export function loadSessions(): ChatSession[] {
   try {
-    const idx = JSON.parse(localStorage.getItem(PREFIX + '_index') || '[]');
-    return idx.map((id: string) => { const raw = localStorage.getItem(PREFIX + id); return raw ? JSON.parse(raw) : null; }).filter(Boolean);
+    const ids: string[] = JSON.parse(localStorage.getItem(IDX) || '[]');
+    const sessions: ChatSession[] = [];
+    ids.forEach(id => {
+      const raw = localStorage.getItem(pkey(id));
+      if (raw) {
+        const s = JSON.parse(raw);
+        if (s.messages && s.messages.length > 0) sessions.push(s);
+      }
+    });
+    return sessions;
   } catch { return []; }
 }
 
-export function deleteSessionFromStorage(id: string): void {
-  try { localStorage.removeItem(PREFIX + id); const idx = JSON.parse(localStorage.getItem(PREFIX + '_index') || '[]'); localStorage.setItem(PREFIX + '_index', JSON.stringify(idx.filter((x: string) => x !== id))); } catch {}
+export function deleteSessionStorage(id: string): void {
+  try {
+    localStorage.removeItem(pkey(id));
+    const ids: string[] = JSON.parse(localStorage.getItem(IDX) || '[]');
+    localStorage.setItem(IDX, JSON.stringify(ids.filter(x => x !== id)));
+  } catch {}
 }
 
-const SETTINGS_KEY = 'polaris_settings';
-export function saveSettings(settings: any): void { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch {} }
-export function loadSettings(): any { try { return JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}'); } catch { return {}; } }
+const SET = 'ps_settings';
+export function saveSettings(s: any): void { try { localStorage.setItem(SET, JSON.stringify(s)); } catch {} }
+export function loadSettings(): any { try { return JSON.parse(localStorage.getItem(SET) || '{}'); } catch { return {}; } }

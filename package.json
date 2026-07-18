@@ -1,6 +1,6 @@
 {
   "name": "polaris-agent",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "Polaris — The Desktop AI Agent · Embedded Model Router",
   "main": "main.js",
   "scripts": {

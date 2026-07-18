@@ -47,6 +47,7 @@ const chatSlice = createSlice({ name: 'chat', initialState, reducers: {
   newSession: (s) => { const ns: ChatSession = { id: 's_' + Date.now(), name: '新对话', messages: [], createdAt: Date.now() }; s.sessions.unshift(ns); s.activeSessionId = ns.id; s.contextTokens = { used: 0, total: 128000 }; },
   branchSession: (s, a: PayloadAction<{ sourceSessionId: string; upToMessageId: string }>) => { const src = s.sessions.find(x => x.id === a.payload.sourceSessionId); if (!src) return; const idx = src.messages.findIndex(x => x.id === a.payload.upToMessageId); const msgs = idx >= 0 ? src.messages.slice(0, idx + 1).map(m => ({...m, id: m.id + '_b'})) : []; const ns: ChatSession = { id: 'b_' + Date.now(), name: src.name + ' (分支)', messages: msgs, createdAt: Date.now(), parentId: src.id }; s.sessions.unshift(ns); s.activeSessionId = ns.id; },
   deleteSession: (s, a: PayloadAction<string>) => { s.sessions = s.sessions.filter(x => x.id !== a.payload); if (s.activeSessionId === a.payload) s.activeSessionId = s.sessions[0]?.id || null; },
+  loadSessions: (s, a: PayloadAction<ChatSession[]>) => { const def = s.sessions.find(x => x.id === 'default'); const rest = a.payload.filter(x => x.id !== 'default' && x.messages.length > 0); if (def && def.messages.length === 0) { s.sessions = [def, ...rest]; } else { s.sessions = [...rest, ...s.sessions.filter(x => x.id === 'default' && x.messages.length === 0 || rest.every(r => r.id !== x.id))]; } if (rest.length > 0) s.activeSessionId = rest[0].id; },
   setActiveSession: (s, a: PayloadAction<string>) => { s.activeSessionId = a.payload; },
   setStreaming: (s, a: PayloadAction<boolean>) => { s.streaming = a.payload; }, setStrategy: (s, a: PayloadAction<Strategy>) => { s.strategy = a.payload; },
   toggleSidebar: (s) => { s.sidebarOpen = !s.sidebarOpen; }, toggleSettings: (s) => { s.settingsOpen = !s.settingsOpen; },
@@ -65,5 +66,5 @@ const chatSlice = createSlice({ name: 'chat', initialState, reducers: {
   removePromptTemplate: (s, a: PayloadAction<string>) => { s.settings.promptTemplates = s.settings.promptTemplates.filter(x => x.id !== a.payload); },
 }});
 
-export const { addMessage, editMessage, newSession, branchSession, deleteSession, setActiveSession, setStreaming, setStrategy, toggleSidebar, toggleSettings, setApiKey, setTheme, setLanguage, setFontSize, updateAgentConfig, updateThirdParty, updateMobileLink, updateProxy, togglePlugin, addPlugin, removePlugin, addMemory, addPromptTemplate, removePromptTemplate } = chatSlice.actions;
+export const { addMessage, editMessage, loadSessions, newSession, branchSession, deleteSession, setActiveSession, setStreaming, setStrategy, toggleSidebar, toggleSettings, setApiKey, setTheme, setLanguage, setFontSize, updateAgentConfig, updateThirdParty, updateMobileLink, updateProxy, togglePlugin, addPlugin, removePlugin, addMemory, addPromptTemplate, removePromptTemplate } = chatSlice.actions;
 export default chatSlice.reducer;
