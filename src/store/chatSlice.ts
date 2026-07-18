@@ -24,22 +24,26 @@ interface ChatState {
   sidebarOpen: boolean; settingsOpen: boolean; settings: SettingsState;
 }
 
-const defaultAgent: AgentConfig = { name: 'Polaris', systemPrompt: 'You are Polaris, a desktop AI agent.', maxTokens: 4096, temperature: 0.7, reasoningStyle: 'detailed', autoExecute: false };
+const defaultAgent: AgentConfig = {
+  name: 'Polaris',
+  systemPrompt: '你是Polaris，一个桌面AI助手。你可以控制应用程序、管理文件、并帮助用户完成任何任务。用中文回复。',
+  maxTokens: 4096, temperature: 0.7, reasoningStyle: 'detailed', autoExecute: false,
+};
 
 const initialState: ChatState = {
-  sessions: [{ id: 'default', name: 'New Chat', messages: [], createdAt: Date.now() }],
+  sessions: [{ id: 'default', name: '新对话', messages: [], createdAt: Date.now() }],
   activeSessionId: 'default', streaming: false, strategy: 'best_quality', sidebarOpen: true, settingsOpen: false,
   settings: {
-    apiKeys: { deepseek: '', anthropic: '', openai: '' }, theme: 'dark', language: 'en', fontSize: 14,
+    apiKeys: { deepseek: '', anthropic: '', openai: '' }, theme: 'dark', language: 'zh-CN', fontSize: 15,
     mobileLink: { enabled: false, qrCode: '', deviceName: '' },
     thirdParty: { apiEnabled: false, apiPort: 8720, webhookUrl: '' },
     proxy: { enabled: false, host: '', port: '', auth: '' }, agent: defaultAgent,
     plugins: [
-      { id: 'filesystem', name: 'File System', description: 'Read, write, and manage local files', enabled: true, type: 'tool' },
-      { id: 'browser', name: 'Web Browser', description: 'Open and control browser tabs', enabled: false, type: 'tool' },
-      { id: 'terminal', name: 'Terminal', description: 'Execute shell commands', enabled: true, type: 'tool' },
-      { id: 'calendar', name: 'Calendar', description: 'Manage calendar events', enabled: false, type: 'skill' },
-      { id: 'email', name: 'Email', description: 'Send and read emails', enabled: false, type: 'tool' },
+      { id: 'filesystem', name: '文件系统', description: '读写和管理本地文件', enabled: true, type: 'tool' },
+      { id: 'browser', name: '网页浏览器', description: '打开和控制浏览器标签页', enabled: false, type: 'tool' },
+      { id: 'terminal', name: '终端', description: '执行 Shell 命令', enabled: true, type: 'tool' },
+      { id: 'calendar', name: '日历', description: '管理日历事件', enabled: false, type: 'skill' },
+      { id: 'email', name: '邮件', description: '发送和阅读邮件', enabled: false, type: 'tool' },
     ],
   },
 };
@@ -47,8 +51,8 @@ const initialState: ChatState = {
 const chatSlice = createSlice({
   name: 'chat', initialState,
   reducers: {
-    addMessage: (s, a: PayloadAction<{ sessionId: string; message: ChatMessage }>) => { const sesh = s.sessions.find(x => x.id === a.payload.sessionId); if (sesh) { sesh.messages.push(a.payload.message); if (sesh.messages.length === 1) sesh.name = a.payload.message.content.slice(0, 30) || 'New Chat'; } },
-    newSession: (s) => { const ns: ChatSession = { id: 's_' + Date.now(), name: 'New Chat', messages: [], createdAt: Date.now() }; s.sessions.unshift(ns); s.activeSessionId = ns.id; },
+    addMessage: (s, a: PayloadAction<{ sessionId: string; message: ChatMessage }>) => { const sesh = s.sessions.find(x => x.id === a.payload.sessionId); if (sesh) { sesh.messages.push(a.payload.message); if (sesh.messages.length === 1) sesh.name = a.payload.message.content.slice(0, 30) || '新对话'; } },
+    newSession: (s) => { const ns: ChatSession = { id: 's_' + Date.now(), name: '新对话', messages: [], createdAt: Date.now() }; s.sessions.unshift(ns); s.activeSessionId = ns.id; },
     setActiveSession: (s, a: PayloadAction<string>) => { s.activeSessionId = a.payload; },
     setStreaming: (s, a: PayloadAction<boolean>) => { s.streaming = a.payload; },
     setStrategy: (s, a: PayloadAction<Strategy>) => { s.strategy = a.payload; },
