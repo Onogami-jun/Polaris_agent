@@ -4,6 +4,7 @@ import type { Strategy } from '../store/chatSlice';
 export interface QueryResult {
   routing: { strategy: string; top_intent: string; selected_models: string[]; rationale: string; intent_scores: Record<string, number> };
   responses: { model_id: string; model_display?: string; content: string; error?: string }[];
+  expert_responses?: any[]; subtasks?: any[]; workflow_steps?: any[]; ensemble?: any;
   total_latency_ms: number;
 }
 
