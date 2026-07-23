@@ -15,5 +15,11 @@ interface PolarisAPI {
   mcpStart(p: { id: string; command: string; args: string[]; env?: Record<string,string> }): Promise<{ success: boolean; pid?: number; message?: string }>;
   mcpStop(id: string): Promise<{ success: boolean }>; mcpList(): Promise<{ id: string; pid: number; running: boolean }[]>;
   notify(p: { title: string; body: string }): Promise<boolean>;
+  toolsList(): Promise<{ id: string; name: string; description: string; requires_confirm: boolean; category: string }[]>;
+  toolsExecute(p: { tool: string; params: Record<string, string> }): Promise<any>;
+  toolsConfirm(confirmId: string): Promise<any>;
+  toolsReject(confirmId: string): Promise<any>;
+  agentsList(): Promise<{ id: string; name: string; role: string; goal: string; tools: string[] }[]>;
+  workflowsList(): Promise<{ id: string; name: string; steps: { id: string; agent: string; description: string }[] }[]>;
 }
 interface Window { electronAPI?: PolarisAPI; }

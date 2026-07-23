@@ -21,4 +21,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   desktopAgentStep: (p) => ipcRenderer.invoke('desktop:agentStep', p),
   mcpStart: (p) => ipcRenderer.invoke('mcp:start', p), mcpStop: (id) => ipcRenderer.invoke('mcp:stop', id), mcpList: () => ipcRenderer.invoke('mcp:list'),
   notify: (p) => ipcRenderer.invoke('notify', p),
+  toolsList: () => ipcRenderer.invoke('tools:list'), toolsExecute: (p) => ipcRenderer.invoke('tools:execute', p), toolsConfirm: (id) => ipcRenderer.invoke('tools:confirm', { confirmId: id }), toolsReject: (id) => ipcRenderer.invoke('tools:reject', { confirmId: id }),
+  agentsList: () => ipcRenderer.invoke('agents:list'), workflowsList: () => ipcRenderer.invoke('workflows:list'),
 });
