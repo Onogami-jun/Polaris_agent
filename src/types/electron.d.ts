@@ -17,9 +17,11 @@ interface PolarisAPI {
   notify(p: { title: string; body: string }): Promise<boolean>;
   toolsList(): Promise<{ id: string; name: string; description: string; requires_confirm: boolean; category: string }[]>;
   toolsExecute(p: { tool: string; params: Record<string, string> }): Promise<any>;
-  toolsConfirm(confirmId: string): Promise<any>;
-  toolsReject(confirmId: string): Promise<any>;
+  toolsConfirm(confirmId: string): Promise<any>; toolsReject(confirmId: string): Promise<any>;
   agentsList(): Promise<{ id: string; name: string; role: string; goal: string; tools: string[] }[]>;
   workflowsList(): Promise<{ id: string; name: string; steps: { id: string; agent: string; description: string }[] }[]>;
+  monitorStart(): Promise<{ success: boolean }>; monitorUpdate(a: any): Promise<boolean>; monitorSetScene(s: string): Promise<boolean>; monitorFeedback(p: { eventKey: string; accepted: boolean }): Promise<boolean>; monitorContext(): Promise<any>;
+  plannerGenerate(t: string): Promise<any>; plannerExecute(id: string): Promise<any>; plannerReject(id: string): Promise<any>;
+  onIntervention(cb: (card: any) => void): void; onPlanProgress(cb: (data: any) => void): void;
 }
 interface Window { electronAPI?: PolarisAPI; }

@@ -4,10 +4,13 @@ const log = require('electron-log');
 const { executeQuery } = require('./services/router');
 const desktop = require('./services/desktop');
 const { spawn } = require('child_process');
+const systemMonitor = require('./services/system-monitor');
+const { Planner } = require('./services/planner');
 
 log.transports.file.level = 'info';
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 const ROOT = path.join(__dirname, '..');
+const planner = new Planner();
 
 let win = null, tray = null;
 const mcpProcesses = new Map();
@@ -96,9 +99,33 @@ ipcMain.handle('agents:list', () => Object.entries(AGENTS).map(([id, a]) => ({ i
 const { WORKFLOWS } = require('./services/workflow');
 ipcMain.handle('workflows:list', () => Object.entries(WORKFLOWS).map(([id, w]) => ({ id, name: w.name, steps: w.steps.map(s => ({ id: s.id, agent: s.agent, description: s.description })) })));
 
+// IPC: System Monitor
+ipcMain.handle('monitor:start', () => {
+  systemMonitor.startMonitoring((card) => {
+    if (win && !win.isDestroyed()) win.webContents.send('polaris:intervention', card);
+  });
+  return { success: true };
+});
+ipcMain.handle('monitor:update', (_e, activity) => { systemMonitor.updateKeyboardActivity(activity); return true; });
+ipcMain.handle('monitor:setScene', (_e, scene) => { systemMonitor.setScene(scene); return true; });
+ipcMain.handle('monitor:feedback', (_e, { eventKey, accepted }) => { systemMonitor.recordFeedback(eventKey, accepted); return true; });
+ipcMain.handle('monitor:context', () => systemMonitor.getSystemContext());
+
+// IPC: Planner
+ipcMain.handle('planner:generate', (_e, { text }) => planner.generatePlan(text));
+ipcMain.handle('planner:execute', async (event, { planId }) => {
+  const oc = (data) => { if (win && !win.isDestroyed()) win.webContents.send('polaris:plan-progress', data); };
+  return planner.executePlan(planId, oc);
+});
+ipcMain.handle('planner:reject', (_e, { planId }) => planner.rejectPlan(planId));
+ipcMain.handle('planner:pending', () => planner.getPendingPlans());
+
 // IPC: Notify
 ipcMain.handle('notify', (_e, { title, body }) => { if (Notification.isSupported()) { new Notification({ title, body }).show(); return true; } return false; });
 
-app.whenReady().then(() => { createWindow(); createTray(); });
+// IPC: Stream query — adds real-time streaming support
+ipcMain.handle('polaris:query', async (_e, { text, strategy, systemPrompt, images, apiKeys }) => executeQuery(text, strategy, systemPrompt, images, undefined, apiKeys || {}));
+
+app.whenReady().then(() => { createWindow(); createTray(); systemMonitor.startMonitoring((card) => { if (win && !win.isDestroyed()) win.webContents.send('polaris:intervention', card); }); });
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
-app.on('will-quit', () => { globalShortcut.unregisterAll(); for (const [, p] of mcpProcesses) p.kill(); });
+app.on('will-quit', () => { globalShortcut.unregisterAll(); for (const [, p] of mcpProcesses) p.kill(); systemMonitor.stopMonitoring(); });
