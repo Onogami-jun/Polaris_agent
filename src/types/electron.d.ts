@@ -1,6 +1,6 @@
 interface PolarisAPI {
-  query(params: { text: string; strategy: string; systemPrompt?: string; images?: string[] }): Promise<{ routing: { strategy: string; top_intent: string; selected_models: string[]; rationale: string; intent_scores: Record<string, number> }; responses: { model_id: string; model_display?: string; content: string; error?: string }[]; total_latency_ms: number; }>;
-  queryStream(params: { text: string; strategy: string; systemPrompt?: string; images?: string[] }): Promise<any>;
+  query(params: { text: string; strategy: string; systemPrompt?: string; images?: string[]; apiKeys?: { deepseek?: string; anthropic?: string; openai?: string } }): Promise<{ routing: { strategy: string; top_intent: string; selected_models: string[]; rationale: string; intent_scores: Record<string, number> }; responses: { model_id: string; model_display?: string; content: string; error?: string }[]; expert_responses?: any[]; subtasks?: any[]; ensemble?: any; total_latency_ms: number; }>;
+  queryStream(params: { text: string; strategy: string; systemPrompt?: string; images?: string[]; apiKeys?: { deepseek?: string; anthropic?: string; openai?: string } }): Promise<any>;
   onStreamChunk(cb: (data: { content: string; full: string }) => void): void;
   onStreamEnd(cb: (data: any) => void): void; onStreamError(cb: (data: any) => void): void; removeStreamListeners(): void;
   minimize(): Promise<void>; maximize(): Promise<void>; close(): Promise<void>; getVersion(): Promise<string>; openExternal(url: string): Promise<void>;

@@ -40,10 +40,10 @@ function createTray() {
 }
 
 // IPC: AI
-ipcMain.handle('polaris:query', async (_e, { text, strategy, systemPrompt, images }) => executeQuery(text, strategy, systemPrompt, images));
-ipcMain.handle('polaris:queryStream', async (event, { text, strategy, systemPrompt, images }) => {
+ipcMain.handle('polaris:query', async (_e, { text, strategy, systemPrompt, images, apiKeys }) => executeQuery(text, strategy, systemPrompt, images, undefined, apiKeys || {}));
+ipcMain.handle('polaris:queryStream', async (event, { text, strategy, systemPrompt, images, apiKeys }) => {
   const oc = (data: any) => { if (win && !win.isDestroyed()) win.webContents.send('polaris:stream-chunk', data); };
-  try { const r = await executeQuery(text, strategy, systemPrompt, images, oc); if (win && !win.isDestroyed()) win.webContents.send('polaris:stream-end', r); return r; }
+  try { const r = await executeQuery(text, strategy, systemPrompt, images, oc, apiKeys || {}); if (win && !win.isDestroyed()) win.webContents.send('polaris:stream-end', r); return r; }
   catch (e: any) { if (win && !win.isDestroyed()) win.webContents.send('polaris:stream-error', { message: e.message }); throw e; }
 });
 // IPC: Window

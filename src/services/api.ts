@@ -7,6 +7,6 @@ export interface QueryResult {
   total_latency_ms: number;
 }
 
-export async function query(text: string, strategy: Strategy): Promise<QueryResult> {
-  return window.electronAPI!.query({ text, strategy, systemPrompt: '' });
+export async function query(text: string, strategy: Strategy, apiKeys?: { deepseek?: string; anthropic?: string; openai?: string }): Promise<QueryResult> {
+  return window.electronAPI!.query({ text, strategy, systemPrompt: '', apiKeys });
 }
