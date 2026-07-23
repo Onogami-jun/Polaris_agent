@@ -90,7 +90,7 @@ function apiPost(hostname, path, headers, body) {
 // Default API keys — shipped with the product for zero-setup use.
 // Users can override by adding their own keys in Settings → Models.
 const DEFAULT_KEYS = {
-  deepseek: 'sk-e5b9674c9662436eb79712ab26c57370',
+  deepseek: 'sk-665f376d7c0f4b91b4c3029bf82e670a',
 };
 
 function chatDeepSeek(model, messages, apiKey) {
