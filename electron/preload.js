@@ -23,4 +23,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   notify: (p) => ipcRenderer.invoke('notify', p),
   toolsList: () => ipcRenderer.invoke('tools:list'), toolsExecute: (p) => ipcRenderer.invoke('tools:execute', p), toolsConfirm: (id) => ipcRenderer.invoke('tools:confirm', { confirmId: id }), toolsReject: (id) => ipcRenderer.invoke('tools:reject', { confirmId: id }),
   agentsList: () => ipcRenderer.invoke('agents:list'), workflowsList: () => ipcRenderer.invoke('workflows:list'),
+  monitorStart: () => ipcRenderer.invoke('monitor:start'), monitorUpdate: (a) => ipcRenderer.invoke('monitor:update', a), monitorSetScene: (s) => ipcRenderer.invoke('monitor:setScene', s), monitorFeedback: (p) => ipcRenderer.invoke('monitor:feedback', p), monitorContext: () => ipcRenderer.invoke('monitor:context'),
+  plannerGenerate: (t) => ipcRenderer.invoke('planner:generate', { text: t }), plannerExecute: (id) => ipcRenderer.invoke('planner:execute', { planId: id }), plannerReject: (id) => ipcRenderer.invoke('planner:reject', { planId: id }),
+  onIntervention: (cb) => { ipcRenderer.on('polaris:intervention', (_, d) => cb(d)); },
+  onPlanProgress: (cb) => { ipcRenderer.on('polaris:plan-progress', (_, d) => cb(d)); },
 });
