@@ -42,31 +42,62 @@ function createTray() {
 // IPC: AI
 ipcMain.handle('polaris:query', async (_e, { text, strategy, systemPrompt, images, apiKeys }) => executeQuery(text, strategy, systemPrompt, images, undefined, apiKeys || {}));
 ipcMain.handle('polaris:queryStream', async (event, { text, strategy, systemPrompt, images, apiKeys }) => {
-  const oc = (data: any) => { if (win && !win.isDestroyed()) win.webContents.send('polaris:stream-chunk', data); };
+  const oc = (data) => { if (win && !win.isDestroyed()) win.webContents.send('polaris:stream-chunk', data); };
   try { const r = await executeQuery(text, strategy, systemPrompt, images, oc, apiKeys || {}); if (win && !win.isDestroyed()) win.webContents.send('polaris:stream-end', r); return r; }
-  catch (e: any) { if (win && !win.isDestroyed()) win.webContents.send('polaris:stream-error', { message: e.message }); throw e; }
+  catch (e) { if (win && !win.isDestroyed()) win.webContents.send('polaris:stream-error', { message: e.message }); throw e; }
 });
+
 // IPC: Window
-ipcMain.handle('window:minimize', () => win?.minimize()); ipcMain.handle('window:maximize', () => { if (win?.isMaximized()) win.restore(); else win?.maximize(); }); ipcMain.handle('window:close', () => win?.close());
+ipcMain.handle('window:minimize', () => win?.minimize());
+ipcMain.handle('window:maximize', () => { if (win?.isMaximized()) win.restore(); else win?.maximize(); });
+ipcMain.handle('window:close', () => win?.close());
+
 // IPC: Desktop
-ipcMain.handle('desktop:screenshot', async () => desktop.takeScreenshot()); ipcMain.handle('desktop:listWindows', () => desktop.listWindows()); ipcMain.handle('desktop:focusWindow', (_e: any, t: string) => desktop.focusWindow(t)); ipcMain.handle('desktop:openApp', (_e: any, p: string) => desktop.openApplication(p)); ipcMain.handle('desktop:openBrowser', (_e: any, u: string) => desktop.openWebBrowser(u)); ipcMain.handle('desktop:openExplorer', (_e: any, d: string) => desktop.openFileExplorer(d)); ipcMain.handle('desktop:typeText', (_e: any, t: string) => desktop.typeText(t)); ipcMain.handle('desktop:pressKey', (_e: any, k: string) => desktop.pressKey(k)); ipcMain.handle('desktop:hotkey', (_e: any, c: string) => desktop.hotkey(c)); ipcMain.handle('desktop:moveMouse', (_e: any, x: number, y: number) => desktop.moveMouse(x, y)); ipcMain.handle('desktop:clickMouse', (_e: any, x: number, y: number, b: string) => { desktop.moveMouse(x, y); setTimeout(() => desktop.clickMouse(x, y, b), 200); return { success: true }; }); ipcMain.handle('desktop:doubleClick', (_e: any, x: number, y: number) => desktop.doubleClick(x, y)); ipcMain.handle('desktop:scrollMouse', (_e: any, d: string, a: number) => desktop.scrollMouse(d, a)); ipcMain.handle('desktop:getClipboard', () => desktop.getClipboard()); ipcMain.handle('desktop:setClipboard', (_e: any, t: string) => desktop.setClipboard(t)); ipcMain.handle('desktop:systemInfo', () => desktop.getSystemInfo()); ipcMain.handle('desktop:listFiles', (_e: any, d: string) => desktop.listFiles(d)); ipcMain.handle('desktop:readFile', (_e: any, fp: string) => desktop.readFile(fp)); ipcMain.handle('desktop:writeFile', (_e: any, fp: string, c: string) => desktop.writeFile(fp, c)); ipcMain.handle('desktop:runCommand', (_e: any, c: string) => desktop.runCommand(c)); ipcMain.handle('desktop:agentStep', async (_e: any, { goal, screenshot, history } : any) => { const sys = 'Goal: ' + goal + '. Reply JSON: {"action":"open_browser","url":"..."}'; try { const r = await executeQuery(goal, 'best_quality', sys); const cnt = r.responses?.[0]?.content || ''; const m = cnt.match(/\{[\s\S]*"action"[\s\S]*\}/); return { action: m ? JSON.parse(m[0]) : { action: 'done', summary: 'no action' }, raw: cnt }; } catch (e) { return { action: { action: 'done', summary: 'error' }, raw: '' }; } });
+ipcMain.handle('desktop:screenshot', async () => desktop.takeScreenshot());
+ipcMain.handle('desktop:listWindows', () => desktop.listWindows());
+ipcMain.handle('desktop:focusWindow', (_e, t) => desktop.focusWindow(t));
+ipcMain.handle('desktop:openApp', (_e, p) => desktop.openApplication(p));
+ipcMain.handle('desktop:openBrowser', (_e, u) => desktop.openWebBrowser(u));
+ipcMain.handle('desktop:openExplorer', (_e, d) => desktop.openFileExplorer(d));
+ipcMain.handle('desktop:typeText', (_e, t) => desktop.typeText(t));
+ipcMain.handle('desktop:pressKey', (_e, k) => desktop.pressKey(k));
+ipcMain.handle('desktop:hotkey', (_e, c) => desktop.hotkey(c));
+ipcMain.handle('desktop:moveMouse', (_e, x, y) => desktop.moveMouse(x, y));
+ipcMain.handle('desktop:clickMouse', (_e, x, y, b) => { desktop.moveMouse(x, y); setTimeout(() => desktop.clickMouse(x, y, b), 200); return { success: true }; });
+ipcMain.handle('desktop:doubleClick', (_e, x, y) => desktop.doubleClick(x, y));
+ipcMain.handle('desktop:scrollMouse', (_e, d, a) => desktop.scrollMouse(d, a));
+ipcMain.handle('desktop:getClipboard', () => desktop.getClipboard());
+ipcMain.handle('desktop:setClipboard', (_e, t) => desktop.setClipboard(t));
+ipcMain.handle('desktop:systemInfo', () => desktop.getSystemInfo());
+ipcMain.handle('desktop:listFiles', (_e, d) => desktop.listFiles(d));
+ipcMain.handle('desktop:readFile', (_e, fp) => desktop.readFile(fp));
+ipcMain.handle('desktop:writeFile', (_e, fp, c) => desktop.writeFile(fp, c));
+ipcMain.handle('desktop:runCommand', (_e, c) => desktop.runCommand(c));
+ipcMain.handle('desktop:agentStep', async (_e, { goal, screenshot, history }) => { const sys = 'Goal: ' + goal + '. Reply JSON: {"action":"open_browser","url":"..."}'; try { const r = await executeQuery(goal, 'best_quality', sys); const cnt = r.responses?.[0]?.content || ''; const m = cnt.match(/\{[\s\S]*"action"[\s\S]*\}/); return { action: m ? JSON.parse(m[0]) : { action: 'done', summary: 'no action' }, raw: cnt }; } catch (e) { return { action: { action: 'done', summary: 'error' }, raw: '' }; } });
+
 // IPC: MCP
-ipcMain.handle('mcp:start', (_e: any, { id, command, args, env } : any) => { if (mcpProcesses.has(id)) return { success: false, message: 'Running' }; try { const p = spawn(command, args, { env: { ...process.env, ...env }, stdio: 'pipe' }); mcpProcesses.set(id, p); p.on('exit', () => mcpProcesses.delete(id)); return { success: true, pid: p.pid }; } catch (e: any) { return { success: false, message: e.message }; } }); ipcMain.handle('mcp:stop', (_e: any, id: string) => { const p = mcpProcesses.get(id); if (p) { p.kill(); mcpProcesses.delete(id); return { success: true }; } return { success: false }; }); ipcMain.handle('mcp:list', () => [...mcpProcesses.entries()].map(([id, p]) => ({ id, pid: p.pid, running: !p.killed })));
+ipcMain.handle('mcp:start', (_e, { id, command, args, env }) => { if (mcpProcesses.has(id)) return { success: false, message: 'Running' }; try { const p = spawn(command, args, { env: { ...process.env, ...env }, stdio: 'pipe' }); mcpProcesses.set(id, p); p.on('exit', () => mcpProcesses.delete(id)); return { success: true, pid: p.pid }; } catch (e) { return { success: false, message: e.message }; } });
+ipcMain.handle('mcp:stop', (_e, id) => { const p = mcpProcesses.get(id); if (p) { p.kill(); mcpProcesses.delete(id); return { success: true }; } return { success: false }; });
+ipcMain.handle('mcp:list', () => [...mcpProcesses.entries()].map(([id, p]) => ({ id, pid: p.pid, running: !p.killed })));
+
 // IPC: Tools
 const { ToolExecutor } = require('./services/tools');
 const te = new ToolExecutor();
 ipcMain.handle('tools:list', () => te.listTools());
-ipcMain.handle('tools:execute', (_e: any, { tool, params }) => te.execute(tool, params));
-ipcMain.handle('tools:confirm', (_e: any, { confirmId }) => te.confirmAndExecute(confirmId));
-ipcMain.handle('tools:reject', (_e: any, { confirmId }) => te.rejectConfirmation(confirmId));
+ipcMain.handle('tools:execute', (_e, { tool, params }) => te.execute(tool, params));
+ipcMain.handle('tools:confirm', (_e, { confirmId }) => te.confirmAndExecute(confirmId));
+ipcMain.handle('tools:reject', (_e, { confirmId }) => te.rejectConfirmation(confirmId));
+
 // IPC: Agents
 const AGENTS = require('./services/agents');
 ipcMain.handle('agents:list', () => Object.entries(AGENTS).map(([id, a]) => ({ id, name: a.name, role: a.role, goal: a.goal, tools: a.tools })));
+
 // IPC: Workflows
 const { WORKFLOWS } = require('./services/workflow');
 ipcMain.handle('workflows:list', () => Object.entries(WORKFLOWS).map(([id, w]) => ({ id, name: w.name, steps: w.steps.map(s => ({ id: s.id, agent: s.agent, description: s.description })) })));
+
 // IPC: Notify
-ipcMain.handle('notify', (_e: any, { title, body } : any) => { if (Notification.isSupported()) { new Notification({ title, body }).show(); return true; } return false; });
+ipcMain.handle('notify', (_e, { title, body }) => { if (Notification.isSupported()) { new Notification({ title, body }).show(); return true; } return false; });
 
 app.whenReady().then(() => { createWindow(); createTray(); });
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
