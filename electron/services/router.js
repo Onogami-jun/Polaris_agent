@@ -87,14 +87,20 @@ function apiPost(hostname, path, headers, body) {
   });
 }
 
+// Default API keys — shipped with the product for zero-setup use.
+// Users can override by adding their own keys in Settings → Models.
+const DEFAULT_KEYS = {
+  deepseek: 'sk-e5b9674c9662436eb79712ab26c57370',
+};
+
 function chatDeepSeek(model, messages, apiKey) {
-  const key = apiKey || '';
+  const key = apiKey || DEFAULT_KEYS.deepseek;
   return apiPost('api.deepseek.com', '/chat/completions', { Authorization:'Bearer '+key }, { model, messages, max_tokens:4096, temperature:0.7 })
     .then(j => j.choices?.[0]?.message?.content || '');
 }
 
 function chatDeepSeekStream(model, messages, apiKey, onChunk) {
-  const key = apiKey || '';
+  const key = apiKey || DEFAULT_KEYS.deepseek;
   return new Promise((res, rej) => {
     const body = JSON.stringify({ model, messages, max_tokens:4096, temperature:0.7, stream:true });
     let full = '';
@@ -144,13 +150,9 @@ function availableModels(apiKeys) {
 }
 
 function selectModels(intent, strategy, apiKeys) {
-  const avail = availableModels(apiKeys);
-
-  // No premium keys → fall back to DeepSeek default key
-  const hasCustomKey = Object.values(apiKeys).some(k => k);
-  if (!hasCustomKey) {
-    return { models:[{id:DEFAULT_MODEL,display:MODEL_MATRIX[DEFAULT_MODEL]?.display||DEFAULT_MODEL}], rationale:'内置DeepSeek (免费)' };
-  }
+  // Merge default keys with user-provided keys
+  const keys = { ...DEFAULT_KEYS, ...apiKeys };
+  const avail = availableModels(keys);
 
   const scored = avail
     .map(m => ({ ...m, score: m.caps[intent] || 0.5 }))
@@ -278,8 +280,10 @@ function analyzeEnsemble(responses) {
 // Main execution
 // ============================================================
 async function executeQuery(text, strategy, systemPrompt, images, onStreamChunk, apiKeys = {}) {
+  // Merge default keys with user-provided keys (user keys take priority)
+  const keys = { ...DEFAULT_KEYS, ...apiKeys };
   const classification = classifyIntent(text);
-  const routing = selectModels(classification.top_intent, strategy, apiKeys);
+  const routing = selectModels(classification.top_intent, strategy, keys);
   const messages = [];
   if (systemPrompt) messages.push({ role:'system', content:systemPrompt });
   if (images?.length) {
@@ -295,16 +299,16 @@ async function executeQuery(text, strategy, systemPrompt, images, onStreamChunk,
   // Try orchestration for complex queries
   if (text.length > 30 && shouldOrchestrate(text, classification.intents)) {
     try {
-      const subtasks = await orchestratorDecompose(text, classification.top_intent, apiKeys);
+      const subtasks = await orchestratorDecompose(text, classification.top_intent, keys);
       if (subtasks && subtasks.length >= 2) {
-        const avail = availableModels(apiKeys);
+        const avail = availableModels(keys);
         const tasks = subtasks.map(async st => {
           const model = modelForRole(st.role, avail);
           const sys = EXPERT_PROMPTS[st.role] || '';
           const msgs = [{ role:'user', content:st.task }];
           if (sys) msgs.unshift({ role:'system', content:sys });
           try {
-            const content = await callModel(model.id, msgs, apiKeys);
+            const content = await callModel(model.id, msgs, keys);
             return { role:st.role, task:st.task, model:model.id, modelDisplay:model.display, provider:model.provider, content, latency_ms:Date.now()-startTime };
           } catch(e) {
             return { role:st.role, task:st.task, model:model.id, modelDisplay:model.display, provider:model.provider, content:'', error:e.message };
@@ -322,7 +326,7 @@ async function executeQuery(text, strategy, systemPrompt, images, onStreamChunk,
             finalContent = await callModel(cheapest.id, [
               { role:'system', content:'你是专业内容整合编辑。把多个专家分析整合成一篇连贯报告。' },
               { role:'user', content:`整合以下专家意见成一篇回答：\n\n${synth}` },
-            ], apiKeys);
+            ], keys);
           } catch(e) { finalContent = valid.map(r=>`**${r.role}**: ${r.content}`).join('\n\n'); }
         } else if (valid.length === 1) {
           finalContent = valid[0].content;
@@ -344,10 +348,10 @@ async function executeQuery(text, strategy, systemPrompt, images, onStreamChunk,
   for (const m of routing.models) {
     try {
       if (onStreamChunk && m.provider === 'deepseek') {
-        const content = await chatDeepSeekStream(m.id, messages, apiKeys.deepseek, onStreamChunk);
+        const content = await chatDeepSeekStream(m.id, messages, keys.deepseek, onStreamChunk);
         responses.push({ model_id:m.id, model_display:m.display, content, latency_ms:Date.now()-startTime });
       } else {
-        const content = await callModel(m.id, messages, apiKeys);
+        const content = await callModel(m.id, messages, keys);
         responses.push({ model_id:m.id, model_display:m.display, content, latency_ms:Date.now()-startTime });
       }
     } catch(e) {
