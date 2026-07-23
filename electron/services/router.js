@@ -1,13 +1,14 @@
 /**
- * Polaris Embedded Router v0.8
- * Intent classifier + model matrix + orchestrator + ensemble
+ * Polaris Embedded Router v1.0
+ * Intent classifier + model matrix + orchestrator + workflow engine
  * Pure Node.js, no external deps. Runs inside Electron main process.
  */
 const https = require('https');
+const AGENTS = require('./agents');
+const { executeWorkflow } = require('./workflow');
+const { ToolExecutor } = require('./tools');
 
-// ============================================================
-// Intent taxonomy
-// ============================================================
+const toolExecutor = new ToolExecutor();
 const INTENTS = {
   code_generation: { display:'代码生成', keywords:['代码','编程','debug','函数','算法','重构','API','接口','架构','前端','后端','python','javascript','react','rust','写一个','实现','golang','go','c++','java'] },
   math_reasoning: { display:'数学推理', keywords:['计算','证明','方程','求导','积分','概率','统计','优化','复杂度','数学','公理','推导','收敛'] },
@@ -280,10 +281,12 @@ function analyzeEnsemble(responses) {
 // Main execution
 // ============================================================
 async function executeQuery(text, strategy, systemPrompt, images, onStreamChunk, apiKeys = {}) {
-  // Merge default keys with user-provided keys (user keys take priority)
   const keys = { ...DEFAULT_KEYS, ...apiKeys };
   const classification = classifyIntent(text);
-  const routing = selectModels(classification.top_intent, strategy, keys);
+  const startTime = Date.now();
+  const intent = classification.top_intent;
+
+  // Build messages
   const messages = [];
   if (systemPrompt) messages.push({ role:'system', content:systemPrompt });
   if (images?.length) {
@@ -294,56 +297,61 @@ async function executeQuery(text, strategy, systemPrompt, images, onStreamChunk,
     messages.push({ role:'user', content:text });
   }
 
-  const startTime = Date.now();
-
-  // Try orchestration for complex queries
-  if (text.length > 30 && shouldOrchestrate(text, classification.intents)) {
+  // --- Route 1: Complex query → Workflow Engine ---
+  if (intent !== 'general_chat' && text.length > 20) {
     try {
-      const subtasks = await orchestratorDecompose(text, classification.top_intent, keys);
-      if (subtasks && subtasks.length >= 2) {
-        const avail = availableModels(keys);
-        const tasks = subtasks.map(async st => {
-          const model = modelForRole(st.role, avail);
-          const sys = EXPERT_PROMPTS[st.role] || '';
-          const msgs = [{ role:'user', content:st.task }];
-          if (sys) msgs.unshift({ role:'system', content:sys });
-          try {
-            const content = await callModel(model.id, msgs, keys);
-            return { role:st.role, task:st.task, model:model.id, modelDisplay:model.display, provider:model.provider, content, latency_ms:Date.now()-startTime };
-          } catch(e) {
-            return { role:st.role, task:st.task, model:model.id, modelDisplay:model.display, provider:model.provider, content:'', error:e.message };
-          }
-        });
-        const expertResults = await Promise.all(tasks);
-        const valid = expertResults.filter(r=>r.content&&!r.error);
-
-        // Synthesize
-        let finalContent = '';
-        if (valid.length >= 2) {
-          const cheapest = [...avail].sort((a,b)=>(a.cost==='cheap'?-1:1))[0]||avail[0];
-          const synth = valid.map((r,i)=>`### 专家${i+1} — ${r.role}:\n${r.content}`).join('\n\n---\n\n');
-          try {
-            finalContent = await callModel(cheapest.id, [
-              { role:'system', content:'你是专业内容整合编辑。把多个专家分析整合成一篇连贯报告。' },
-              { role:'user', content:`整合以下专家意见成一篇回答：\n\n${synth}` },
-            ], keys);
-          } catch(e) { finalContent = valid.map(r=>`**${r.role}**: ${r.content}`).join('\n\n'); }
-        } else if (valid.length === 1) {
-          finalContent = valid[0].content;
+      const workflowResult = await executeWorkflow(intent, text, AGENTS, toolExecutor,
+        async (agentRole, msgs) => {
+          const cheapest = Object.keys(MODEL_MATRIX).filter(id => keys[MODEL_MATRIX[id].provider]).sort((a,b) => (MODEL_MATRIX[a].cost==='cheap'?-1:1))[0] || DEFAULT_MODEL;
+          return callModel(cheapest, msgs, keys);
         }
+      );
 
+      if (workflowResult && workflowResult.finalContent) {
         return {
-          routing: { strategy:'orchestrated', top_intent:classification.display, selected_models:subtasks.map(s=>s.role), rationale:`协同引擎: ${subtasks.length}个专家 × ${avail.length}个模型` },
-          responses: [{ model_id:'orchestrator', model_display:`协同引擎 · ${valid.length}专家`, content:finalContent }],
-          expert_responses: expertResults,
-          subtasks,
+          routing: {
+            strategy: 'workflow',
+            top_intent: classification.display,
+            selected_models: workflowResult.steps?.map(s => `${s.agent}(${s.id})`) || [],
+            rationale: `工作流: ${workflowResult.workflow} · ${workflowResult.steps?.length || 0}步`,
+            intent_scores: classification.intents
+          },
+          responses: [{
+            model_id: 'workflow',
+            model_display: `${workflowResult.workflow}`,
+            content: workflowResult.finalContent,
+          }],
+          workflow_steps: workflowResult.steps,
           total_latency_ms: Date.now() - startTime,
         };
       }
-    } catch(e) { /* fall through to normal flow */ }
+    } catch(e) {
+      // Fall through to normal flow
+    }
   }
 
-  // Normal flow
+  // --- Route 2: Ensemble (multi-model parallel) ---
+  if (strategy === 'ensemble' || classification.ensemble_triggered) {
+    const routing = selectModels(intent, 'ensemble', keys);
+    const responses = [];
+    for (const m of routing.models) {
+      try {
+        const content = await callModel(m.id, messages, keys);
+        responses.push({ model_id:m.id, model_display:m.display, content, latency_ms:Date.now()-startTime });
+      } catch(e) {
+        responses.push({ model_id:m.id, model_display:m.display, content:'', error:e.message });
+      }
+    }
+    const ensemble = responses.length > 1 ? analyzeEnsemble(responses) : null;
+    return {
+      routing: { strategy:'ensemble', top_intent:classification.display, selected_models:routing.models.map(m=>m.display), rationale:'多模型合奏验证', intent_scores:classification.intents },
+      responses, ensemble: (ensemble && ensemble.disagreements?.length>0) ? ensemble : null,
+      total_latency_ms: Date.now() - startTime,
+    };
+  }
+
+  // --- Route 3: Single model ---
+  const routing = selectModels(intent, strategy, keys);
   const responses = [];
   for (const m of routing.models) {
     try {
@@ -359,14 +367,9 @@ async function executeQuery(text, strategy, systemPrompt, images, onStreamChunk,
     }
   }
 
-  // Ensemble analysis for multi-model
-  const ensemble = routing.models.length > 1 ? analyzeEnsemble(responses) : null;
-
   return {
     routing: { strategy, top_intent:classification.display, selected_models:routing.models.map(m=>m.display), rationale:routing.rationale, intent_scores:classification.intents },
-    responses,
-    ensemble: (ensemble && ensemble.disagreements?.length > 0) ? ensemble : null,
-    total_latency_ms: Date.now() - startTime,
+    responses, total_latency_ms: Date.now() - startTime,
   };
 }
 
@@ -374,4 +377,4 @@ function classifyOnly(text) {
   return classifyIntent(text);
 }
 
-module.exports = { executeQuery, classifyOnly };
+module.exports = { executeQuery, classifyOnly, AGENTS, executeWorkflow, toolExecutor, INTENTS, WORKFLOWS: require('./workflow').WORKFLOWS, TOOLS: require('./tools').TOOLS };
