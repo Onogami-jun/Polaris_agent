@@ -5,7 +5,7 @@ import type{ChatMessage,Strategy}from'./store/chatSlice';
 import{saveSessions,loadSessions as ld}from'./store/persist';
 import SettingsPanel from'./components/SettingsPanel';
 
-const SUGGESTIONS=['对比特斯拉和比亚迪的竞争格局','用 Python 写一个多线程下载器','帮我写一封投资人项目邮件','整理桌面文档到 Documents'];
+const SUGGESTIONS=['背包容量50，3件物品价值60 100 120，重量10 20 30','排产5个任务，处理时间2 3 1 4 2','指派4个工人做4个任务，成本10 2 8 7  5 12 3 6  7 4 9 3  8 2 5 1','3辆车配送8个客户，距离矩阵和需求量如下'];const ENGINE='Polaris Solver';
 
 const WinBtns=()=>(<div className="wb-row"><button onClick={()=>window.electronAPI?.minimize()}className="wb">&#xe000;</button><button onClick={()=>window.electronAPI?.maximize()}className="wb">&#xe001;</button><button onClick={()=>window.electronAPI?.close()}className="wb wb-close">&#xe003;</button></div>);
 
@@ -102,7 +102,7 @@ const App:React.FC=()=>{
   const activeModel=sc.settings.apiKeys.anthropic?'Claude Sonnet':sc.settings.apiKeys.openai?'GPT-4o':'DeepSeek';
 
   return(<div className="app"onDragOver={e=>{e.preventDefault();setDrag(true)}}onDragLeave={()=>setDrag(false)}onDrop={dp}>
-    <div className="tb"><div className="tb-l"><span className="tb-lg">Polaris</span><span className="tb-meta">v1.0</span><span className="tb-model">{activeModel}</span><span className="tb-tokens">{contextTokens.used>0?Math.round(contextTokens.used/1000)+'k':''}</span></div><div className="tb-r"><button className="tb-btn"onClick={()=>d(toggleSidebar())}title="Sidebar (Ctrl+B)">☰</button><button className="tb-btn"onClick={()=>setCmd(true)}title="Command Palette (Ctrl+P)">⌘</button><button className="tb-btn"onClick={ex}title="Export">↓</button><button className="tb-btn"onClick={()=>d(toggleSettings())}title="Settings (Ctrl+,)">⚙</button><WinBtns/></div></div>
+    <div className="tb"><div className="tb-l"><span className="tb-lg">Polaris Solver</span><span className="tb-meta">v2.0</span><span className="tb-model">{activeModel}</span><span className="tb-tokens">{contextTokens.used>0?Math.round(contextTokens.used/1000)+'k':''}</span></div><div className="tb-r"><button className="tb-btn"onClick={()=>d(toggleSidebar())}title="Sidebar (Ctrl+B)">☰</button><button className="tb-btn"onClick={()=>setCmd(true)}title="Command Palette (Ctrl+P)">⌘</button><button className="tb-btn"onClick={ex}title="Export">↓</button><button className="tb-btn"onClick={()=>d(toggleSettings())}title="Settings (Ctrl+,)">⚙</button><WinBtns/></div></div>
     {drag&&<div className="dov"><div className="doz"><p>Drop files to upload</p></div></div>}
     {fs.length>0&&<div className="fb">{fs.map((f,i)=><div key={i}className="fc"><span>{f.n}</span><button onClick={()=>setFs(p=>p.filter((_,j)=>j!==i))}className="fcx">&times;</button></div>)}</div>}
 
@@ -112,7 +112,7 @@ const App:React.FC=()=>{
         <div className="chat"ref={cr}>
           {interventions.map(c=><IntCard key={c.ts||c.timestamp}card={c}onConfirm={confInt}onDismiss={dismInt}/>)}
           {plan&&<PlanCard plan={plan}onConfirm={confirmPlan}onReject={rejectPlan}progress={planProg}/>}
-          {(!act||act.messages.length===0)?(<div className="empty"><h2>How can I help you?</h2><p className="eh">Type a question, press / for commands, or drag files to upload</p><div className="esg">{SUGGESTIONS.map((s,i)=><button key={i}className="es"onClick={()=>{setInp(s);ir.current?.focus()}}>{s}</button>)}</div></div>):(act.messages.map((m,i)=><MsgRow key={m.id}msg={m}isLast={i===act.messages.length-1}onCopy={()=>cp(m.content)}onRegen={rg}onEdit={em}onBranch={br}cid={cid===m.content.slice(0,20)}/>))}
+          {(!act||act.messages.length===0)?(<div className="empty"><h2>描述你的优化问题</h2><p className="eh">用自然语言描述优化问题（背包、排产、指派、调度⋯），Polaris 引擎自动求解</p><div className="esg">{SUGGESTIONS.map((s,i)=><button key={i}className="es"onClick={()=>{setInp(s);ir.current?.focus()}}>{s}</button>)}</div></div>):(act.messages.map((m,i)=><MsgRow key={m.id}msg={m}isLast={i===act.messages.length-1}onCopy={()=>cp(m.content)}onRegen={rg}onEdit={em}onBranch={br}cid={cid===m.content.slice(0,20)}/>))}
           {thk&&<div className="tm"><div className="tm-d"/><span>{thk}</span></div>}
         </div>
 
@@ -120,7 +120,7 @@ const App:React.FC=()=>{
           {tpl&&<div className="tpp">{settings.promptTemplates.map(t=><button key={t.id}className="tpi"onClick={()=>{setInp(t.content);setTpl(false);ir.current?.focus()}}><span>{t.name}</span></button>)}</div>}
           <div className="ia-card">
             <div className="irr">
-              <textarea ref={ir}className="itx"value={inp}onChange={e=>{setInp(e.target.value);e.target.style.height='auto';e.target.style.height=Math.min(e.target.scrollHeight,160)+'px'}}onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send()}if(e.key==='/'&&!inp){e.preventDefault();setCmd(true)}}}placeholder="Ask anything... / for commands"rows={1}disabled={streaming}/>
+              <textarea ref={ir}className="itx"value={inp}onChange={e=>{setInp(e.target.value);e.target.style.height='auto';e.target.style.height=Math.min(e.target.scrollHeight,160)+'px'}}onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send()}if(e.key==='/'&&!inp){e.preventDefault();setCmd(true)}}}placeholder="描述优化问题... 例：背包容量50，价值60 100 120，重量10 20 30"rows={1}disabled={streaming}/>
               <div className="ia-actions">
                 <button className={`ia-btn${web?' on':''}`}onClick={()=>setWeb(!web)}title="Web Search">⌖</button>
                 <button className="ia-btn"onClick={async()=>{try{const{startListening}=await import('./utils/voice');startListening('zh-CN',(t:string)=>{setInp(p=>p+t)},()=>{})}catch{}}}disabled={streaming}title="Voice">♬</button>
