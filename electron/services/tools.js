@@ -1,40 +1,101 @@
 /**
- * Polaris Tool System v1.0
- * Each agent can declare tools they're allowed to use.
- * Tools have confirmation requirements and security boundaries.
- * Inspired by CrewAI + Open Interpreter's safety model.
+ * Polaris Solver Tool System v2.0
+ * Optimization-centric tools: solve, decompose, benchmark.
  */
-const desktop = require('./desktop');
 const { spawnSync } = require('child_process');
 
 // ============================================================
 // Tool registry
 // ============================================================
 const TOOLS = {
+  polaris_opt: {
+    name: 'Polaris Solver',
+    description: '自然语言描述优化问题（背包、排产、指派、调度、选址、VRP等），返回精确最优解。例："背包容量50，价值60 100 120，重量10 20 30"',
+    requires_confirm: false,
+    category: 'solver',
+    execute: async (params) => {
+      const { prompt } = params;
+      if (!prompt || prompt.trim().length < 3) {
+        return { success: false, error: '请提供优化问题描述。\n\n支持的问题类型：\n- 背包："3件物品，价值60 100 120，重量10 20 30，容量50"\n- 排产："排产3个任务，处理时间1 2 3"\n- 指派："指派，成本 10 2 8  5 12 3  7 4 9"\n- VRV："3个客户，距离矩阵...，需求量...，车载量...，车辆数..."' };
+      }
+      try {
+        const normalized = prompt.replace(/"/g, '\\"').replace(/\n/g, ' ');
+        const code = `from polaris.engine import Engine\nfrom polaris.chat import solve\nprint(solve("${normalized}"))`;
+        let result = spawnSync('python', ['-c', code], { timeout: 60000, encoding: 'utf8' });
+        if (result.error) {
+          result = spawnSync('python3', ['-c', code], { timeout: 60000, encoding: 'utf8' });
+          if (result.error) {
+            return { success: false, error: `Polaris 引擎未安装或未响应。\n\n请先安装：pip install polaris-opt[highs]\n\n然后重试。` };
+          }
+        }
+        const output = result.stdout?.trim() || result.stderr?.trim() || '';
+        if (output.includes('ModuleNotFoundError') || output.includes('ImportError')) {
+          return { success: false, error: 'Polaris 引擎未安装。请运行: pip install polaris-opt[highs]' };
+        }
+        return { success: true, result: output };
+      } catch(e) {
+        return { success: false, error: `求解异常：${e.message}` };
+      }
+    }
+  },
+
+  polaris_decompose: {
+    name: 'Analyze Structure',
+    description: '分析优化模型的代数结构，推荐分解策略（Benders/CG/直接求解）',
+    requires_confirm: false,
+    category: 'solver',
+    execute: async (params) => {
+      const { prompt } = params;
+      if (!prompt || prompt.trim().length < 3) return { success: false, error: '请描述优化问题' };
+      try {
+        const normalized = prompt.replace(/"/g, '\\"');
+        const code = `from polaris.engine import Engine\nfrom polaris.chat import _parse, _build_model\nparsed = _parse("${normalized}")\nmodel = _build_model(parsed)\neng = Engine()\nresult = eng.solve(model)\nprint(result.summary())`;
+        let result = spawnSync('python', ['-c', code], { timeout: 30000, encoding: 'utf8' });
+        if (result.error) result = spawnSync('python3', ['-c', code], { timeout: 30000, encoding: 'utf8' });
+        const output = result.stdout?.trim() || result.stderr?.trim() || '';
+        return { success: true, result: output };
+      } catch(e) {
+        return { success: false, error: e.message };
+      }
+    }
+  },
+
+  polaris_benchmark: {
+    name: 'Run Benchmark',
+    description: '对比不同求解器（HiGHS/Gurobi/Naive/Benders）在同一问题上的性能',
+    requires_confirm: false,
+    category: 'solver',
+    execute: async (params) => {
+      const { problem_type, size } = params;
+      const n = size ? parseInt(size) : 20;
+      let code;
+      if (problem_type === 'knapsack') {
+        code = `import numpy as np; np.random.seed(42)\nfrom polaris.problems.knapsack import build_knapsack\nfrom polaris.solvers.highs import HighsSolver\nfrom polaris.solvers.naive import NaiveSolver\nimport time\nvals=np.random.randint(10,200,size=${n}).tolist(); wts=np.random.randint(5,50,size=${n}).tolist()\nm=build_knapsack(vals,wts,sum(wts)*0.5)\nfor sol,name in [(HighsSolver(),'HiGHS'),(NaiveSolver(),'Naive')]:\n try:\n  t0=time.perf_counter();r=sol.solve(m);t=time.perf_counter()-t0\n  print(f'{name}: obj={r.objective_value:.1f}, time={t:.4f}s, status={r.status.value}')\n except Exception as e:\n  print(f'{name}: ERROR — {e}')`;
+      } else {
+        return { success: false, error: 'Benchmark 目前支持: knapsack' };
+      }
+      let result = spawnSync('python', ['-c', code], { timeout: 120000, encoding: 'utf8' });
+      if (result.error) result = spawnSync('python3', ['-c', code], { timeout: 120000, encoding: 'utf8' });
+      return { success: true, result: result.stdout?.trim() || result.stderr?.trim() || 'No output' };
+    }
+  },
+
   run_code: {
     name: 'Run Code',
-    description: '在沙箱中执行代码并返回输出',
+    description: '在沙箱中执行 Python 代码（可用于 polaris 引擎脚本）',
     requires_confirm: true,
     category: 'execution',
     execute: async (params) => {
-      const { language, code } = params;
+      const { code } = params;
       try {
         const tmp = require('os').tmpdir();
         const fs = require('fs');
         const path = require('path');
-        const ext = { js:'js', py:'py', ts:'ts', sh:'sh', ps1:'ps1' }[language] || 'js';
-        const fp = path.join(tmp, `polaris_run_${Date.now()}.${ext}`);
+        const fp = path.join(tmp, `polaris_run_${Date.now()}.py`);
         fs.writeFileSync(fp, code);
-        let result;
-        if (language === 'js') {
-          result = spawnSync('node', ['-e', code], { timeout: 10000, encoding:'utf8' });
-        } else if (language === 'py') {
-          result = spawnSync('python', ['-c', code], { timeout: 10000, encoding:'utf8' });
-        } else if (language === 'ps1' || language === 'sh') {
-          result = spawnSync(language === 'ps1' ? 'powershell' : 'bash', ['-Command', code], { timeout: 10000, encoding:'utf8' });
-        }
+        const result = spawnSync('python', ['-c', code], { timeout: 30000, encoding: 'utf8' });
         fs.unlinkSync(fp);
-        return { success: true, stdout: result?.stdout?.slice(0, 2000) || '', stderr: result?.stderr?.slice(0, 500) || '' };
+        return { success: true, stdout: result.stdout?.slice(0, 5000) || '', stderr: result.stderr?.slice(0, 1000) || '' };
       } catch(e) {
         return { success: false, error: e.message };
       }
@@ -43,7 +104,7 @@ const TOOLS = {
 
   search_web: {
     name: 'Web Search',
-    description: '搜索互联网获取最新信息',
+    description: '搜索互联网（用于文献调研、算法对比）',
     requires_confirm: false,
     category: 'information',
     execute: async (params) => {
@@ -51,7 +112,7 @@ const TOOLS = {
       try {
         const https = require('https');
         const data = await new Promise((res, rej) => {
-          const req = https.get(`https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1`, resp => {
+          const req = https.get(`https://api.duckduckgo.com/?q=${encodeURIComponent(query)}+optimization+OR&format=json&no_html=1`, resp => {
             let d=''; resp.on('data',c=>d+=c); resp.on('end',()=>{ try{ res(JSON.parse(d)) }catch{ res({}) } });
           });
           req.on('error', rej);
@@ -64,100 +125,10 @@ const TOOLS = {
       }
     }
   },
-
-  read_file: {
-    name: 'Read File',
-    description: '读取本地文件内容',
-    requires_confirm: true,
-    category: 'filesystem',
-    allowed_extensions: ['.txt', '.md', '.csv', '.json', '.log', '.pdf', '.docx', '.xlsx'],
-    execute: async (params) => {
-      const { path: fp } = params;
-      try {
-        const content = desktop.readFile(fp);
-        return { success: true, content: content?.slice(0, 10000) || '' };
-      } catch(e) {
-        return { success: false, error: e.message };
-      }
-    }
-  },
-
-  write_file: {
-    name: 'Write File',
-    description: '将内容写入本地文件',
-    requires_confirm: true,
-    category: 'filesystem',
-    allowed_dirs: ['Documents', 'Desktop', 'Downloads'],
-    blocked_operations: ['delete', 'remove', 'rm'],
-    execute: async (params) => {
-      const { path: fp, content } = params;
-      try {
-        desktop.writeFile(fp, content);
-        return { success: true };
-      } catch(e) {
-        return { success: false, error: e.message };
-      }
-    }
-  },
-
-  run_terminal: {
-    name: 'Terminal',
-    description: '执行终端命令',
-    requires_confirm: true,
-    category: 'execution',
-    blocked_patterns: [/rm\s+-rf/, /format\s+[a-zA-Z]:/, /del\s+\/f/, />\s*\/dev\//],
-    execute: async (params) => {
-      const { command } = params;
-      for (const pattern of this.blocked_patterns) {
-        if (pattern.test(command)) return { success: false, error: 'BLOCKED: dangerous command detected' };
-      }
-      try {
-        const result = spawnSync(command, { shell: true, timeout: 15000, encoding: 'utf8' });
-        return { success: true, stdout: result.stdout?.slice(0, 3000), stderr: result.stderr?.slice(0, 1000) };
-      } catch(e) {
-        return { success: false, error: e.message };
-      }
-    }
-  },
-
-  open_app: {
-    name: 'Open App',
-    description: '打开本地应用程序',
-    requires_confirm: false,
-    category: 'system',
-    execute: async (params) => {
-      const { app } = params;
-      try {
-        desktop.openApplication(app);
-        return { success: true };
-      } catch(e) {
-        return { success: false, error: e.message };
-      }
-    }
-  },
-
-  send_notification: {
-    name: 'Send Notification',
-    description: '发送系统桌面通知',
-    requires_confirm: false,
-    category: 'system',
-    execute: async (params) => {
-      const { title, body } = params;
-      try {
-        const { Notification } = require('electron');
-        if (Notification.isSupported()) {
-          new Notification({ title: title || 'Polaris', body: body || '' }).show();
-        }
-        return { success: true };
-      } catch(e) {
-        return { success: false, error: e.message };
-      }
-    }
-  },
 };
 
 // ============================================================
-// Tool execution with confirmation tracking
+// Tool execution
 // ============================================================
 class ToolExecutor {
   constructor() {
@@ -165,9 +136,7 @@ class ToolExecutor {
     this.pendingConfirmations = new Map();
   }
 
-  getTool(name) {
-    return TOOLS[name] || null;
-  }
+  getTool(name) { return TOOLS[name] || null; }
 
   listTools() {
     return Object.entries(TOOLS).map(([id, t]) => ({
@@ -176,22 +145,14 @@ class ToolExecutor {
     }));
   }
 
-  /**
-   * Execute a tool, with confirmation check.
-   * Returns { confirmation_required, confirmation_id, result }
-   */
   async execute(toolName, params, autoConfirm = false) {
     const tool = TOOLS[toolName];
     if (!tool) return { success: false, error: `Unknown tool: ${toolName}` };
-
-    // Check confirmations
     if (tool.requires_confirm && !autoConfirm) {
       const confirmId = 'confirm_' + Date.now();
       this.pendingConfirmations.set(confirmId, { tool: toolName, params, timestamp: Date.now() });
       return { confirmation_required: true, confirmation_id: confirmId, tool: tool.name, params };
     }
-
-    // Execute
     try {
       const result = await tool.execute(params);
       this.history.push({ tool: toolName, params, result, timestamp: Date.now() });
@@ -211,15 +172,11 @@ class ToolExecutor {
   }
 
   rejectConfirmation(confirmId) {
-    const pending = this.pendingConfirmations.get(confirmId);
-    if (!pending) return { success: false, error: 'Confirmation not found' };
     this.pendingConfirmations.delete(confirmId);
     return { success: true, rejected: true };
   }
 
-  getHistory() {
-    return this.history.slice(-50);
-  }
+  getHistory() { return this.history.slice(-50); }
 }
 
 module.exports = { TOOLS, ToolExecutor };
