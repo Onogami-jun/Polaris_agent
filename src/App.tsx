@@ -5,7 +5,7 @@ import type{ChatMessage,Strategy}from'./store/chatSlice';
 import{saveSessions,loadSessions as ld}from'./store/persist';
 import SettingsPanel from'./components/SettingsPanel';
 
-const SUGGESTIONS=['背包容量50，3件物品价值60 100 120，重量10 20 30','排产5个任务，处理时间2 3 1 4 2','指派4个工人做4个任务，成本10 2 8 7  5 12 3 6  7 4 9 3  8 2 5 1','3辆车配送8个客户，距离矩阵和需求量如下'];const ENGINE='Polaris Solver';
+const SUGGESTIONS=['背包容量50，3件物品价值60 100 120，重量10 20 30','排产5个任务，处理时间2 3 1 4 2','指派4个工人做4个任务，成本10 2 8 7  5 12 3 6','车辆路径，5个客户，需求量1 2 1 3 2，车辆容量5'];
 
 const WinBtns=()=>(<div className="wb-row"><button onClick={()=>window.electronAPI?.minimize()}className="wb">&#xe000;</button><button onClick={()=>window.electronAPI?.maximize()}className="wb">&#xe001;</button><button onClick={()=>window.electronAPI?.close()}className="wb wb-close">&#xe003;</button></div>);
 
@@ -127,7 +127,7 @@ const App:React.FC=()=>{
                 {streaming?<button className="ia-st"onClick={()=>{stop.current=true;d(setStreaming(false));setThk('')}}>■</button>:<button className="ia-send"onClick={send}disabled={!inp.trim()}>↑</button>}
               </div>
             </div>
-            <div className="ia-status"><span>{{best_quality:'Best',cost_optimized:'Cost',ensemble:'Ensemble'}[strategy]} &middot; {activeModel}</span><span>{web?'Web: ON':''}</span></div>
+            <div className="ia-status"><span>{'SOLVER'} &middot; {activeModel}</span><span>{web?'WEB':'READY'}</span></div>
           </div>
         </div>
       </div>
