@@ -72,33 +72,47 @@ const App:React.FC=()=>{
 
   const query=useCallback(async(t:string,rgn?:boolean)=>{
     if(!t||streaming)return;stop.current=false;
+    console.log('[App] query start:',t.slice(0,50),'sessionId:',activeSessionId);
+    const sid=activeSessionId||'default';
     const imgs=fs.filter(f=>f.u.startsWith('data:image')).map(f=>f.u);
     const txts=fs.filter(f=>f.t).map(f=>'[File: '+f.n+']\n'+f.t).join('\n');
     setInp('');setFs([]);
-    if(!rgn){d(addMessage({sessionId:activeSessionId!,message:{id:'u'+Date.now(),role:'user',content:t,timestamp:Date.now()}}))}
+    if(!rgn){
+      console.log('[App] adding user message to session:',sid);
+      d(addMessage({sessionId:sid,message:{id:'u'+Date.now(),role:'user',content:t,timestamp:Date.now()}}));
+    }
     d(setStreaming(true));setThk('Thinking...');
-    if(/open|execute|organize|search|move|实验|跑数据|论文|benchmark|对比|Benders|分解|割平面|列生成|求解器.*对比|帮我设计|研究.*方案/.test(t)&&!/write|code|translate|explain|what|how/.test(t)){
-      try{const api=window.electronAPI;if(!api)throw new Error('Not ready');const p=await api.plannerGenerate(t);setPlan(p);setPlanId(p.id);d(setStreaming(false));setThk('');return}catch{}}
-    try{let ctx=t;if(txts)ctx+='\n\n'+txts;
-      if(web){try{const{webSearch}=await import('./utils/search');const r=await webSearch(t,settings.apiKeys.serper);if(r.length>0&&!r[0].title.includes('not configured'))ctx+='\n[Web]\n'+r.map((x:any)=>'- '+x.title+': '+x.snippet).join('\n')}catch{}}
-      const api=window.electronAPI;if(!api)throw new Error('API not ready');
+    try{
+      let ctx=t;if(txts)ctx+='\n\n'+txts;
+      if(web){try{const{webSearch}=await import('./utils/search');const r=await webSearch(t,settings.apiKeys.serper);if(r.length>0&&!r[0].title.includes('not configured'))ctx+='\n[Web]\n'+r.map((x:any)=>'- '+x.title+': '+x.snippet).join('\n')}catch(e){console.error('[App] web search error:',e)}}
+      const api=window.electronAPI;
+      console.log('[App] calling API, api available:',!!api);
+      if(!api)throw new Error('Electron API not ready — please restart the app');
       let res;
-      try{res=await api.queryStream({text:ctx,strategy,apiKeys:settings.apiKeys});if(stop.current)return}catch{res=await api.query({text:ctx,strategy,apiKeys:settings.apiKeys})}
-      if(stop.current)return;setThk(res.routing?.selected_models?.join(', ')||'');
-      let cnt=res.responses?.map((r:any)=>r.content||'').join('\n\n---\n\n')||'';
-      if(!cnt||cnt.trim().length===0){
-        console.warn('[Polaris] Empty response:',JSON.stringify(res).slice(0,300));
-        showToast('服务器返回空回复 — 请重试','warn');
-        cnt='*[空回复 — DeepSeek API 未返回内容，请重试或检查网络]*';
+      try{
+        console.log('[App] trying queryStream');
+        res=await api.queryStream({text:ctx,strategy,apiKeys:settings.apiKeys});
+      }catch(e){
+        console.warn('[App] queryStream failed, trying query:',e.message||e);
+        res=await api.query({text:ctx,strategy,apiKeys:settings.apiKeys});
       }
-      if(res.workflow_steps?.length)cnt=`**[Workflow]**\n${res.workflow_steps.map((s:any)=>(s.error?'✗ ':'✓ ')+s.id+': '+s.agent).join('\n')}\n\n---\n\n${cnt}`;
-      if(res.ensemble?.disagreements?.length)cnt+=`\n\n**Disagreements detected:**\n${res.ensemble.disagreements.map((d:any)=>'> ['+d.type+'] '+d.model_a+' vs '+d.model_b).join('\n')}`;
-      if(settings.memory.enabled&&cnt.length>50)d(addMemory({key:t.slice(0,40),value:cnt.slice(0,200)}));
-      d(addMessage({sessionId:activeSessionId!,message:{id:'a'+Date.now(),role:'assistant',content:cnt,timestamp:Date.now(),model:res.routing?.selected_models?.join(', ')||'',routing:{intent:res.routing?.top_intent,models:res.routing?.selected_models||[],rationale:res.routing?.rationale||''}}}));
+      console.log('[App] got response:',JSON.stringify(res).slice(0,200));
+      if(stop.current)return;
+      setThk(res?.routing?.selected_models?.join(', ')||'');
+      let cnt=(res?.responses||[]).map((r:any)=>r?.content||'').join('\n\n')||'';
+      if(!cnt||cnt.trim().length===0){
+        console.warn('[App] WARNING: empty response content');
+        showToast('服务器返回空回复 — 请重试','warn');
+        cnt='*[空回复] DeepSeek API 未返回内容，请重试或检查网络*';
+      }
+      console.log('[App] adding AI message, content length:',cnt.length);
+      d(addMessage({sessionId:sid,message:{id:'a'+Date.now(),role:'assistant',content:cnt,timestamp:Date.now(),model:res?.routing?.selected_models?.join(', ')||'',routing:{intent:res?.routing?.top_intent,models:res?.routing?.selected_models||[],rationale:res?.routing?.rationale||''}}}));
     }catch(e:any){
+      console.error('[App] query ERROR:',e.message||e,e.stack?.slice(0,200));
       showToast('连接失败: '+(e.message||'未知错误'),'error');
-      if(!stop.current)d(addMessage({sessionId:activeSessionId!,message:{id:'e'+Date.now(),role:'assistant',content:'Error: '+(e.message||'Connection failed'),timestamp:Date.now()}}))
-    }d(setStreaming(false));setThk('');
+      d(addMessage({sessionId:sid,message:{id:'e'+Date.now(),role:'assistant',content:'Error: '+(e.message||'Connection failed'),timestamp:Date.now()}}));
+    }
+    d(setStreaming(false));setThk('');
   },[streaming,strategy,activeSessionId,d,fs,web,settings]);
 
   const send=()=>{const t=inp.trim();if(!t||streaming)return;query(t)}
