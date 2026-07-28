@@ -45,7 +45,8 @@ const App:React.FC=()=>{
   const[cid,setCid]=useState('');const[tpl,setTpl]=useState(false);const[web,setWeb]=useState(false);
   const[drag,setDrag]=useState(false);const[cmd,setCmd]=useState(false);
   const[splash,setSplash]=useState(true);
-  useEffect(()=>{const t=setTimeout(()=>setSplash(false),2200);return()=>clearTimeout(t)},[]);
+  const[splashFade,setSplashFade]=useState(false);
+  useEffect(()=>{const t=setTimeout(()=>{setSplashFade(true);setTimeout(()=>setSplash(false),500)},2000);return()=>clearTimeout(t)},[]);
   const stop=useRef(false);const act=sessions.find(s=>s.id===activeSessionId);
   const[interventions,setInterventions]=useState<any[]>([]);
   const[plan,setPlan]=useState<any>(null);const[planProg,setPlanProg]=useState<any>(null);const[planId,setPlanId]=useState('');
@@ -104,7 +105,7 @@ const App:React.FC=()=>{
   const activeModel=sc.settings.apiKeys.anthropic?'Claude Sonnet':sc.settings.apiKeys.openai?'GPT-4o':'DeepSeek';
 
   return(<>
-    {splash&&<div className="splash"><div className="splash-logo">POLARIS SOLVER</div><div className="splash-loader"><div className="splash-ring"/><div className="splash-ring"/><div className="splash-ring"/><div className="splash-dot"/></div></div>}
+    {splash&&<div className={'splash'+(splashFade?' hidden':'')}><div className="splash-logo">POLARIS SOLVER</div><div className="splash-loader"><div className="splash-ring"/><div className="splash-ring"/><div className="splash-ring"/><div className="splash-dot"/></div></div>}
     <div className={"app"+(splash?'':' app-loaded')}onDragOver={e=>{e.preventDefault();setDrag(true)}}onDragLeave={()=>setDrag(false)}onDrop={dp}>
     <div className="tb"><div className="tb-l"><span className="tb-lg">Polaris</span><span className="tb-meta">v3</span><span className="tb-tokens">{contextTokens.used>0?Math.round(contextTokens.used/1000)+'k':''}</span></div><div className="tb-r"><button className="tb-btn"onClick={()=>d(toggleSidebar())}title="Sidebar (Ctrl+B)">☰</button><button className="tb-btn"onClick={()=>setCmd(true)}title="Command Palette (Ctrl+P)">⌘</button><button className="tb-btn"onClick={ex}title="Export">↓</button><button className="tb-btn"onClick={()=>d(toggleSettings())}title="Settings (Ctrl+,)">⚙</button><WinBtns/></div></div>
     {drag&&<div className="dov"><div className="doz"><p>Drop files to upload</p></div></div>}
