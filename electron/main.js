@@ -43,7 +43,19 @@ function createTray() {
 }
 
 // IPC: AI
-ipcMain.handle('polaris:query', async (_e, { text, strategy, systemPrompt, images, apiKeys }) => executeQuery(text, strategy, systemPrompt, images, undefined, apiKeys || {}));
+ipcMain.handle('polaris:query', async (_e, { text, strategy, systemPrompt, images, apiKeys }) => {
+  console.log('[polaris:query] text:', (text||'').slice(0,80));
+  try {
+    const result = await executeQuery(text, strategy, systemPrompt, images, undefined, apiKeys || {});
+    const responseContent = result?.responses?.[0]?.content || '';
+    console.log('[polaris:query] response:', responseContent.slice(0,80));
+    if (!responseContent) console.error('[polaris:query] WARNING: empty response!', JSON.stringify(result).slice(0,200));
+    return result;
+  } catch(e) {
+    console.error('[polaris:query] ERROR:', e.message);
+    return { routing:{strategy:'error',top_intent:'error',selected_models:[],rationale:e.message}, responses:[{model_id:'error',model_display:'Error',content:'处理出错：'+e.message}], total_latency_ms:0 };
+  }
+});
 ipcMain.handle('polaris:queryStream', async (event, { text, strategy, systemPrompt, images, apiKeys }) => {
   const oc = (data) => { if (win && !win.isDestroyed()) win.webContents.send('polaris:stream-chunk', data); };
   try { const r = await executeQuery(text, strategy, systemPrompt, images, oc, apiKeys || {}); if (win && !win.isDestroyed()) win.webContents.send('polaris:stream-end', r); return r; }
