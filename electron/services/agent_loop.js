@@ -60,7 +60,7 @@ function callLLM(messages, apiKey, onChunk) {
   const key = apiKey || 'sk-665f376d7c0f4b91b4c3029bf82e670a';
   return new Promise((res, rej) => {
     const body = JSON.stringify({
-      model: 'deepseek-chat',
+      model: 'deepseek-v4-flash',
       messages,
       max_tokens: 4096,
       temperature: 0.3,
@@ -183,11 +183,11 @@ async function runAgent(userMessage, conversationHistory, tools, apiKey, onChunk
     { role: 'user', content: userMessage },
   ];
 
-  const maxTurns = 15;
+  const maxTurns = 5;  // Keep it short — most tasks are 1-2 turns
   let finalResponse = '';
 
   for (let turn = 0; turn < maxTurns; turn++) {
-    const result = await agentTurn(messages, tools, apiKey, onChunk && (turn === 0 ? onChunk : null));
+    const result = await agentTurn(messages, tools, apiKey, turn === 0 ? onChunk : null);
     if (result.done) {
       finalResponse = result.response;
       break;
