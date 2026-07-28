@@ -8,10 +8,9 @@ import SettingsPanel from'./components/SettingsPanel';
 const SUGGESTIONS=['背包容量50，3件物品价值60 100 120，重量10 20 30','排产5个任务，处理时间2 3 1 4 2','指派4个工人做4个任务，成本10 2 8 7  5 12 3 6','车辆路径，5个客户，需求量1 2 1 3 2，车辆容量5'];
 
 // Toast notification component
-const Toast:React.FC<{toasts:Array<{id:number; msg:string; type:string}>; onDone:(id:number)=>void}>=({toasts,onDone})=>{
-  useEffect(()=>{toasts.forEach(t=>{if(!t._timer)setTimeout(()=>onDone(t.id),4000)})},[toasts]);
+const Toast:React.FC<{toasts:any[];onDone:(id:number)=>void}>=({toasts,onDone})=>{
   return <div style={{position:'fixed',bottom:24,right:24,zIndex:9999,display:'flex',flexDirection:'column',gap:8}}>
-    {toasts.map(t=><div key={t.id} style={{padding:'10px 18px',borderRadius:10,fontSize:13,color:'#fff',maxWidth:380,background:t.type==='error'?'#e53e3e':t.type==='warn'?'#d69e2e':'#3d36e0',boxShadow:'0 4px 16px rgba(0,0,0,.2)',animation:'toastIn .3s ease-out'}}>{t.msg}</div>)}
+    {toasts.map((t:any)=><div key={t.id} style={{padding:'10px 18px',borderRadius:10,fontSize:13,color:'#fff',maxWidth:380,background:t.type==='error'?'#e53e3e':t.type==='warn'?'#d69e2e':'#3d36e0',boxShadow:'0 4px 16px rgba(0,0,0,.2)',animation:'toastIn .3s ease-out'}}>{t.msg}</div>)}
   </div>;
 };
 
@@ -56,7 +55,8 @@ const App:React.FC=()=>{
   const[splashFade,setSplashFade]=useState(false);
   useEffect(()=>{const t=setTimeout(()=>{setSplashFade(true);setTimeout(()=>setSplash(false),500)},2000);return()=>clearTimeout(t)},[]);
   const[toasts,setToasts]=useState<any[]>([]);
-  let _tid=0;
+  const dispatchRef=useRef(d);
+  dispatchRef.current=d;
   const showToast=(msg:string,type:string='error')=>{const id=Date.now();setToasts(p=>[...p.slice(-3),{id,msg,type}]);setTimeout(()=>setToasts(p=>p.filter(t=>t.id!==id)),4000)};
   const stop=useRef(false);const act=sessions.find(s=>s.id===activeSessionId);
   const[interventions,setInterventions]=useState<any[]>([]);
@@ -68,7 +68,7 @@ const App:React.FC=()=>{
   useEffect(()=>{if(sessions.length>0){const t=setTimeout(()=>saveSessions(sessions),500);return()=>clearTimeout(t)}},[sessions]);
   useEffect(()=>{cr.current?.scrollTo({top:cr.current.scrollHeight,behavior:'smooth'})},[act?.messages,thk,interventions]);
   useEffect(()=>{const h=(e:KeyboardEvent)=>{if((e.ctrlKey||e.metaKey)&&e.key==='p'){e.preventDefault();setCmd(true)}if(e.key==='Escape'){stop.current=true;d(setStreaming(false));setThk('');setCmd(false)}if((e.ctrlKey||e.metaKey)&&e.key==='n'){e.preventDefault();d(ns())}if((e.ctrlKey||e.metaKey)&&e.key==='b'){e.preventDefault();d(toggleSidebar())}if((e.ctrlKey||e.metaKey)&&e.key===','){e.preventDefault();d(toggleSettings())}};window.addEventListener('keydown',h);return()=>window.removeEventListener('keydown',h)},[d]);
-  useEffect(()=>{const api=window.electronAPI;if(!api)return;api.monitorStart();api.onIntervention((card:any)=>{card.ts=Date.now();setInterventions(p=>[...p.slice(-4),card])});api.onPlanProgress((data:any)=>setPlanProg(data));api.onStreamError((d:any)=>{showToast('Stream Error: '+(d?.message||'未知'),'error');d(setStreaming(false));setThk('')});let kc=0;const onKb=()=>{kc++;if(kc%30===0)api.monitorUpdate({count:kc,lastPress:Date.now(),window:document.title})};window.addEventListener('keydown',onKb);return()=>window.removeEventListener('keydown',onKb)},[]);
+  useEffect(()=>{const api=window.electronAPI;if(!api)return;api.monitorStart();api.onIntervention((card:any)=>{card.ts=Date.now();setInterventions(p=>[...p.slice(-4),card])});api.onPlanProgress((data:any)=>setPlanProg(data));api.onStreamError((ed:any)=>{showToast('Stream Error: '+(ed?.message||'未知'),'error');dispatchRef.current(setStreaming(false));setThk('')});let kc=0;const onKb=()=>{kc++;if(kc%30===0)api.monitorUpdate({count:kc,lastPress:Date.now(),window:document.title})};window.addEventListener('keydown',onKb);return()=>window.removeEventListener('keydown',onKb)},[]);
 
   const query=useCallback(async(t:string,rgn?:boolean)=>{
     if(!t||streaming)return;stop.current=false;
