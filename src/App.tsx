@@ -63,7 +63,7 @@ const App:React.FC=()=>{
     setInp('');setFs([]);
     if(!rgn){d(addMessage({sessionId:activeSessionId!,message:{id:'u'+Date.now(),role:'user',content:t,timestamp:Date.now()}}))}
     d(setStreaming(true));setThk('Thinking...');
-    if(/[open|execute|organize|search|move]/.test(t)&&!/write|code|translate|analyze|explain|what|how|compare/.test(t)){
+    if(/open|execute|organize|search|move|实验|跑数据|论文|benchmark|对比|Benders|分解|割平面|列生成|求解器.*对比|帮我设计|研究.*方案/.test(t)&&!/write|code|translate|explain|what|how/.test(t)){
       try{const api=window.electronAPI;if(!api)throw new Error('Not ready');const p=await api.plannerGenerate(t);setPlan(p);setPlanId(p.id);d(setStreaming(false));setThk('');return}catch{}}
     try{let ctx=t;if(txts)ctx+='\n\n'+txts;
       if(web){try{const{webSearch}=await import('./utils/search');const r=await webSearch(t,settings.apiKeys.serper);if(r.length>0&&!r[0].title.includes('not configured'))ctx+='\n[Web]\n'+r.map((x:any)=>'- '+x.title+': '+x.snippet).join('\n')}catch{}}
