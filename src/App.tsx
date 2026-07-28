@@ -7,6 +7,14 @@ import SettingsPanel from'./components/SettingsPanel';
 
 const SUGGESTIONS=['背包容量50，3件物品价值60 100 120，重量10 20 30','排产5个任务，处理时间2 3 1 4 2','指派4个工人做4个任务，成本10 2 8 7  5 12 3 6','车辆路径，5个客户，需求量1 2 1 3 2，车辆容量5'];
 
+// Toast notification component
+const Toast:React.FC<{toasts:Array<{id:number; msg:string; type:string}>; onDone:(id:number)=>void}>=({toasts,onDone})=>{
+  useEffect(()=>{toasts.forEach(t=>{if(!t._timer)setTimeout(()=>onDone(t.id),4000)})},[toasts]);
+  return <div style={{position:'fixed',bottom:24,right:24,zIndex:9999,display:'flex',flexDirection:'column',gap:8}}>
+    {toasts.map(t=><div key={t.id} style={{padding:'10px 18px',borderRadius:10,fontSize:13,color:'#fff',maxWidth:380,background:t.type==='error'?'#e53e3e':t.type==='warn'?'#d69e2e':'#3d36e0',boxShadow:'0 4px 16px rgba(0,0,0,.2)',animation:'toastIn .3s ease-out'}}>{t.msg}</div>)}
+  </div>;
+};
+
 const WinBtns=()=>(<div className="wb-row"><button onClick={()=>window.electronAPI?.minimize()}className="wb">&#xe000;</button><button onClick={()=>window.electronAPI?.maximize()}className="wb">&#xe001;</button><button onClick={()=>window.electronAPI?.close()}className="wb wb-close">&#xe003;</button></div>);
 
 const MsgRow:React.FC<{msg:ChatMessage;isLast:boolean;onCopy:()=>void;onRegen:()=>void;onEdit:(v:string)=>void;onBranch:()=>void;cid:boolean}>=({msg,isLast,onCopy,onRegen,onEdit,onBranch,cid})=>{
@@ -47,6 +55,9 @@ const App:React.FC=()=>{
   const[splash,setSplash]=useState(true);
   const[splashFade,setSplashFade]=useState(false);
   useEffect(()=>{const t=setTimeout(()=>{setSplashFade(true);setTimeout(()=>setSplash(false),500)},2000);return()=>clearTimeout(t)},[]);
+  const[toasts,setToasts]=useState<any[]>([]);
+  let _tid=0;
+  const showToast=(msg:string,type:string='error')=>{const id=Date.now();setToasts(p=>[...p.slice(-3),{id,msg,type}]);setTimeout(()=>setToasts(p=>p.filter(t=>t.id!==id)),4000)};
   const stop=useRef(false);const act=sessions.find(s=>s.id===activeSessionId);
   const[interventions,setInterventions]=useState<any[]>([]);
   const[plan,setPlan]=useState<any>(null);const[planProg,setPlanProg]=useState<any>(null);const[planId,setPlanId]=useState('');
@@ -57,7 +68,7 @@ const App:React.FC=()=>{
   useEffect(()=>{if(sessions.length>0){const t=setTimeout(()=>saveSessions(sessions),500);return()=>clearTimeout(t)}},[sessions]);
   useEffect(()=>{cr.current?.scrollTo({top:cr.current.scrollHeight,behavior:'smooth'})},[act?.messages,thk,interventions]);
   useEffect(()=>{const h=(e:KeyboardEvent)=>{if((e.ctrlKey||e.metaKey)&&e.key==='p'){e.preventDefault();setCmd(true)}if(e.key==='Escape'){stop.current=true;d(setStreaming(false));setThk('');setCmd(false)}if((e.ctrlKey||e.metaKey)&&e.key==='n'){e.preventDefault();d(ns())}if((e.ctrlKey||e.metaKey)&&e.key==='b'){e.preventDefault();d(toggleSidebar())}if((e.ctrlKey||e.metaKey)&&e.key===','){e.preventDefault();d(toggleSettings())}};window.addEventListener('keydown',h);return()=>window.removeEventListener('keydown',h)},[d]);
-  useEffect(()=>{const api=window.electronAPI;if(!api)return;api.monitorStart();api.onIntervention((card:any)=>{card.ts=Date.now();setInterventions(p=>[...p.slice(-4),card])});api.onPlanProgress((data:any)=>setPlanProg(data));let kc=0;const onKb=()=>{kc++;if(kc%30===0)api.monitorUpdate({count:kc,lastPress:Date.now(),window:document.title})};window.addEventListener('keydown',onKb);return()=>window.removeEventListener('keydown',onKb)},[]);
+  useEffect(()=>{const api=window.electronAPI;if(!api)return;api.monitorStart();api.onIntervention((card:any)=>{card.ts=Date.now();setInterventions(p=>[...p.slice(-4),card])});api.onPlanProgress((data:any)=>setPlanProg(data));api.onStreamError((d:any)=>{showToast('Stream Error: '+(d?.message||'未知'),'error');d(setStreaming(false));setThk('')});let kc=0;const onKb=()=>{kc++;if(kc%30===0)api.monitorUpdate({count:kc,lastPress:Date.now(),window:document.title})};window.addEventListener('keydown',onKb);return()=>window.removeEventListener('keydown',onKb)},[]);
 
   const query=useCallback(async(t:string,rgn?:boolean)=>{
     if(!t||streaming)return;stop.current=false;
@@ -75,11 +86,18 @@ const App:React.FC=()=>{
       try{res=await api.queryStream({text:ctx,strategy,apiKeys:settings.apiKeys});if(stop.current)return}catch{res=await api.query({text:ctx,strategy,apiKeys:settings.apiKeys})}
       if(stop.current)return;setThk(res.routing?.selected_models?.join(', ')||'');
       let cnt=res.responses?.map((r:any)=>r.content||'').join('\n\n---\n\n')||'';
+      if(!cnt||cnt.trim().length===0){
+        console.warn('[Polaris] Empty response:',JSON.stringify(res).slice(0,300));
+        showToast('服务器返回空回复 — 请重试','warn');
+        cnt='*[空回复 — DeepSeek API 未返回内容，请重试或检查网络]*';
+      }
       if(res.workflow_steps?.length)cnt=`**[Workflow]**\n${res.workflow_steps.map((s:any)=>(s.error?'✗ ':'✓ ')+s.id+': '+s.agent).join('\n')}\n\n---\n\n${cnt}`;
       if(res.ensemble?.disagreements?.length)cnt+=`\n\n**Disagreements detected:**\n${res.ensemble.disagreements.map((d:any)=>'> ['+d.type+'] '+d.model_a+' vs '+d.model_b).join('\n')}`;
       if(settings.memory.enabled&&cnt.length>50)d(addMemory({key:t.slice(0,40),value:cnt.slice(0,200)}));
       d(addMessage({sessionId:activeSessionId!,message:{id:'a'+Date.now(),role:'assistant',content:cnt,timestamp:Date.now(),model:res.routing?.selected_models?.join(', ')||'',routing:{intent:res.routing?.top_intent,models:res.routing?.selected_models||[],rationale:res.routing?.rationale||''}}}));
-    }catch(e:any){if(!stop.current)d(addMessage({sessionId:activeSessionId!,message:{id:'e'+Date.now(),role:'assistant',content:'Error: '+(e.message||'Connection failed'),timestamp:Date.now()}}))}
+    }catch(e:any){
+      showToast('连接失败: '+(e.message||'未知错误'),'error');
+      if(!stop.current)d(addMessage({sessionId:activeSessionId!,message:{id:'e'+Date.now(),role:'assistant',content:'Error: '+(e.message||'Connection failed'),timestamp:Date.now()}}))
     d(setStreaming(false));setThk('');
   },[streaming,strategy,activeSessionId,d,fs,web,settings]);
 
@@ -106,6 +124,7 @@ const App:React.FC=()=>{
 
   return(<>
     {splash&&<div className={'splash'+(splashFade?' hidden':'')}><div className="splash-logo">POLARIS SOLVER</div><div className="splash-loader"><div className="splash-ring"/><div className="splash-ring"/><div className="splash-ring"/><div className="splash-dot"/></div></div>}
+    {toasts.length>0&&<Toast toasts={toasts} onDone={(id:number)=>setToasts(p=>p.filter(t=>t.id!==id))}/>}
     <div className={"app"+(splash?'':' app-loaded')}onDragOver={e=>{e.preventDefault();setDrag(true)}}onDragLeave={()=>setDrag(false)}onDrop={dp}>
     <div className="tb"><div className="tb-l"><span className="tb-lg">Polaris</span><span className="tb-meta">v3</span><span className="tb-tokens">{contextTokens.used>0?Math.round(contextTokens.used/1000)+'k':''}</span></div><div className="tb-r"><button className="tb-btn"onClick={()=>d(toggleSidebar())}title="Sidebar (Ctrl+B)">☰</button><button className="tb-btn"onClick={()=>setCmd(true)}title="Command Palette (Ctrl+P)">⌘</button><button className="tb-btn"onClick={ex}title="Export">↓</button><button className="tb-btn"onClick={()=>d(toggleSettings())}title="Settings (Ctrl+,)">⚙</button><WinBtns/></div></div>
     {drag&&<div className="dov"><div className="doz"><p>Drop files to upload</p></div></div>}

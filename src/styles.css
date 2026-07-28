@@ -58,6 +58,7 @@ html,body,#root{height:100%;background:var(--bg);color:var(--text);overflow:hidd
 @keyframes logoIn{to{opacity:1;transform:translateY(0)}}
 @keyframes ringSpin{0%{transform:rotate(0deg);opacity:.3}50%{transform:rotate(180deg);opacity:1}100%{transform:rotate(360deg);opacity:.3}}
 @keyframes dotPulse{0%,100%{transform:scale(.8);opacity:.4}50%{transform:scale(1.4);opacity:1}}
+@keyframes toastIn{from{opacity:0;transform:translateX(40px)}to{opacity:1;transform:translateX(0)}}
 
 /* ========== SHELL ========== */
 .app{display:flex;flex-direction:column;height:100vh;overflow:hidden;background:var(--bg)}
