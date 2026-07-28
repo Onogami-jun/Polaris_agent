@@ -80,6 +80,59 @@ const TOOLS = {
     }
   },
 
+  polaris_research: {
+    name: 'Research Pipeline',
+    description: '全流程科研实验：自动生成多组实例，对比多个求解器，输出 LaTeX/Markdown 论文表格',
+    requires_confirm: false,
+    category: 'solver',
+    execute: async (params) => {
+      const { problem, sizes, solvers, seed } = params;
+      const p = problem || 'knapsack';
+      const sz = sizes || '10,20,50';
+      const sl = solvers || 'highs,naive';
+      const sd = seed || 42;
+      const code = `from polaris.research import pipeline
+import json
+r = pipeline("${p}", [${sz}], "${sl}".split(","), seed=${sd})
+print("=== MARKDOWN ===")
+print(r.markdown_table())
+print("=== LATEX ===")
+print(r.latex_table())
+print("=== CONVERGENCE ===")
+print(json.dumps(r.convergence_data(), indent=2))
+print("=== DONE ===")`;
+      let result = spawnSync('python', ['-c', code], { timeout: 300000, encoding: 'utf8' });
+      if (result.error) result = spawnSync('python3', ['-c', code], { timeout: 300000, encoding: 'utf8' });
+      const output = result.stdout?.trim() || result.stderr?.trim() || 'No output';
+      return { success: true, result: output };
+    }
+  },
+
+  polaris_analyze: {
+    name: 'Analyze Structure',
+    description: '分析优化模型结构：检测 block-angular、time-indexed 等特征，推荐分解策略',
+    requires_confirm: false,
+    category: 'solver',
+    execute: async (params) => {
+      const { prompt } = params;
+      const normalized = (prompt||'').replace(/"/g,'\\"').replace(/\n/g,' ').slice(0,200);
+      const code = `from polaris.chat import _parse,_build_model
+from polaris.analyze.structure import analyze
+try:
+ p=_parse("${normalized}")
+ m=_build_model(p)
+ s=analyze(m)
+ print("Labels:",[l.name for l in s.labels])
+ print("Strategy:",s.strategy.value)
+ print("Vars:",s.n_scalar_vars,"Cons:",s.n_constraints)
+except Exception as e:
+ print("Error:",e)`;
+      let r=spawnSync('python',['-c',code],{timeout:15000,encoding:'utf8'});
+      if(r.error)r=spawnSync('python3',['-c',code],{timeout:15000,encoding:'utf8'});
+      return {success:true,result:r.stdout?.trim()||r.stderr?.trim()||'No output'};
+    }
+  },
+
   run_code: {
     name: 'Run Code',
     description: '在沙箱中执行 Python 代码（可用于 polaris 引擎脚本）',
