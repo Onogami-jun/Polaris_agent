@@ -84,7 +84,7 @@ const App:React.FC=()=>{
     d(setStreaming(true));setThk('Thinking...');
     try{
       let ctx=t;if(txts)ctx+='\n\n'+txts;
-      if(web){try{const{webSearch}=await import('./utils/search');const r=await webSearch(t,settings.apiKeys.serper);if(r.length>0&&!r[0].title.includes('not configured'))ctx+='\n[Web]\n'+r.map((x:any)=>'- '+x.title+': '+x.snippet).join('\n')}catch(e){console.error('[App] web search error:',e)}}
+      if(web){try{const{webSearch}=await import('./utils/search');const r=await webSearch(t,settings.apiKeys.serper);if(r.length>0&&!r[0].title.includes('not configured'))ctx+='\n[Web]\n'+r.map((x:any)=>'- '+x.title+': '+x.snippet).join('\n')}catch(e:any){console.error('[App] web search error:',e?.message||e)}}
       const api=window.electronAPI;
       console.log('[App] calling API, api available:',!!api);
       if(!api)throw new Error('Electron API not ready — please restart the app');
@@ -92,8 +92,8 @@ const App:React.FC=()=>{
       try{
         console.log('[App] trying queryStream');
         res=await api.queryStream({text:ctx,strategy,apiKeys:settings.apiKeys});
-      }catch(e){
-        console.warn('[App] queryStream failed, trying query:',e.message||e);
+      }catch(e:any){
+        console.warn('[App] queryStream failed, trying query:',e?.message||e);
         res=await api.query({text:ctx,strategy,apiKeys:settings.apiKeys});
       }
       console.log('[App] got response:',JSON.stringify(res).slice(0,200));
