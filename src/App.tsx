@@ -98,7 +98,7 @@ const App:React.FC=()=>{
     }catch(e:any){
       showToast('连接失败: '+(e.message||'未知错误'),'error');
       if(!stop.current)d(addMessage({sessionId:activeSessionId!,message:{id:'e'+Date.now(),role:'assistant',content:'Error: '+(e.message||'Connection failed'),timestamp:Date.now()}}))
-    d(setStreaming(false));setThk('');
+    }d(setStreaming(false));setThk('');
   },[streaming,strategy,activeSessionId,d,fs,web,settings]);
 
   const send=()=>{const t=inp.trim();if(!t||streaming)return;query(t)}
