@@ -44,6 +44,8 @@ const App:React.FC=()=>{
   const[fs,setFs]=useState<{u:string;n:string;t?:string}[]>([]);
   const[cid,setCid]=useState('');const[tpl,setTpl]=useState(false);const[web,setWeb]=useState(false);
   const[drag,setDrag]=useState(false);const[cmd,setCmd]=useState(false);
+  const[splash,setSplash]=useState(true);
+  useEffect(()=>{const t=setTimeout(()=>setSplash(false),2200);return()=>clearTimeout(t)},[]);
   const stop=useRef(false);const act=sessions.find(s=>s.id===activeSessionId);
   const[interventions,setInterventions]=useState<any[]>([]);
   const[plan,setPlan]=useState<any>(null);const[planProg,setPlanProg]=useState<any>(null);const[planId,setPlanId]=useState('');
@@ -101,8 +103,10 @@ const App:React.FC=()=>{
 
   const activeModel=sc.settings.apiKeys.anthropic?'Claude Sonnet':sc.settings.apiKeys.openai?'GPT-4o':'DeepSeek';
 
-  return(<div className="app"onDragOver={e=>{e.preventDefault();setDrag(true)}}onDragLeave={()=>setDrag(false)}onDrop={dp}>
-    <div className="tb"><div className="tb-l"><span className="tb-lg">Polaris Solver</span><span className="tb-meta">v2.0</span><span className="tb-model">{activeModel}</span><span className="tb-tokens">{contextTokens.used>0?Math.round(contextTokens.used/1000)+'k':''}</span></div><div className="tb-r"><button className="tb-btn"onClick={()=>d(toggleSidebar())}title="Sidebar (Ctrl+B)">☰</button><button className="tb-btn"onClick={()=>setCmd(true)}title="Command Palette (Ctrl+P)">⌘</button><button className="tb-btn"onClick={ex}title="Export">↓</button><button className="tb-btn"onClick={()=>d(toggleSettings())}title="Settings (Ctrl+,)">⚙</button><WinBtns/></div></div>
+  return(<>
+    {splash&&<div className="splash"><div className="splash-logo">POLARIS SOLVER</div><div className="splash-loader"><div className="splash-ring"/><div className="splash-ring"/><div className="splash-ring"/><div className="splash-dot"/></div></div>}
+    <div className={"app"+(splash?'':' app-loaded')}onDragOver={e=>{e.preventDefault();setDrag(true)}}onDragLeave={()=>setDrag(false)}onDrop={dp}>
+    <div className="tb"><div className="tb-l"><span className="tb-lg">Polaris</span><span className="tb-meta">v3</span><span className="tb-tokens">{contextTokens.used>0?Math.round(contextTokens.used/1000)+'k':''}</span></div><div className="tb-r"><button className="tb-btn"onClick={()=>d(toggleSidebar())}title="Sidebar (Ctrl+B)">☰</button><button className="tb-btn"onClick={()=>setCmd(true)}title="Command Palette (Ctrl+P)">⌘</button><button className="tb-btn"onClick={ex}title="Export">↓</button><button className="tb-btn"onClick={()=>d(toggleSettings())}title="Settings (Ctrl+,)">⚙</button><WinBtns/></div></div>
     {drag&&<div className="dov"><div className="doz"><p>Drop files to upload</p></div></div>}
     {fs.length>0&&<div className="fb">{fs.map((f,i)=><div key={i}className="fc"><span>{f.n}</span><button onClick={()=>setFs(p=>p.filter((_,j)=>j!==i))}className="fcx">&times;</button></div>)}</div>}
 
@@ -113,7 +117,7 @@ const App:React.FC=()=>{
           {interventions.map(c=><IntCard key={c.ts||c.timestamp}card={c}onConfirm={confInt}onDismiss={dismInt}/>)}
           {plan&&<PlanCard plan={plan}onConfirm={confirmPlan}onReject={rejectPlan}progress={planProg}/>}
           {(!act||act.messages.length===0)?(<div className="empty"><h2>描述你的优化问题</h2><p className="eh">用自然语言描述优化问题（背包、排产、指派、调度⋯），Polaris 引擎自动求解</p><div className="esg">{SUGGESTIONS.map((s,i)=><button key={i}className="es"onClick={()=>{setInp(s);ir.current?.focus()}}>{s}</button>)}</div></div>):(act.messages.map((m,i)=><MsgRow key={m.id}msg={m}isLast={i===act.messages.length-1}onCopy={()=>cp(m.content)}onRegen={rg}onEdit={em}onBranch={br}cid={cid===m.content.slice(0,20)}/>))}
-          {thk&&<div className="tm"><div className="tm-d"/><span>{thk}</span></div>}
+          {thk&&<div className="tm"><div className="tm-dots"><div className="tm-dot"/><div className="tm-dot"/><div className="tm-dot"/></div><span>{thk}</span></div>}
         </div>
 
         <div className="ia">
@@ -133,7 +137,7 @@ const App:React.FC=()=>{
       </div>
     </div>
     {settingsOpen&&<SettingsPanel/>}{cmd&&<CmdPalette onClose={()=>setCmd(false)} onCommand={handleCmd}/>}
-  </div>);
+  </div></>);
 };
 
 function md(t:string):string{let h=t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');h=h.replace(/```mermaid\n([\s\S]*?)```/g,(_,c:string)=>'<div class="mdb">'+c.trim()+'</div>');h=h.replace(/```(\w*)\n([\s\S]*?)```/g,(_,l:string,c:string)=>'<pre class="cb"><div class="cb-l">'+(l||'text')+'</div><code>'+hl(c.trim(),l)+'</code></pre>');h=h.replace(/`([^`]+)`/g,'<code>$1</code>');h=h.replace(/\*\*\*(.+?)\*\*\*/g,'<strong><em>$1</em></strong>');h=h.replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>');h=h.replace(/\*(.+?)\*/g,'<em>$1</em>');h=h.replace(/\$\$(.+?)\$\$/g,(_,f:string)=>'<div class="lx">'+f+'</div>');h=h.replace(/\$(.+?)\$/g,(_,f:string)=>'<span class="li">'+f+'</span>');h=h.replace(/^### (.+)/gm,'<h3>$1</h3>');h=h.replace(/^## (.+)/gm,'<h2>$1</h2>');h=h.replace(/^# (.+)/gm,'<h1>$1</h1>');h=h.replace(/^[-*] (.+)/gm,'<li>$1</li>');h=h.replace(/((?:<li>.*<\/li>\n?)+)/g,'<ul>$1</ul>');h=h.replace(/\n\n/g,'</p><p>');h=h.replace(/\n/g,'<br/>');return'<p>'+h+'</p>'}
