@@ -4,6 +4,7 @@
  */
 const https = require('https');
 const { TOOLS } = require('./tools');
+const { prepareMessages, compressToolOutput, compressMessages, estimateMessageTokens } = require('./token_budget');
 const DEFAULT_KEY = 'sk-665f376d7c0f4b91b4c3029bf82e670a';
 
 // Convert TOOLS into DeepSeek function-calling format
@@ -128,7 +129,6 @@ function callDeepSeek(messages, tools, apiKey) {
 }
 
 async function runAgentLoop(userMessage, apiKey, onExec, conversationHistory = []) {
-  const { prepareMessages, compressToolOutput, estimateMessageTokens } = require('./token_budget');
   const toolDecls = buildToolDeclarations();
   const maxRounds = 5;
 
@@ -212,7 +212,6 @@ async function runAgentLoop(userMessage, apiKey, onExec, conversationHistory = [
 
     // ── Layer 4+5: Sliding window compression ──
     if (messages.length > 8) {
-      const { compressMessages } = require('./token_budget');
       messages = compressMessages(messages, 6);
     }
   }
