@@ -10,7 +10,28 @@ const DEFAULT_KEY = 'sk-665f376d7c0f4b91b4c3029bf82e670a';
 function buildToolDeclarations() {
   return [
     { type: 'function', function: { name: 'polaris_solve', description: '求解优化问题。把用户描述的问题原文传给prompt参数即可', parameters: { type: 'object', properties: { prompt: { type: 'string', description: '用户的问题描述原文' } }, required: ['prompt'] } } },
+    { type: 'function', function: { name: 'polaris_analyze', description: '分析问题结构，推荐求解策略。调用它向用户展示思考过程', parameters: { type: 'object', properties: { prompt: { type: 'string', description: '问题描述' } }, required: ['prompt'] } } },
   ];
+}
+
+async function executeAnalyze(prompt) {
+  const normalized = JSON.stringify(prompt);
+  const code = `import sys; sys.stdout.reconfigure(encoding='utf-8')
+from polaris.chat import _parse,_build_model
+from polaris.analyze.structure import analyze
+try:
+ p=_parse(${normalized});m=_build_model(p);s=analyze(m)
+ print(f"问题结构：{[l.name for l in s.labels]}")
+ print(f"推荐策略：{s.strategy.value}")
+ print(f"变量数：{s.n_scalar_vars}，约束数：{s.n_constraints}")
+except Exception as e:
+ print(f"结构分析：该问题需要自定义建模（不在预制模板中）")`;
+  const { spawnSync: sp } = require('child_process');
+  const env = { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1' };
+  let r = sp('python', ['-c', code], { timeout: 15000, encoding: 'utf8', env });
+  if (r.error || !r.stdout) r = sp('python3', ['-c', code], { timeout: 15000, encoding: 'utf8', env });
+  const out = (r.stdout || r.stderr || '').trim();
+  return { success: true, result: out || '已完成结构分析' };
 }
 
 async function executePolarisSolve(prompt) {
@@ -30,6 +51,11 @@ async function executeTool(name, args, onExec) {
   if (name === 'polaris_solve') {
     const result = await executePolarisSolve(args.prompt || '');
     if (onExec) onExec({ tool: name, status: result.success ? 'done' : 'error', detail: (result.result || result.error || '').slice(0, 120) });
+    return result;
+  }
+  if (name === 'polaris_analyze') {
+    const result = await executeAnalyze(args.prompt || '');
+    if (onExec) onExec({ tool: name, status: 'done', detail: (result.result || '').slice(0, 200) });
     return result;
   }
   const tool = TOOLS[name];
@@ -68,7 +94,7 @@ function callDeepSeek(messages, tools, apiKey) {
 async function runAgentLoop(userMessage, apiKey, onExec) {
   const toolDecls = buildToolDeclarations();
   const messages = [
-    { role: 'system', content: '你是 Polaris 求解助手。收到用户问题后，直接调用 polaris_solve 工具，把用户的问题原文原封不动传给 prompt 参数。不要分析，不要解释，立即调工具。' },
+    { role: 'system', content: '你是 Polaris 求解助手。收到用户问题后，按顺序执行：\n1. 先调用 polaris_analyze 分析问题结构（向用户展示你的思考）\n2. 再调用 polaris_solve 求解\n\n不要直接回复用户——必须调用工具。分析结果和求解结果会自动展示给用户。' },
     { role: 'user', content: userMessage },
   ];
 
