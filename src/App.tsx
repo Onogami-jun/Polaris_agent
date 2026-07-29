@@ -14,7 +14,7 @@ const Toast:React.FC<{toasts:any[];onDone:(id:number)=>void}>=({toasts,onDone})=
   </div>;
 };
 
-const WinBtns=()=>(<div className="wb-row"><button onClick={()=>window.electronAPI?.minimize()}className="wb">&#xe000;</button><button onClick={()=>window.electronAPI?.maximize()}className="wb">&#xe001;</button><button onClick={()=>window.electronAPI?.close()}className="wb wb-close">&#xe003;</button></div>);
+const WinBtns=()=>(<div className="wb-row"><button onClick={()=>window.electronAPI?.minimize()}className="wb"title="最小化"><svg width="10"height="1"viewBox="0 0 10 1"><rect width="10"height="1"rx=".5"/></svg></button><button onClick={()=>window.electronAPI?.maximize()}className="wb"title="最大化"><svg width="10"height="10"viewBox="0 0 10 10"><rect x=".5"y=".5"width="9"height="9"rx="1"fill="none"stroke="currentColor"strokeWidth="1"/></svg></button><button onClick={()=>window.electronAPI?.close()}className="wb wb-close"title="关闭"><svg width="10"height="10"viewBox="0 0 10 10"><line x1="1"y1="1"x2="9"y2="9"stroke="currentColor"strokeWidth="1.2"strokeLinecap="round"/><line x1="9"y1="1"x2="1"y2="9"stroke="currentColor"strokeWidth="1.2"strokeLinecap="round"/></svg></button></div>);
 
 const MsgRow:React.FC<{msg:ChatMessage;isLast:boolean;onCopy:()=>void;onRegen:()=>void;onEdit:(v:string)=>void;onBranch:()=>void;onDownload:(code:string,name?:string)=>void;cid:boolean}>=({msg,isLast,onCopy,onRegen,onEdit,onBranch,onDownload,cid})=>{
   const[ed,setEd]=useState(false);const[v,setV]=useState(msg.content);const[rtOpen,setRtOpen]=useState(false);const dlRegex=/```(python|py|code)\n([\s\S]*?)```/g;const dlBlocks=[];let dm;while((dm=dlRegex.exec(msg.content))!==null)dlBlocks.push({lang:dm[1],code:dm[2].trim()});
