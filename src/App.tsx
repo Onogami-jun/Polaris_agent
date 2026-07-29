@@ -83,7 +83,11 @@ const App:React.FC=()=>{
       console.log('[App] adding user message to session:',sid);
       d(addMessage({sessionId:sid,message:{id:'u'+Date.now(),role:'user',content:t,timestamp:Date.now()}}));
     }
-    d(setStreaming(true));setThk('Thinking...');
+    d(setStreaming(true));setThk('分析中...');
+    // Planner: auto-generate task plan for complex optimization queries
+    if(/优化|求解|排产|调度|指派|实验|对比|build|model|solve|benchmark|Benders|分解/.test(t) && t.length > 15){
+      try{const api=window.electronAPI;if(api){const p=await api.plannerGenerate(t);setPlan(p);setPlanId(p.id);addExecLog('planner','running','正在分析任务...');}}catch{}
+    }
     try{
       let ctx=t;if(txts)ctx+='\n\n'+txts;
       if(web){try{const{webSearch}=await import('./utils/search');const r=await webSearch(t,settings.apiKeys.serper);if(r.length>0&&!r[0].title.includes('not configured'))ctx+='\n[Web]\n'+r.map((x:any)=>'- '+x.title+': '+x.snippet).join('\n')}catch(e:any){console.error('[App] web search error:',e?.message||e)}}
