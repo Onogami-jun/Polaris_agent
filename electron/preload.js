@@ -28,4 +28,5 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onIntervention: (cb) => { ipcRenderer.on('polaris:intervention', (_, d) => cb(d)); },
   onPlanProgress: (cb) => { ipcRenderer.on('polaris:plan-progress', (_, d) => cb(d)); },
   onExecLog: (cb) => { ipcRenderer.on('polaris:exec-log', (_, d) => cb(d)); },
+  healthCheck: () => ipcRenderer.invoke('health:check'),
 });

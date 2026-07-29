@@ -99,9 +99,9 @@ async function executeTool(name, args, onExec) {
   }
 }
 
-function callDeepSeek(messages, tools, apiKey) {
+function callDeepSeek(messages, tools, apiKey, retries = 1) {
   const key = apiKey || DEFAULT_KEY;
-  return new Promise((res, rej) => {
+  return new Promise((resolve) => {
     const body = JSON.stringify({
       model: 'deepseek-v4-flash',
       messages,
@@ -110,21 +110,38 @@ function callDeepSeek(messages, tools, apiKey) {
       max_tokens: 4096,
       temperature: 0.3,
     });
-    const req = https.request({
-      hostname: 'api.deepseek.com', path: '/chat/completions', method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key, 'Content-Length': Buffer.byteLength(body) },
-      timeout: 30000,
-    }, resp => {
-      let d = '';
-      resp.on('data', c => { d += c.toString(); });
-      resp.on('end', () => {
-        try { res(JSON.parse(d)); }
-        catch (e) { res({ error: 'Parse failed: ' + d.slice(0, 200) }); }
+    let attemptCount = 0;
+
+    function attempt() {
+      attemptCount++;
+      const req = https.request({
+        hostname: 'api.deepseek.com', path: '/chat/completions', method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key, 'Content-Length': Buffer.byteLength(body) },
+        timeout: 30000,
+      }, resp => {
+        let d = '';
+        resp.on('data', c => { d += c.toString(); });
+        resp.on('end', () => {
+          try { resolve(JSON.parse(d)); }
+          catch (e) {
+            if (attemptCount <= retries) { setTimeout(attempt, 500); return; }
+            resolve({ error: 'Parse failed after ' + retries + ' retries: ' + d.slice(0, 200) });
+          }
+        });
       });
-    });
-    req.on('error', e => res({ error: e.message }));
-    req.on('timeout', () => { req.destroy(); res({ error: 'Timeout' }); });
-    req.write(body); req.end();
+      req.on('error', e => {
+        if (attemptCount <= retries) { setTimeout(attempt, 500); return; }
+        resolve({ error: e.message });
+      });
+      req.on('timeout', () => {
+        req.destroy();
+        if (attemptCount <= retries) { setTimeout(attempt, 500); return; }
+        resolve({ error: 'Timeout after ' + retries + ' retries' });
+      });
+      req.write(body); req.end();
+    }
+
+    attempt();
   });
 }
 
