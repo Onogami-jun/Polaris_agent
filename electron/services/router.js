@@ -68,6 +68,11 @@ function buildToolDeclarations() {
         },
       },
     },
+    { type: 'function', function: { name: 'polaris_analyzer', description: '分析实验对比表格，解读性能趋势、异常点、给出原因和建议', parameters: { type: 'object', properties: { data: { type: 'string', description: 'polaris_research 的完整输出' } }, required: ['data'] } } },
+    { type: 'function', function: { name: 'polaris_remember', description: '记录/查询历史实验。action: record|last|list|context', parameters: { type: 'object', properties: { action: { type: 'string', description: 'record|last|list|context' }, meta: { type: 'object' }, problem: { type: 'string' } }, required: ['action'] } } },
+    { type: 'function', function: { name: 'polaris_paper', description: '根据实验结果生成论文草稿段落，运筹学期刊风格', parameters: { type: 'object', properties: { data: { type: 'string' }, context: { type: 'string' } }, required: ['data'] } } },
+    { type: 'function', function: { name: 'polaris_literature', description: '搜索运筹优化相关文献和论文', parameters: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] } } },
+    { type: 'function', function: { name: 'polaris_code', description: '读写本地项目文件。action: find|read|write', parameters: { type: 'object', properties: { action: { type: 'string' }, filename: { type: 'string' }, content: { type: 'string' } }, required: ['action'] } } },
   ];
   return decls;
 }
@@ -171,6 +176,22 @@ async function runAgentLoop(userMessage, apiKey, conversationHistory = []) {
       const saved = raw.length - compressed.length;
       if (saved > 100) {
         console.log(`[agent_loop] ${fn.name}: ${raw.length} → ${compressed.length} chars (${Math.round(saved/raw.length*100)}% saved)`);
+      }
+
+            // Auto-record experiment metadata
+      if (fn.name === 'polaris_research') {
+        try {
+          const mem = require('./experiment_memory');
+          const mdMatch = compressed.match(/=== MARKDOWN ===\n([\s\S]*?)(?====|$)/);
+          const summary = mdMatch ? mdMatch[1].trim().slice(0, 200) : (compressed.slice(0, 200));
+          mem.recordExperiment({
+            problem: args.problem || 'unknown',
+            sizes: args.sizes || '',
+            solvers: args.solvers || '',
+            seed: args.seed || 42,
+            summary: summary,
+          });
+        } catch(e) { console.warn('Failed to record experiment:', e.message); }
       }
 
       messages.push({

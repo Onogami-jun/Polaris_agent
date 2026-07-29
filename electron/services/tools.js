@@ -148,6 +148,96 @@ except Exception as e:
     }
   },
 
+  polaris_analyzer: {
+    name: 'Analyze Results',
+    description: '分析实验对比表格，解读性能趋势、异常点、可能原因，给出下一步建议',
+    requires_confirm: false,
+    category: 'research',
+    execute: async (params) => {
+      const { data } = params;
+      if (!data) return { success: false, error: '请提供实验输出数据' };
+      const { analyzeResults } = require('./result_analyzer');
+      try {
+        const analysis = await analyzeResults(data);
+        return { success: true, result: analysis };
+      } catch(e) { return { success: false, error: e.message }; }
+    }
+  },
+
+  polaris_remember: {
+    name: 'Experiment Memory',
+    description: '记录/查询历史实验。actions: record/save, last/最近, list/列表, context/上下文',
+    requires_confirm: false,
+    category: 'research',
+    execute: async (params) => {
+      const { action, meta, problem } = params;
+      const mem = require('./experiment_memory');
+      if (action === 'record' || action === 'save') return { success: true, result: JSON.stringify(mem.recordExperiment(meta||{})) };
+      if (action === 'last' || action === '最近') return { success: true, result: JSON.stringify(mem.lastExperiment(problem)) };
+      if (action === 'list' || action === '列表') return { success: true, result: JSON.stringify(mem.listExperiments(problem)) };
+      if (action === 'context' || action === '上下文') return { success: true, result: mem.buildExperimentContext(5) };
+      return { success: false, error: 'Unknown action. Use: record, last, list, context' };
+    }
+  },
+
+  polaris_paper: {
+    name: 'Paper Draft',
+    description: '根据实验结果生成论文草稿段落，风格为运筹学期刊 formal tone',
+    requires_confirm: false,
+    category: 'research',
+    execute: async (params) => {
+      const { data, context } = params;
+      const key = params.apiKey;
+      const { analyzeResults } = require('./result_analyzer');
+      const analysis = await analyzeResults(data||'');
+      const prompt = '你是运筹学论文审稿人。写一段论文实验草稿（200字内），用正式学术中文。\n上下文：'+(context||'')+'\n分析：'+analysis;
+      try {
+        const https=require('https');
+        const result = await new Promise((res,rej)=>{
+          const body=JSON.stringify({model:'deepseek-v4-flash',messages:[{role:'user',content:prompt}],max_tokens:1024,temperature:0.2});
+          const req=https.request({hostname:'api.deepseek.com',path:'/chat/completions',method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+(key||'sk-665f376d7c0f4b91b4c3029bf82e670a'),'Content-Length':Buffer.byteLength(body)},timeout:30000},resp=>{let d='';resp.on('data',c=>d+=c.toString());resp.on('end',()=>{try{res(JSON.parse(d).choices?.[0]?.message?.content||'')}catch{res('')}})});
+          req.on('error',()=>res(''));
+          req.write(body);req.end();
+        });
+        return { success: true, result: result || '草稿生成失败，请重试' };
+      } catch(e) { return { success: false, error: e.message }; }
+    }
+  },
+
+  polaris_literature: {
+    name: 'Literature Search',
+    description: '搜索运筹优化相关文献、论文、方法',
+    requires_confirm: false,
+    category: 'research',
+    execute: async (params) => {
+      const { query } = params;
+      try {
+        const https=require('https');
+        const data=await new Promise((res,rej)=>{
+          const req=https.get('https://api.duckduckgo.com/?q='+encodeURIComponent(query||'combinatorial optimization decomposition 2024')+'&format=json&no_html=1',resp=>{let d='';resp.on('data',c=>d+=c.toString());resp.on('end',()=>{try{res(JSON.parse(d))}catch{res({})}})});
+          req.on('error',rej);req.setTimeout(10000,()=>{req.destroy();res({})});
+        });
+        const results=(data.RelatedTopics||[]).slice(0,8).map(r=>({title:r.Text?.split(' - ')[0]||'',snippet:r.Text||''}));
+        return {success:true,result:JSON.stringify(results),results};
+      }catch(e){return{success:false,error:e.message}};
+    }
+  },
+
+  polaris_code: {
+    name: 'Code Interaction',
+    description: '搜索/读取/写入本地项目文件',
+    requires_confirm: true,
+    category: 'filesystem',
+    execute: async (params) => {
+      const { action, filename, content } = params;
+      const ci = require('./code_interact');
+      if (action === 'find') return { success: true, result: JSON.stringify(ci.findFiles(filename||'')) };
+      if (action === 'read') { const c=ci.readFile(filename); return { success: !!c, result: c||'File not found' }; }
+      if (action === 'write') return { success: true, result: JSON.stringify(ci.writeFile(filename,content)) };
+      return { success: false, error: 'Unknown action. Use: find, read, write' };
+    }
+  },
+
   run_code: {
     name: 'Run Code',
     description: '在沙箱中执行 Python 代码（可用于 polaris 引擎脚本）',
