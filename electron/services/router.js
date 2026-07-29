@@ -55,6 +55,24 @@ async function executeTool(name, args, onExec) {
   }
 }
 
+function callDeepSeek(messages, tools, apiKey) {
+  const key = apiKey || DEFAULT_KEY;
+  return new Promise(resolve => {
+    const body = JSON.stringify({ model: 'deepseek-v4-flash', messages, tools, tool_choice: 'auto', max_tokens: 4096, temperature: 0.3 });
+    const req = https.request({
+      hostname: 'api.deepseek.com', path: '/chat/completions', method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key, 'Content-Length': Buffer.byteLength(body) },
+      timeout: 30000,
+    }, resp => {
+      let d = ''; resp.on('data', c => d += c.toString());
+      resp.on('end', () => { try { resolve(JSON.parse(d)); } catch { resolve({ error: 'Parse failed: ' + d.slice(0, 200) }); } });
+    });
+    req.on('error', e => resolve({ error: e.message }));
+    req.on('timeout', () => { req.destroy(); resolve({ error: 'Timeout' }); });
+    req.write(body); req.end();
+  });
+}
+
 async function runAgentLoop(userMessage, apiKey, onExec) {
   const toolDecls = buildToolDeclarations();
   const maxRounds = 2;  // 2 rounds max — solve or fallback
