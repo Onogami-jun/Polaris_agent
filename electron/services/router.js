@@ -17,14 +17,40 @@ function buildToolDeclarations() {
 
 // ── unified solver tool ──
 async function executePolarisSolve(prompt) {
-  const normalized = prompt.replace(/"/g,'\\"').replace(/\n/g,' ');
-  const code = `from polaris.chat import solve; print(solve("${normalized}"))`;
-  const { spawnSync } = require('child_process');
-  let r = spawnSync('python', ['-c', code], { timeout: 30000, encoding: 'utf8' });
-  if (r.error) r = spawnSync('python3', ['-c', code], { timeout: 30000, encoding: 'utf8' });
-  const out = r.stdout?.trim() || r.stderr?.trim() || '';
-  if (out.includes('未能识别问题类型') || out.includes('未知问题类型')) {
-    return { success: false, error: out.slice(0, 300) };
+  const normalized = prompt.replace(/"/g,'\\"').replace(/\n/g,' ').replace(/'/g,"\\'");
+  const { spawnSync: sp } = require('child_process');
+  const env = { ...process.env, PYTHONIOENCODING: 'utf-8', LANG: 'en_US.UTF-8', LC_ALL: 'en_US.UTF-8' };
+
+  // Fast path: simple/short inputs → rule-based parser (no network)
+  if (prompt.length < 120 && (prompt.includes('背包') || prompt.includes('排产') || prompt.includes('容量'))) {
+    const fastCode = `import sys; sys.stdout.reconfigure(encoding='utf-8')\nfrom polaris.chat import solve\nprint(solve("""${normalized}"""))`;
+    let r = sp('python', ['-c', fastCode], { timeout: 30000, encoding: 'utf8', env, maxBuffer: 100*1024 });
+    if (r.error || !r.stdout) r = sp('python3', ['-c', fastCode], { timeout: 30000, encoding: 'utf8', env, maxBuffer: 100*1024 });
+    const out = (r.stdout||'').trim() || (r.stderr||'').trim();
+    if (out && !out.includes('未能识别') && !out.includes('未知')) return { success: true, result: out };
+  }
+
+  // Full path: LLM parser → model → solve (for complex/new problems)
+  const llmCode = `
+import sys; sys.stdout.reconfigure(encoding='utf-8')
+from polaris.llm.parser import parse_with_llm
+from polaris.chat import ProblemType, ParsedProblem, _build_model, _solve, _format_result
+params = parse_with_llm("""${normalized}""")
+pt = {'knapsack': 0, 'assignment': 1, 'scheduling': 2, 'multi_knapsack': 3, 'set_covering': 4, 'facility': 5, 'vrp': 6}.get(params.get('problem_type',''), -1)
+if pt < 0:
+    print(params.get('error','未能识别问题类型'))
+else:
+    types = [ProblemType.KNAPSACK,ProblemType.ASSIGNMENT,ProblemType.SCHEDULING,ProblemType.MULTI_KNAPSACK,ProblemType.SET_COVERING,ProblemType.FACILITY,ProblemType.VRP]
+    p = ParsedProblem(ptype=types[pt], params=params, raw="""${normalized}""")
+    m = _build_model(p)
+    r = _solve(m)
+    print(_format_result(p, r, m))
+`;
+  let r = sp('python', ['-c', llmCode], { timeout: 30000, encoding: 'utf8', env, maxBuffer: 100*1024 });
+  if (r.error || !r.stdout) r = sp('python3', ['-c', llmCode], { timeout: 30000, encoding: 'utf8', env, maxBuffer: 100*1024 });
+  const out = (r.stdout||'').trim() || (r.stderr||'').trim();
+  if (!out || out.includes('未能识别') || out.includes('未知')) {
+    return { success: false, error: out || 'Polaris 无法识别该问题类型' };
   }
   return { success: true, result: out };
 }
