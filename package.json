@@ -2,6 +2,7 @@
   "name": "polaris-agent",
   "version": "1.0.0",
   "description": "Polaris Solver — Optimization Research Agent",
+  "author": "Bitwool <bitwool@163.com>",
   "main": "electron/main.js",
   "scripts": {
     "start": "electron .",
