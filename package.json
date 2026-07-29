@@ -1,30 +1,42 @@
 {
   "name": "polaris-agent",
-  "version": "0.9.0",
-  "description": "Polaris — The Desktop AI Agent",
+  "version": "1.0.0",
+  "description": "Polaris Solver — Optimization Research Agent",
   "main": "electron/main.js",
   "scripts": {
     "start": "electron .",
     "dev": "concurrently \"webpack serve --mode development --config config/webpack.config.js\" \"wait-on http://localhost:3000 && electron .\"",
     "build:renderer": "cross-env NODE_ENV=production webpack --mode production --config config/webpack.config.js",
-    "build": "npm run build:renderer && electron-builder build --win --x64 --publish=never",
+    "build": "npm run build:renderer && electron-builder build --publish=never",
     "postinstall": "electron-builder install-app-deps"
   },
   "build": {
     "appId": "com.bitwool.polaris-agent",
-    "productName": "Polaris",
+    "productName": "Polaris Solver",
     "directories": { "output": "dist", "buildResources": "build" },
     "files": ["electron/**/*","build/**/*","icon.png","package.json"],
     "win": {
-      "target": "nsis",
+      "target": ["nsis", "zip"],
       "icon": "icon.png",
-      "artifactName": "Polaris-Setup-${version}.${ext}"
+      "artifactName": "Polaris-Solver-Setup-${version}-win-x64.${ext}"
+    },
+    "mac": {
+      "target": ["dmg", "zip"],
+      "icon": "icon.png",
+      "artifactName": "Polaris-Solver-${version}-mac-${arch}.${ext}",
+      "category": "public.app-category.developer-tools"
+    },
+    "linux": {
+      "target": ["AppImage", "deb"],
+      "icon": "icon.png",
+      "artifactName": "Polaris-Solver-${version}-linux-${arch}.${ext}",
+      "category": "Development"
     },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
-      "shortcutName": "Polaris"
+      "shortcutName": "Polaris Solver"
     }
   },
   "dependencies": {

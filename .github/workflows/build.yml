@@ -1,15 +1,74 @@
-name: Build Windows EXE
-on: { push: { branches: [main] }, workflow_dispatch: {} }
+name: Build All Platforms
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
 jobs:
   build:
-    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: '20' }
-      - run: npm install
-      - run: npm run build
-      - uses: actions/upload-artifact@v4
         with:
-          name: polaris-agent-setup
+          node-version: '20'
+
+      - run: npm install
+
+      - name: Build Renderer
+        run: npm run build:renderer
+
+      - name: Build Electron (Windows)
+        if: runner.os == 'Windows'
+        run: npx electron-builder build --win --publish=never
+
+      - name: Build Electron (macOS)
+        if: runner.os == 'macOS'
+        run: npx electron-builder build --mac --publish=never
+
+      - name: Build Electron (Linux)
+        if: runner.os == 'Linux'
+        run: npx electron-builder build --linux --publish=never
+
+      - name: Upload Windows artifacts
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: polaris-solver-windows
           path: dist/*.exe
+
+      - name: Upload macOS artifacts
+        if: runner.os == 'macOS'
+        uses: actions/upload-artifact@v4
+        with:
+          name: polaris-solver-macos
+          path: dist/*.dmg
+
+      - name: Upload Linux artifacts
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: polaris-solver-linux
+          path: dist/*.AppImage
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: List artifacts
+        run: find artifacts -type f
+
+      - uses: softprops/action-gh-release@v1
+        with:
+          files: artifacts/**/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
