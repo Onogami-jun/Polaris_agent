@@ -135,16 +135,17 @@ except Exception as e:
 
   polaris_model: {
     name: 'Auto Modeling',
-    description: '用 Python polaris 代码定义任意优化模型（变量、约束、目标），自动求解并返回结果。当7个预制模板不适用时使用',
-    requires_confirm: true,
+    description: '求解任意优化问题（不在预制模板中的新问题）。输入问题描述，Polaris自动识别类型并求解',
+    requires_confirm: false,
     category: 'solver',
     execute: async (params) => {
-      const { code } = params;
-      if (!code || code.trim().length < 10) return { success: false, error: '请提供完整的 polaris 建模代码' };
-      const wrapped = `from polaris.model.domain import IndexDomain\nfrom polaris.model.variable import Variable, VarType\nfrom polaris.model.expr import LinearExpr\nfrom polaris.model.constraint import Constraint, Sense\nfrom polaris.model.objective import Objective, ObjSense\nfrom polaris.model.model import CanonicalModel\nfrom polaris.solvers.highs import HighsSolver\nimport numpy as np\ntry:\n${code}\n  m=CanonicalModel("auto",(x,),tuple(cs),obj)\n  r=HighsSolver().solve(m)\n  print(f"Status: {r.status.value}")\n  print(f"Objective: {r.objective_value}")\n  for vn,vals in r.variable_values.items():\n    for idx,val in vals.items():\n      if abs(val)>1e-4: print(f"  {vn}{idx}={val:.4f}")\nexcept Exception as e:\n  print(f"MODEL_ERROR: {e}")\n  import traceback; traceback.print_exc()`;
-      let r = spawnSync('python', ['-c', wrapped], { timeout: 30000, encoding: 'utf8' });
-      if (r.error) r = spawnSync('python3', ['-c', wrapped], { timeout: 30000, encoding: 'utf8' });
-      return { success: true, result: r.stdout?.trim() || r.stderr?.trim() || 'No output' };
+      const prompt = params.prompt || params.code || '';
+      if (!prompt || prompt.trim().length < 10) return { success: false, error: '请提供优化问题的完整描述' };
+      const normalized = prompt.replace(/"/g,'\\"').replace(/\n/g,' ');
+      const code = `from polaris.chat import solve; print(solve("${normalized}"))`;
+      let r = spawnSync('python', ['-c', code], { timeout: 30000, encoding: 'utf8' });
+      if (r.error) r = spawnSync('python3', ['-c', code], { timeout: 30000, encoding: 'utf8' });
+      return { success: true, result: r.stdout?.trim() || r.stderr?.trim() || '求解失败' };
     }
   },
 
