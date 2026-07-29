@@ -8,233 +8,99 @@ const { prepareMessages, compressToolOutput, compressMessages, estimateMessageTo
 const logger = require('./logger');
 const DEFAULT_KEY = 'sk-665f376d7c0f4b91b4c3029bf82e670a';
 
-// Convert TOOLS into DeepSeek function-calling format
+// ── Tools: keep it small so the LLM can navigate ──
 function buildToolDeclarations() {
-  const decls = [
-    {
-      type: 'function',
-      function: {
-        name: 'polaris_opt',
-        description: '用自然语言描述优化问题（背包、排产、指派、调度、选址、VRP等），返回精确最优解',
-        parameters: {
-          type: 'object',
-          properties: {
-            prompt: { type: 'string', description: '自然语言描述的优化问题' },
-          },
-          required: ['prompt'],
-        },
-      },
-    },
-    {
-      type: 'function',
-      function: {
-        name: 'polaris_analyze',
-        description: '分析优化问题的数学结构，检测 block-angular/time-indexed 等特征，推荐 Benders/CG/Lagrangian 等分解策略',
-        parameters: {
-          type: 'object',
-          properties: {
-            prompt: { type: 'string', description: '优化问题描述' },
-          },
-          required: ['prompt'],
-        },
-      },
-    },
-    {
-      type: 'function',
-      function: {
-        name: 'polaris_research',
-        description: '跑批量实验对比多个求解器，生成 Markdown 和 LaTeX 论文表格',
-        parameters: {
-          type: 'object',
-          properties: {
-            problem: { type: 'string', description: 'knapsack | scheduling | assignment | facility' },
-            sizes: { type: 'string', description: '实例规模，逗号分隔，如 "10,20,50"' },
-            solvers: { type: 'string', description: '求解器，逗号分隔，如 "highs,naive,benders"' },
-            seed: { type: 'integer', description: '随机种子，默认 42' },
-          },
-          required: ['problem'],
-        },
-      },
-    },
-    {
-      type: 'function',
-      function: {
-        name: 'polaris_model',
-        description: '当预制模板不适用时，用 polaris Python 库手动定义优化模型：定义变量(Variable)、约束(Constraint)、目标(Objective)，然后调用求解器。LLM 自己写完整的建模代码。代码模板：x=Variable("x",IndexDomain(("i",n)),VarType.BINARY); cs=[Constraint("c1",...,Sense.LE,rhs)]; obj=Objective(expr,ObjSense.MINIMIZE)。变量名必须叫x，约束列表必须叫cs，目标必须叫obj。',
-        parameters: {
-          type: 'object',
-          properties: {
-            code: { type: 'string', description: '完整的 polaris Python 建模代码。变量名必须叫x，约束列表必须叫cs，目标必须叫obj。例：n=5; x=Variable("x",IndexDomain(("i",n)),VarType.BINARY); cs=[Constraint("cap",LinearExpr.from_sum(x[{"i":i}]*w[i] for i in range(n)),Sense.LE,C)]; expr=LinearExpr.from_sum(x[{"i":i}]*v[i] for i in range(n)); obj=Objective(expr,ObjSense.MAXIMIZE)' },
-          },
-          required: ['code'],
-        },
-      },
-    },
-    { type: 'function', function: { name: 'polaris_analyzer', description: '分析实验对比表格，解读性能趋势、异常点、给出原因和建议', parameters: { type: 'object', properties: { data: { type: 'string', description: 'polaris_research 的完整输出' } }, required: ['data'] } } },
-    { type: 'function', function: { name: 'polaris_remember', description: '记录/查询历史实验。action: record|last|list|context', parameters: { type: 'object', properties: { action: { type: 'string', description: 'record|last|list|context' }, meta: { type: 'object' }, problem: { type: 'string' } }, required: ['action'] } } },
-    { type: 'function', function: { name: 'polaris_paper', description: '根据实验结果生成论文草稿段落，运筹学期刊风格', parameters: { type: 'object', properties: { data: { type: 'string' }, context: { type: 'string' } }, required: ['data'] } } },
-    { type: 'function', function: { name: 'polaris_literature', description: '搜索运筹优化相关文献和论文', parameters: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] } } },
-    { type: 'function', function: { name: 'polaris_code', description: '读写本地项目文件。action: find|read|write', parameters: { type: 'object', properties: { action: { type: 'string' }, filename: { type: 'string' }, content: { type: 'string' } }, required: ['action'] } } },
+  return [
+    { type: 'function', function: { name: 'polaris_solve', description: '求解优化问题。基包/排产/指派/调度/选址/VRP/覆盖等任何优化问题，返回最优解', parameters: { type: 'object', properties: { prompt: { type: 'string', description: '完整的问题描述，包含所有数字和约束' } }, required: ['prompt'] } } },
   ];
-  return decls;
+}
+
+// ── unified solver tool ──
+async function executePolarisSolve(prompt) {
+  const normalized = prompt.replace(/"/g,'\\"').replace(/\n/g,' ');
+  const code = `from polaris.chat import solve; print(solve("${normalized}"))`;
+  const { spawnSync } = require('child_process');
+  let r = spawnSync('python', ['-c', code], { timeout: 30000, encoding: 'utf8' });
+  if (r.error) r = spawnSync('python3', ['-c', code], { timeout: 30000, encoding: 'utf8' });
+  const out = r.stdout?.trim() || r.stderr?.trim() || '';
+  if (out.includes('未能识别问题类型') || out.includes('未知问题类型')) {
+    return { success: false, error: out.slice(0, 300) };
+  }
+  return { success: true, result: out };
 }
 
 async function executeTool(name, args, onExec) {
-  if (onExec) onExec({ tool: name, status: 'running', detail: JSON.stringify(args).slice(0,100) });
+  if (onExec) onExec({ tool: name, status: 'running', detail: JSON.stringify(args).slice(0, 100) });
+
+  // Unified solver for all problem types
+  if (name === 'polaris_solve') {
+    const result = await executePolarisSolve(args.prompt || '');
+    if (onExec) onExec({ tool: name, status: result.success ? 'done' : 'error', detail: (result.result || result.error || '').slice(0, 120) });
+    return result;
+  }
+
+  // Standard tool lookup
   const tool = TOOLS[name];
   if (!tool) {
-    if (onExec) onExec({ tool: name, status: 'error', detail: `Tool not found: ${name}` });
+    if (onExec) onExec({ tool: name, status: 'error', detail: `Tool not found` });
     return { success: false, error: `Unknown tool: ${name}` };
   }
   try {
     const result = await tool.execute(args);
-    if (result.success) {
-      if (onExec) onExec({ tool: name, status: 'done', detail: (result.result||'Done').slice(0,120) });
-      return result;
-    }
-    if (onExec) onExec({ tool: name, status: 'error', detail: (result.error||'Failed').slice(0,120) });
-    return { success: false, error: result.error || 'Tool failed' };
+    if (onExec) onExec({ tool: name, status: result.success ? 'done' : 'error', detail: (result.result || result.error || '').slice(0, 120) });
+    return result;
   } catch (e) {
-    if (onExec) onExec({ tool: name, status: 'error', detail: e.message.slice(0,120) });
+    if (onExec) onExec({ tool: name, status: 'error', detail: e.message.slice(0, 120) });
     return { success: false, error: e.message };
   }
 }
 
-function callDeepSeek(messages, tools, apiKey, retries = 1) {
-  const key = apiKey || DEFAULT_KEY;
-  return new Promise((resolve) => {
-    const body = JSON.stringify({
-      model: 'deepseek-v4-flash',
-      messages,
-      tools,
-      tool_choice: 'auto',
-      max_tokens: 4096,
-      temperature: 0.3,
-    });
-    let attemptCount = 0;
-
-    function attempt() {
-      attemptCount++;
-      const req = https.request({
-        hostname: 'api.deepseek.com', path: '/chat/completions', method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key, 'Content-Length': Buffer.byteLength(body) },
-        timeout: 30000,
-      }, resp => {
-        let d = '';
-        resp.on('data', c => { d += c.toString(); });
-        resp.on('end', () => {
-          try { resolve(JSON.parse(d)); }
-          catch (e) {
-            if (attemptCount <= retries) { setTimeout(attempt, 500); return; }
-            resolve({ error: 'Parse failed after ' + retries + ' retries: ' + d.slice(0, 200) });
-          }
-        });
-      });
-      req.on('error', e => {
-        if (attemptCount <= retries) { setTimeout(attempt, 500); return; }
-        resolve({ error: e.message });
-      });
-      req.on('timeout', () => {
-        req.destroy();
-        if (attemptCount <= retries) { setTimeout(attempt, 500); return; }
-        resolve({ error: 'Timeout after ' + retries + ' retries' });
-      });
-      req.write(body); req.end();
-    }
-
-    attempt();
-  });
-}
-
-async function runAgentLoop(userMessage, apiKey, onExec, conversationHistory = []) {
+async function runAgentLoop(userMessage, apiKey, onExec) {
   const toolDecls = buildToolDeclarations();
-  const maxRounds = 5;
+  const maxRounds = 2;  // 2 rounds max — solve or fallback
 
-  // Build initial messages with token budget
-  let messages = prepareMessages(userMessage, conversationHistory, 0, toolDecls);
-  let totalTokens = estimateMessageTokens(messages);
-  console.log(`[agent_loop] start — ${totalTokens} tokens`);
+  const messages = [
+    { role: 'system', content: '你是 Polaris，调用 polaris_solve 工具求解用户描述的任意优化问题。无论背包、排产、指派、调度、选址、VRP、覆盖——把用户的问题原文传给 polaris_solve，它会自动处理。不要分析，不要解释，直接调工具。' },
+    { role: 'user', content: userMessage },
+  ];
 
   for (let round = 0; round < maxRounds; round++) {
-    // Token check before each call
-    totalTokens = estimateMessageTokens(messages);
-    if (totalTokens > 4000) {
-      messages = prepareMessages(userMessage, conversationHistory, round, toolDecls);
-      console.log(`[agent_loop] round ${round} — recompressed to ${estimateMessageTokens(messages)} tokens`);
-    }
-
     const resp = await callDeepSeek(messages, toolDecls, apiKey);
-
-    if (resp.error) {
-      return `网络错误：${resp.error}。请检查 DeepSeek API 连接后重试。`;
-    }
+    if (resp.error) return `网络错误：${resp.error}。请重试。`;
 
     const choice = resp.choices?.[0];
-    if (!choice) {
-      return 'DeepSeek API 返回异常，请重试。';
+    if (!choice) return 'API 返回异常，请重试。';
+
+    // Direct response from LLM
+    if (!choice.message?.tool_calls?.length) {
+      const content = choice.message?.content || '';
+      if (content.trim().length > 10) return content;
+      // Empty response — try talking to the user
+      return '我收到了你的问题但无法自动求解。请尝试用更简洁的格式描述：\n- 背包："N件物品，价值...重量...，容量..."\n- 排产："排产N个任务，处理时间..."\n- 指派："指派N个工人，成本矩阵..."';
     }
 
-    // LLM decided to respond directly
-    if (choice.finish_reason === 'stop' || !choice.message?.tool_calls?.length) {
-      return choice.message?.content || '已完成。请继续描述你的优化需求。';
-    }
-
-    // LLM wants to call tools
+    // Tool calls
     const toolCalls = choice.message.tool_calls;
-    messages.push({
-      role: 'assistant',
-      content: (choice.message.content || '调用工具...').slice(0, 200),
-      tool_calls: toolCalls,
-    });
+    messages.push({ role: 'assistant', content: '正在求解...', tool_calls: toolCalls });
 
     for (const tc of toolCalls) {
       const fn = tc.function;
       let args = {};
       try { args = JSON.parse(fn.arguments); } catch {}
 
-      const result = await executeTool(fn.name, args, onExec);
-      const toolResult = result.success
-        ? (result.result || 'Done')
-        : `Error: ${result.error}`;
+      // If LLM passed raw text instead of {prompt: "..."}, use the text as prompt
+      const prompt = args.prompt || args.code || Object.values(args).join(' ') || userMessage;
 
-      // ── Layer 2+3: Compress tool output ──
-      const raw = typeof toolResult === 'string' ? toolResult : JSON.stringify(toolResult);
-      const compressed = compressToolOutput(fn.name, raw);
-      const saved = raw.length - compressed.length;
-      if (saved > 100) {
-        console.log(`[agent_loop] ${fn.name}: ${raw.length} → ${compressed.length} chars (${Math.round(saved/raw.length*100)}% saved)`);
-      }
-
-            // Auto-record experiment metadata
-      if (fn.name === 'polaris_research') {
-        try {
-          const mem = require('./experiment_memory');
-          const mdMatch = compressed.match(/=== MARKDOWN ===\n([\s\S]*?)(?====|$)/);
-          const summary = mdMatch ? mdMatch[1].trim().slice(0, 200) : (compressed.slice(0, 200));
-          mem.recordExperiment({
-            problem: args.problem || 'unknown',
-            sizes: args.sizes || '',
-            solvers: args.solvers || '',
-            seed: args.seed || 42,
-            summary: summary,
-          });
-        } catch(e) { console.warn('Failed to record experiment:', e.message); }
-      }
-
-      messages.push({
-        role: 'tool',
-        tool_call_id: tc.id,
-        content: compressed,
-      });
-    }
-
-    // ── Layer 4+5: Sliding window compression ──
-    if (messages.length > 8) {
-      messages = compressMessages(messages, 6);
+      const result = await executeTool(fn.name, { prompt }, onExec);
+      const toolResult = result.success ? (result.result || 'Done') : `Error: ${result.error}`;
+      messages.push({ role: 'tool', tool_call_id: tc.id, content: typeof toolResult === 'string' ? toolResult.slice(0, 3000) : JSON.stringify(toolResult).slice(0, 3000) });
     }
   }
 
-  return 'Agent 达到最大执行轮数。任务可能未完成，请简化你的问题。';
+  // Fallback: direct solve attempt
+  const directResult = await executePolarisSolve(userMessage);
+  if (directResult.success) return directResult.result;
+  return '未能求解。请用更简洁的格式重新描述问题。\n\n支持的问题类型：背包、排产、指派、设施选址、多背包、集合覆盖、VRP。';
 }
 
 // ── Public API ──────────────────────────────────────────────────────────
@@ -276,4 +142,4 @@ async function executeQuery(text, strategy, systemPrompt, images, onStreamChunk,
 
 function classifyOnly(text) { return { top_intent: 'auto', display: 'Auto' }; }
 
-module.exports = { executeQuery, classifyOnly };
+module.exports = { executeQuery, classifyOnly, buildToolDeclarations };
