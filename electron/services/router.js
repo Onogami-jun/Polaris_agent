@@ -1,6 +1,5 @@
 /**
  * Polaris Router v4 — DeepSeek function calling + polaris tools.
- * LLM decides which tool to call. Loop: LLM → tool → result → LLM → respond.
  */
 const https = require('https');
 const { TOOLS } = require('./tools');
@@ -8,68 +7,35 @@ const { prepareMessages, compressToolOutput, compressMessages, estimateMessageTo
 const logger = require('./logger');
 const DEFAULT_KEY = 'sk-665f376d7c0f4b91b4c3029bf82e670a';
 
-// ── Tools: keep it small so the LLM can navigate ──
 function buildToolDeclarations() {
   return [
-    { type: 'function', function: { name: 'polaris_solve', description: '求解优化问题。基包/排产/指派/调度/选址/VRP/覆盖等任何优化问题，返回最优解', parameters: { type: 'object', properties: { prompt: { type: 'string', description: '完整的问题描述，包含所有数字和约束' } }, required: ['prompt'] } } },
+    { type: 'function', function: { name: 'polaris_solve', description: '求解优化问题。把用户描述的问题原文传给prompt参数即可', parameters: { type: 'object', properties: { prompt: { type: 'string', description: '用户的问题描述原文' } }, required: ['prompt'] } } },
   ];
 }
 
-// ── unified solver tool ──
 async function executePolarisSolve(prompt) {
-  const normalized = prompt.replace(/"/g,'\\"').replace(/\n/g,' ').replace(/'/g,"\\'");
+  const normalized = JSON.stringify(prompt);
+  const code = `import sys; sys.stdout.reconfigure(encoding='utf-8')\nfrom polaris.chat import solve\nprint(solve(${normalized}))`;
   const { spawnSync: sp } = require('child_process');
-  const env = { ...process.env, PYTHONIOENCODING: 'utf-8', LANG: 'en_US.UTF-8', LC_ALL: 'en_US.UTF-8' };
-
-  // Fast path: simple/short inputs → rule-based parser (no network)
-  if (prompt.length < 120 && (prompt.includes('背包') || prompt.includes('排产') || prompt.includes('容量'))) {
-    const fastCode = `import sys; sys.stdout.reconfigure(encoding='utf-8')\nfrom polaris.chat import solve\nprint(solve("""${normalized}"""))`;
-    let r = sp('python', ['-c', fastCode], { timeout: 30000, encoding: 'utf8', env, maxBuffer: 100*1024 });
-    if (r.error || !r.stdout) r = sp('python3', ['-c', fastCode], { timeout: 30000, encoding: 'utf8', env, maxBuffer: 100*1024 });
-    const out = (r.stdout||'').trim() || (r.stderr||'').trim();
-    if (out && !out.includes('未能识别') && !out.includes('未知')) return { success: true, result: out };
-  }
-
-  // Full path: LLM parser → model → solve (for complex/new problems)
-  const llmCode = `
-import sys; sys.stdout.reconfigure(encoding='utf-8')
-from polaris.llm.parser import parse_with_llm
-from polaris.chat import ProblemType, ParsedProblem, _build_model, _solve, _format_result
-params = parse_with_llm("""${normalized}""")
-pt = {'knapsack': 0, 'assignment': 1, 'scheduling': 2, 'multi_knapsack': 3, 'set_covering': 4, 'facility': 5, 'vrp': 6}.get(params.get('problem_type',''), -1)
-if pt < 0:
-    print(params.get('error','未能识别问题类型'))
-else:
-    types = [ProblemType.KNAPSACK,ProblemType.ASSIGNMENT,ProblemType.SCHEDULING,ProblemType.MULTI_KNAPSACK,ProblemType.SET_COVERING,ProblemType.FACILITY,ProblemType.VRP]
-    p = ParsedProblem(ptype=types[pt], params=params, raw="""${normalized}""")
-    m = _build_model(p)
-    r = _solve(m)
-    print(_format_result(p, r, m))
-`;
-  let r = sp('python', ['-c', llmCode], { timeout: 30000, encoding: 'utf8', env, maxBuffer: 100*1024 });
-  if (r.error || !r.stdout) r = sp('python3', ['-c', llmCode], { timeout: 30000, encoding: 'utf8', env, maxBuffer: 100*1024 });
-  const out = (r.stdout||'').trim() || (r.stderr||'').trim();
-  if (!out || out.includes('未能识别') || out.includes('未知')) {
-    return { success: false, error: out || 'Polaris 无法识别该问题类型' };
-  }
-  return { success: true, result: out };
+  const env = { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1' };
+  let r = sp('python', ['-c', code], { timeout: 30000, encoding: 'utf8', env });
+  if (r.error || !r.stdout) r = sp('python3', ['-c', code], { timeout: 30000, encoding: 'utf8', env });
+  const out = (r.stdout || r.stderr || '').trim();
+  if (out && !out.includes('ModuleNotFoundError') && !out.includes('No module')) return { success: true, result: out };
+  return { success: false, error: out || 'Python/polaris not available' };
 }
 
 async function executeTool(name, args, onExec) {
   if (onExec) onExec({ tool: name, status: 'running', detail: JSON.stringify(args).slice(0, 100) });
-
-  // Unified solver for all problem types
   if (name === 'polaris_solve') {
     const result = await executePolarisSolve(args.prompt || '');
     if (onExec) onExec({ tool: name, status: result.success ? 'done' : 'error', detail: (result.result || result.error || '').slice(0, 120) });
     return result;
   }
-
-  // Standard tool lookup
   const tool = TOOLS[name];
   if (!tool) {
-    if (onExec) onExec({ tool: name, status: 'error', detail: `Tool not found` });
-    return { success: false, error: `Unknown tool: ${name}` };
+    if (onExec) onExec({ tool: name, status: 'error', detail: 'Tool not found' });
+    return { success: false, error: `Unknown: ${name}` };
   }
   try {
     const result = await tool.execute(args);
@@ -91,7 +57,7 @@ function callDeepSeek(messages, tools, apiKey) {
       timeout: 30000,
     }, resp => {
       let d = ''; resp.on('data', c => d += c.toString());
-      resp.on('end', () => { try { resolve(JSON.parse(d)); } catch { resolve({ error: 'Parse failed: ' + d.slice(0, 200) }); } });
+      resp.on('end', () => { try { resolve(JSON.parse(d)); } catch { resolve({ error: 'Parse failed' }); } });
     });
     req.on('error', e => resolve({ error: e.message }));
     req.on('timeout', () => { req.destroy(); resolve({ error: 'Timeout' }); });
@@ -101,53 +67,47 @@ function callDeepSeek(messages, tools, apiKey) {
 
 async function runAgentLoop(userMessage, apiKey, onExec) {
   const toolDecls = buildToolDeclarations();
-  const maxRounds = 2;  // 2 rounds max — solve or fallback
-
   const messages = [
-    { role: 'system', content: '你是 Polaris，调用 polaris_solve 工具求解用户描述的任意优化问题。无论背包、排产、指派、调度、选址、VRP、覆盖——把用户的问题原文传给 polaris_solve，它会自动处理。不要分析，不要解释，直接调工具。' },
+    { role: 'system', content: '你是 Polaris 求解助手。收到用户问题后，直接调用 polaris_solve 工具，把用户的问题原文原封不动传给 prompt 参数。不要分析，不要解释，立即调工具。' },
     { role: 'user', content: userMessage },
   ];
 
-  for (let round = 0; round < maxRounds; round++) {
+  for (let round = 0; round < 2; round++) {
     const resp = await callDeepSeek(messages, toolDecls, apiKey);
-    if (resp.error) return `网络错误：${resp.error}。请重试。`;
-
+    if (resp.error) {
+      logger.warn('DeepSeek error, skipping to direct solve', { error: resp.error });
+      break;
+    }
     const choice = resp.choices?.[0];
-    if (!choice) return 'API 返回异常，请重试。';
-
-    // Direct response from LLM
+    if (!choice) break;
     if (!choice.message?.tool_calls?.length) {
       const content = choice.message?.content || '';
-      if (content.trim().length > 10) return content;
-      // Empty response — try talking to the user
-      return '我收到了你的问题但无法自动求解。请尝试用更简洁的格式描述：\n- 背包："N件物品，价值...重量...，容量..."\n- 排产："排产N个任务，处理时间..."\n- 指派："指派N个工人，成本矩阵..."';
+      if (content.trim().length > 20) return content;
+      break;
     }
-
-    // Tool calls
     const toolCalls = choice.message.tool_calls;
     messages.push({ role: 'assistant', content: '正在求解...', tool_calls: toolCalls });
-
     for (const tc of toolCalls) {
       const fn = tc.function;
       let args = {};
       try { args = JSON.parse(fn.arguments); } catch {}
-
-      // If LLM passed raw text instead of {prompt: "..."}, use the text as prompt
-      const prompt = args.prompt || args.code || Object.values(args).join(' ') || userMessage;
-
+      const prompt = args.prompt || userMessage;
       const result = await executeTool(fn.name, { prompt }, onExec);
       const toolResult = result.success ? (result.result || 'Done') : `Error: ${result.error}`;
-      messages.push({ role: 'tool', tool_call_id: tc.id, content: typeof toolResult === 'string' ? toolResult.slice(0, 3000) : JSON.stringify(toolResult).slice(0, 3000) });
+      messages.push({ role: 'tool', tool_call_id: tc.id, content: String(toolResult).slice(0, 3000) });
     }
   }
 
-  // Fallback: direct solve attempt
+  // terminal fallback
   const directResult = await executePolarisSolve(userMessage);
   if (directResult.success) return directResult.result;
-  return '未能求解。请用更简洁的格式重新描述问题。\n\n支持的问题类型：背包、排产、指派、设施选址、多背包、集合覆盖、VRP。';
-}
+  return `求解引擎未返回结果。可能的原因：
+1. Polaris Python 引擎未安装 → 运行 pip install polaris-opt[highs]
+2. Python 版本过低 → 需要 Python 3.11+
+3. 问题描述过于复杂 → 请尝试用更简洁的格式重新描述
 
-// ── Public API ──────────────────────────────────────────────────────────
+支持的问题类型：背包、排产、指派、设施选址、多背包、集合覆盖、VRP`;
+}
 
 async function executeQuery(text, strategy, systemPrompt, images, onStreamChunk, apiKeys = {}) {
   const startTime = Date.now();
@@ -155,7 +115,6 @@ async function executeQuery(text, strategy, systemPrompt, images, onStreamChunk,
   const tid = logger.newTraceId();
   logger.info('Request received', { tid, text: text.slice(0, 80) });
 
-  // Simple greetings
   if (/^(你好|hi|hello|谢谢|thanks|再见|bye)$/i.test(text.trim())) {
     return {
       routing: { strategy: 'direct', top_intent: '对话', selected_models: ['deepseek'], rationale: '简单问候' },
@@ -168,14 +127,14 @@ async function executeQuery(text, strategy, systemPrompt, images, onStreamChunk,
     const onExec = apiKeys.onExec || null;
     const content = await runAgentLoop(text, apiKey, onExec);
     const elapsed = Date.now() - startTime;
-    logger.info('Request completed', { tid, ms: elapsed, responseLen: (content||'').length });
+    logger.info('Request completed', { tid, ms: elapsed });
     return {
       routing: { strategy: 'function_calling', top_intent: 'Agent 自主决策', selected_models: ['deepseek-v4-flash'], rationale: 'DeepSeek function calling', total_ms: elapsed },
       responses: [{ model_id: 'deepseek-v4-flash', model_display: 'DeepSeek V4 Flash', content }],
       total_latency_ms: elapsed,
     };
   } catch (e) {
-    logger.error('Request failed', { tid, error: e.message, ms: Date.now() - startTime });
+    logger.error('Request failed', { tid, error: e.message });
     return {
       routing: { strategy: 'error', top_intent: 'error', selected_models: [], rationale: e.message },
       responses: [{ model_id: 'error', model_display: 'Error', content: `Agent 执行异常：${e.message}。请重试。` }],
