@@ -77,14 +77,23 @@ function buildToolDeclarations() {
   return decls;
 }
 
-async function executeTool(name, args) {
+async function executeTool(name, args, onExec) {
+  if (onExec) onExec({ tool: name, status: 'running', detail: JSON.stringify(args).slice(0,100) });
   const tool = TOOLS[name];
-  if (!tool) return { success: false, error: `Unknown tool: ${name}` };
+  if (!tool) {
+    if (onExec) onExec({ tool: name, status: 'error', detail: `Tool not found: ${name}` });
+    return { success: false, error: `Unknown tool: ${name}` };
+  }
   try {
     const result = await tool.execute(args);
-    if (result.success) return result;
+    if (result.success) {
+      if (onExec) onExec({ tool: name, status: 'done', detail: (result.result||'Done').slice(0,120) });
+      return result;
+    }
+    if (onExec) onExec({ tool: name, status: 'error', detail: (result.error||'Failed').slice(0,120) });
     return { success: false, error: result.error || 'Tool failed' };
   } catch (e) {
+    if (onExec) onExec({ tool: name, status: 'error', detail: e.message.slice(0,120) });
     return { success: false, error: e.message };
   }
 }
@@ -118,7 +127,7 @@ function callDeepSeek(messages, tools, apiKey) {
   });
 }
 
-async function runAgentLoop(userMessage, apiKey, conversationHistory = []) {
+async function runAgentLoop(userMessage, apiKey, onExec, conversationHistory = []) {
   const { prepareMessages, compressToolOutput, estimateMessageTokens } = require('./token_budget');
   const toolDecls = buildToolDeclarations();
   const maxRounds = 5;
@@ -165,7 +174,7 @@ async function runAgentLoop(userMessage, apiKey, conversationHistory = []) {
       let args = {};
       try { args = JSON.parse(fn.arguments); } catch {}
 
-      const result = await executeTool(fn.name, args);
+      const result = await executeTool(fn.name, args, onExec);
       const toolResult = result.success
         ? (result.result || 'Done')
         : `Error: ${result.error}`;
@@ -227,7 +236,8 @@ async function executeQuery(text, strategy, systemPrompt, images, onStreamChunk,
   }
 
   try {
-    const content = await runAgentLoop(text, apiKey);
+    const onExec = apiKeys.onExec || null;
+    const content = await runAgentLoop(text, apiKey, onExec);
     return {
       routing: { strategy: 'function_calling', top_intent: 'Agent 自主决策', selected_models: ['deepseek-v4-flash'], rationale: 'DeepSeek function calling — LLM drives tool execution' },
       responses: [{ model_id: 'deepseek-v4-flash', model_display: 'DeepSeek V4 Flash', content }],
