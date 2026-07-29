@@ -22,6 +22,6 @@ interface PolarisAPI {
   workflowsList(): Promise<{ id: string; name: string; steps: { id: string; agent: string; description: string }[] }[]>;
   monitorStart(): Promise<{ success: boolean }>; monitorUpdate(a: any): Promise<boolean>; monitorSetScene(s: string): Promise<boolean>; monitorFeedback(p: { eventKey: string; accepted: boolean }): Promise<boolean>; monitorContext(): Promise<any>;
   plannerGenerate(t: string): Promise<any>; plannerExecute(id: string): Promise<any>; plannerReject(id: string): Promise<any>;
-  onIntervention(cb: (card: any) => void): void; onPlanProgress(cb: (data: any) => void): void;
+  onIntervention(cb: (card: any) => void): void; onPlanProgress(cb: (data: any) => void): void; onExecLog(cb: (data: any) => void): void;
 }
 interface Window { electronAPI?: PolarisAPI; }
