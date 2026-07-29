@@ -113,55 +113,24 @@ function callDeepSeek(messages, tools, apiKey) {
   });
 }
 
-async function runAgentLoop(userMessage, apiKey) {
+async function runAgentLoop(userMessage, apiKey, conversationHistory = []) {
+  const { prepareMessages, compressToolOutput, estimateMessageTokens } = require('./token_budget');
   const toolDecls = buildToolDeclarations();
-  const messages = [
-    {
-      role: 'system',
-      content: `你是 Polaris，运筹优化科研助手，核心能力是自动数学建模和求解。
-
-## 工具选择指南
-
-1. 用户描述了一个已知类型的问题（背包/排产/指派等）→ 直接用 polaris_opt
-2. 用户想分析结构、讨论策略 → 用 polaris_analyze
-3. 用户想跑实验、生成论文表格 → 用 polaris_research
-4. **用户描述了一个新问题，不在7个预制模板中 → 用 polaris_model 手动建模**
-
-## polaris_model 建模规范
-
-当你调用 polaris_model 时，要写出完整的 Python 建模代码。规范：
-- 变量名必须是 x，约束列表必须是 cs，目标必须是 obj
-- 变量定义：x = Variable("x", IndexDomain(("i", n)), VarType.BINARY)  # 一维
-- 多维：x = Variable("x", IndexDomain(("i", n), ("j", m)), VarType.BINARY)
-- 约束：cs.append(Constraint("name", expr, Sense.LE, rhs))  # LE/GE/EQ
-- 表达式用 LinearExpr.from_sum() 或手动 VarRef 加减
-- x[{ "i": 0, "j": 1 }] 来引用变量
-- 目标：obj = Objective(expr, ObjSense.MINIMIZE) 或 ObjSense.MAXIMIZE
-
-## 建模示例
-
-用户说"我有5个工件要分配到3台机器上，每个机器的容量不同，加工成本也不同"
-
-polaris_model(code:
-  n=5; m=3
-  x=Variable("x",IndexDomain(("job",n),("machine",m)),VarType.BINARY)
-  cs=[]
-  for j in range(n): cs.append(Constraint(f"assign_{j}",LinearExpr.from_sum(x[{"job":j,"machine":k}] for k in range(m)),Sense.EQ,1.0))
-  for k in range(m): cs.append(Constraint(f"cap_{k}",LinearExpr.from_sum(x[{"job":j,"machine":k}]*p[j] for j in range(n)),Sense.LE,C[k]))
-  expr=LinearExpr.from_sum(x[{"job":j,"machine":k}]*cost[j][k] for j in range(n) for k in range(m))
-  obj=Objective(expr,ObjSense.MINIMIZE))
-
-## 行为准则
-- 用户描述问题后，先判断是否在7个模板中。在→polaris_opt，不在→polaris_model
-- 建模前先分析问题结构（变量、约束、目标），再写代码
-- 求解后解释结果：哪个是最优方案、为什么、约束是否紧
-- 简洁回复，不要重复用户的话`
-    },
-    { role: 'user', content: userMessage },
-  ];
-
   const maxRounds = 5;
+
+  // Build initial messages with token budget
+  let messages = prepareMessages(userMessage, conversationHistory, 0, toolDecls);
+  let totalTokens = estimateMessageTokens(messages);
+  console.log(`[agent_loop] start — ${totalTokens} tokens`);
+
   for (let round = 0; round < maxRounds; round++) {
+    // Token check before each call
+    totalTokens = estimateMessageTokens(messages);
+    if (totalTokens > 4000) {
+      messages = prepareMessages(userMessage, conversationHistory, round, toolDecls);
+      console.log(`[agent_loop] round ${round} — recompressed to ${estimateMessageTokens(messages)} tokens`);
+    }
+
     const resp = await callDeepSeek(messages, toolDecls, apiKey);
 
     if (resp.error) {
@@ -180,7 +149,11 @@ polaris_model(code:
 
     // LLM wants to call tools
     const toolCalls = choice.message.tool_calls;
-    messages.push({ role: 'assistant', content: choice.message.content || '', tool_calls: toolCalls });
+    messages.push({
+      role: 'assistant',
+      content: (choice.message.content || '调用工具...').slice(0, 200),
+      tool_calls: toolCalls,
+    });
 
     for (const tc of toolCalls) {
       const fn = tc.function;
@@ -192,11 +165,25 @@ polaris_model(code:
         ? (result.result || 'Done')
         : `Error: ${result.error}`;
 
+      // ── Layer 2+3: Compress tool output ──
+      const raw = typeof toolResult === 'string' ? toolResult : JSON.stringify(toolResult);
+      const compressed = compressToolOutput(fn.name, raw);
+      const saved = raw.length - compressed.length;
+      if (saved > 100) {
+        console.log(`[agent_loop] ${fn.name}: ${raw.length} → ${compressed.length} chars (${Math.round(saved/raw.length*100)}% saved)`);
+      }
+
       messages.push({
         role: 'tool',
         tool_call_id: tc.id,
-        content: typeof toolResult === 'string' ? toolResult.slice(0, 4000) : JSON.stringify(toolResult).slice(0, 4000),
+        content: compressed,
       });
+    }
+
+    // ── Layer 4+5: Sliding window compression ──
+    if (messages.length > 8) {
+      const { compressMessages } = require('./token_budget');
+      messages = compressMessages(messages, 6);
     }
   }
 
