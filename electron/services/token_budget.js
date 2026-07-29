@@ -206,6 +206,7 @@ function prepareMessages(userMessage, conversationHistory, turnCount, tools) {
 module.exports = {
   prepareMessages,
   compressToolOutput,
+  compressMessages,
   estimateTokens,
   estimateMessageTokens,
   FULL_SYSTEM_PROMPT,
