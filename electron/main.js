@@ -136,6 +136,10 @@ ipcMain.handle('planner:pending', () => planner.getPendingPlans());
 // IPC: Notify
 ipcMain.handle('notify', (_e, { title, body }) => { if (Notification.isSupported()) { new Notification({ title, body }).show(); return true; } return false; });
 
+// IPC: Health Check
+const { runHealthCheck } = require('./services/health_check');
+ipcMain.handle('health:check', async () => runHealthCheck());
+
 app.whenReady().then(() => { createWindow(); createTray(); systemMonitor.startMonitoring((card) => { if (win && !win.isDestroyed()) win.webContents.send('polaris:intervention', card); }); });
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
 app.on('will-quit', () => { globalShortcut.unregisterAll(); for (const [, p] of mcpProcesses) p.kill(); systemMonitor.stopMonitoring(); });
