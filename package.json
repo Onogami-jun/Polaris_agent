@@ -19,18 +19,18 @@
     "win": {
       "target": ["nsis", "zip"],
       "icon": "icon.png",
-      "artifactName": "Polaris-Solver-Setup-${version}-win-x64.${ext}"
+      "artifactName": "Polaris-Solver-Windows.${ext}"
     },
     "mac": {
       "target": ["dmg", "zip"],
       "icon": "icon.png",
-      "artifactName": "Polaris-Solver-${version}-mac-${arch}.${ext}",
+      "artifactName": "Polaris-Solver-macOS.${ext}",
       "category": "public.app-category.developer-tools"
     },
     "linux": {
       "target": ["AppImage", "deb"],
       "icon": "icon.png",
-      "artifactName": "Polaris-Solver-${version}-linux-${arch}.${ext}",
+      "artifactName": "Polaris-Solver-Linux.${ext}",
       "category": "Development"
     },
     "nsis": {
