@@ -16,13 +16,13 @@ const Toast:React.FC<{toasts:any[];onDone:(id:number)=>void}>=({toasts,onDone})=
 
 const WinBtns=()=>(<div className="wb-row"><button onClick={()=>window.electronAPI?.minimize()}className="wb">&#xe000;</button><button onClick={()=>window.electronAPI?.maximize()}className="wb">&#xe001;</button><button onClick={()=>window.electronAPI?.close()}className="wb wb-close">&#xe003;</button></div>);
 
-const MsgRow:React.FC<{msg:ChatMessage;isLast:boolean;onCopy:()=>void;onRegen:()=>void;onEdit:(v:string)=>void;onBranch:()=>void;cid:boolean}>=({msg,isLast,onCopy,onRegen,onEdit,onBranch,cid})=>{
-  const[ed,setEd]=useState(false);const[v,setV]=useState(msg.content);const[rtOpen,setRtOpen]=useState(false);
+const MsgRow:React.FC<{msg:ChatMessage;isLast:boolean;onCopy:()=>void;onRegen:()=>void;onEdit:(v:string)=>void;onBranch:()=>void;onDownload:(code:string,name?:string)=>void;cid:boolean}>=({msg,isLast,onCopy,onRegen,onEdit,onBranch,onDownload,cid})=>{
+  const[ed,setEd]=useState(false);const[v,setV]=useState(msg.content);const[rtOpen,setRtOpen]=useState(false);const dlRegex=/```(python|py|code)\n([\s\S]*?)```/g;const dlBlocks=[];let dm;while((dm=dlRegex.exec(msg.content))!==null)dlBlocks.push({lang:dm[1],code:dm[2].trim()});
   if(msg.role==='user')return(<div className="msg-row u"><div className="ub">{msg.content}{msg.edited&&<span className="ed">(edited)</span>}</div></div>);
   return(<div className="msg-row"><div className="ab">
     {msg.routing&&<div className="rt-wrap"><button className="rt-toggle"onClick={()=>setRtOpen(!rtOpen)}>{rtOpen?'▾':'▸'} {msg.routing.intent}{msg.routing.models.length>1?` +${msg.routing.models.length}`:''}</button><div className={'rt-body'+(rtOpen?' open':'')}><span className="rt-i">{msg.routing.intent}</span>→{msg.routing.models.map((m,i)=><span key={i}className="rt-m">{m}</span>)}</div></div>}
     {ed?(<div><textarea className="ed-tx"value={v}onChange={e=>setV(e.target.value)}rows={6}/><div className="ed-bar"><button onClick={()=>{onEdit(v);setEd(false)}}className="ed-bt">Save</button><button onClick={()=>setEd(false)}className="ed-bt ed-c">Cancel</button></div></div>):<div dangerouslySetInnerHTML={{__html:md(msg.content)}}/>}
-    <div className="ab-ft"><span className="ab-md">{msg.model||''}</span><span className="ab-act"><button className="ab-btn"onClick={onCopy}title="Copy">{cid?'✓':'⎘'}</button>{isLast&&<><button className="ab-btn"onClick={onRegen}title="Retry">↺</button><button className="ab-btn"onClick={onBranch}title="Branch">⑂</button></>}<button className="ab-btn"onClick={()=>{setEd(true);setV(msg.content)}}title="Edit">✎</button></span></div></div></div>);
+    <div className="ab-ft"><span className="ab-md">{msg.model||''}</span>{dlBlocks.length>0&&<span style={{marginLeft:8,color:"var(--text3)",fontSize:11}}>{dlBlocks.length}个代码块</span>}<span className="ab-act">{dlBlocks.map((b,j)=><button key={j}className="ab-btn ab-dl"onClick={()=>onDownload(b.code,b.lang==="py"?"polaris_model.py":"model.py")}title="下载建模代码">⬇</button>)}<button className="ab-btn"onClick={onCopy}title="Copy">{cid?'✓':'⎘'}</button>{isLast&&<><button className="ab-btn"onClick={onRegen}title="Retry">↺</button><button className="ab-btn"onClick={onBranch}title="Branch">⑂</button></>}<button className="ab-btn"onClick={()=>{setEd(true);setV(msg.content)}}title="Edit">✎</button></span></div></div></div>);
 };
 
 const CmdPalette:React.FC<{onClose:()=>void;onCommand:(cmd:string)=>void}>=({onClose,onCommand})=>{
@@ -150,7 +150,7 @@ const App:React.FC=()=>{
         <div className="chat"ref={cr}>
           {interventions.map(c=><IntCard key={c.ts||c.timestamp}card={c}onConfirm={confInt}onDismiss={dismInt}/>)}
           {plan&&<PlanCard plan={plan}onConfirm={confirmPlan}onReject={rejectPlan}progress={planProg}/>}
-          {(!act||act.messages.length===0)?(<div className="empty"><h2>描述你的优化问题</h2><p className="eh">用自然语言描述优化问题（背包、排产、指派、调度⋯），Polaris 引擎自动求解</p><div className="esg">{SUGGESTIONS.map((s,i)=><button key={i}className="es"onClick={()=>{setInp(s);ir.current?.focus()}}>{s}</button>)}</div></div>):(act.messages.map((m,i)=><MsgRow key={m.id}msg={m}isLast={i===act.messages.length-1}onCopy={()=>cp(m.content)}onRegen={rg}onEdit={em}onBranch={br}cid={cid===m.content.slice(0,20)}/>))}
+          {(!act||act.messages.length===0)?(<div className="empty"><h2>描述你的优化问题</h2><p className="eh">用自然语言描述优化问题（背包、排产、指派、调度⋯），Polaris 引擎自动求解</p><div className="esg">{SUGGESTIONS.map((s,i)=><button key={i}className="es"onClick={()=>{setInp(s);ir.current?.focus()}}>{s}</button>)}</div></div>):(act.messages.map((m,i)=><MsgRow key={m.id}msg={m}isLast={i===act.messages.length-1}onDownload={(code:string,name?:string)=>{const b=new Blob([code],{type:"text/plain"});const a=document.createElement("a");a.href=URL.createObjectURL(b);a.download=name||"model.py";a.click()}} onCopy={()=>cp(m.content)}onRegen={rg}onEdit={em}onBranch={br}cid={cid===m.content.slice(0,20)}/>))}
           {thk&&<div className="tm"><div className="tm-dots"><div className="tm-dot"/><div className="tm-dot"/><div className="tm-dot"/></div><span>{thk}</span></div>}
         </div>
 
