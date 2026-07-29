@@ -27,4 +27,5 @@ contextBridge.exposeInMainWorld('electronAPI', {
   plannerGenerate: (t) => ipcRenderer.invoke('planner:generate', { text: t }), plannerExecute: (id) => ipcRenderer.invoke('planner:execute', { planId: id }), plannerReject: (id) => ipcRenderer.invoke('planner:reject', { planId: id }),
   onIntervention: (cb) => { ipcRenderer.on('polaris:intervention', (_, d) => cb(d)); },
   onPlanProgress: (cb) => { ipcRenderer.on('polaris:plan-progress', (_, d) => cb(d)); },
+  onExecLog: (cb) => { ipcRenderer.on('polaris:exec-log', (_, d) => cb(d)); },
 });

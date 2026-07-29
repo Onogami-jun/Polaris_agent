@@ -45,11 +45,12 @@ function createTray() {
 // IPC: AI
 ipcMain.handle('polaris:query', async (_e, { text, strategy, systemPrompt, images, apiKeys }) => {
   console.log('[polaris:query] text:', (text||'').slice(0,80));
+  const onExec = (evt) => { if (win && !win.isDestroyed()) win.webContents.send('polaris:exec-log', evt); };
   try {
-    const result = await executeQuery(text, strategy, systemPrompt, images, undefined, apiKeys || {});
+    const result = await executeQuery(text, strategy, systemPrompt, images, undefined, { ...(apiKeys||{}), onExec });
     const responseContent = result?.responses?.[0]?.content || '';
     console.log('[polaris:query] response:', responseContent.slice(0,80));
-    if (!responseContent) console.error('[polaris:query] WARNING: empty response!', JSON.stringify(result).slice(0,200));
+    if (!responseContent) console.error('[polaris:query] WARNING: empty response!');
     return result;
   } catch(e) {
     console.error('[polaris:query] ERROR:', e.message);
