@@ -5,6 +5,7 @@
 const https = require('https');
 const { TOOLS } = require('./tools');
 const { prepareMessages, compressToolOutput, compressMessages, estimateMessageTokens } = require('./token_budget');
+const logger = require('./logger');
 const DEFAULT_KEY = 'sk-665f376d7c0f4b91b4c3029bf82e670a';
 
 // Convert TOOLS into DeepSeek function-calling format
@@ -241,6 +242,8 @@ async function runAgentLoop(userMessage, apiKey, onExec, conversationHistory = [
 async function executeQuery(text, strategy, systemPrompt, images, onStreamChunk, apiKeys = {}) {
   const startTime = Date.now();
   const apiKey = apiKeys.deepseek || DEFAULT_KEY;
+  const tid = logger.newTraceId();
+  logger.info('Request received', { tid, text: text.slice(0, 80) });
 
   // Simple greetings
   if (/^(你好|hi|hello|谢谢|thanks|再见|bye)$/i.test(text.trim())) {
@@ -254,12 +257,15 @@ async function executeQuery(text, strategy, systemPrompt, images, onStreamChunk,
   try {
     const onExec = apiKeys.onExec || null;
     const content = await runAgentLoop(text, apiKey, onExec);
+    const elapsed = Date.now() - startTime;
+    logger.info('Request completed', { tid, ms: elapsed, responseLen: (content||'').length });
     return {
-      routing: { strategy: 'function_calling', top_intent: 'Agent 自主决策', selected_models: ['deepseek-v4-flash'], rationale: 'DeepSeek function calling — LLM drives tool execution' },
+      routing: { strategy: 'function_calling', top_intent: 'Agent 自主决策', selected_models: ['deepseek-v4-flash'], rationale: 'DeepSeek function calling', total_ms: elapsed },
       responses: [{ model_id: 'deepseek-v4-flash', model_display: 'DeepSeek V4 Flash', content }],
-      total_latency_ms: Date.now() - startTime,
+      total_latency_ms: elapsed,
     };
   } catch (e) {
+    logger.error('Request failed', { tid, error: e.message, ms: Date.now() - startTime });
     return {
       routing: { strategy: 'error', top_intent: 'error', selected_models: [], rationale: e.message },
       responses: [{ model_id: 'error', model_display: 'Error', content: `Agent 执行异常：${e.message}。请重试。` }],

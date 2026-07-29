@@ -305,18 +305,26 @@ class ToolExecutor {
 
   async execute(toolName, params, autoConfirm = false) {
     const tool = TOOLS[toolName];
-    if (!tool) return { success: false, error: `Unknown tool: ${toolName}` };
+    if (!tool) {
+      try { const log = require('./logger'); log.warn('Tool not found', { tool: toolName }); } catch {}
+      return { success: false, error: `Unknown tool: ${toolName}` };
+    }
     if (tool.requires_confirm && !autoConfirm) {
       const confirmId = 'confirm_' + Date.now();
       this.pendingConfirmations.set(confirmId, { tool: toolName, params, timestamp: Date.now() });
       return { confirmation_required: true, confirmation_id: confirmId, tool: tool.name, params };
     }
+    const t0 = Date.now();
     try {
       const result = await tool.execute(params);
+      const elapsed = Date.now() - t0;
+      try { const log = require('./logger'); log.info('Tool executed', { tool: toolName, ms: elapsed, ok: true }); } catch {}
       this.history.push({ tool: toolName, params, result, timestamp: Date.now() });
-      return { ...result, confirmation_required: false };
+      return { ...result, confirmation_required: false, elapsed };
     } catch(e) {
-      const error = { success: false, error: e.message };
+      const elapsed = Date.now() - t0;
+      try { const log = require('./logger'); log.error('Tool failed', { tool: toolName, ms: elapsed, error: e.message }); } catch {}
+      const error = { success: false, error: e.message, elapsed };
       this.history.push({ tool: toolName, params, result: error, timestamp: Date.now() });
       return error;
     }
