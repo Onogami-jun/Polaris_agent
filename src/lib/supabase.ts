@@ -10,7 +10,7 @@
 import { createClient } from '@supabase/supabase-js';
 
 const SUPABASE_URL = 'https://spwishxhydvgqbfchjgj.supabase.co';
-const SUPABASE_ANON_KEY = 'YOUR_ANON_KEY';  // ← 把上面的 anon public key 贴在这里
+const SUPABASE_ANON_KEY = 'sb_publishable_hY1a3BqHfPvUNPQwkV6AEg_Nz-b2bgY';
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: {
