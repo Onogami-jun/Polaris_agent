@@ -1,0 +1,80 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 42 25% 97%;
+    --foreground: 240 4% 8%;
+    --card: 0 0% 100%;
+    --card-foreground: 240 4% 8%;
+    --primary: 239 84% 57%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 240 5% 94%;
+    --secondary-foreground: 240 4% 16%;
+    --muted: 240 5% 94%;
+    --muted-foreground: 240 4% 46%;
+    --accent: 239 84% 57%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 240 6% 90%;
+    --input: 240 6% 90%;
+    --ring: 239 84% 57%;
+    --radius: 0.625rem;
+    --success: 164 76% 44%;
+    --warning: 38 84% 55%;
+    font-family: 'Inter', 'Noto Sans SC', system-ui, sans-serif;
+  }
+
+  .dark {
+    --background: 240 4% 8%;
+    --foreground: 42 25% 97%;
+    --card: 240 4% 12%;
+    --card-foreground: 42 25% 97%;
+    --primary: 239 84% 67%;
+    --primary-foreground: 240 4% 8%;
+    --secondary: 240 4% 16%;
+    --secondary-foreground: 42 25% 97%;
+    --muted: 240 4% 16%;
+    --muted-foreground: 240 5% 64%;
+    --accent: 239 84% 67%;
+    --accent-foreground: 240 4% 8%;
+    --destructive: 0 62% 50%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 240 4% 18%;
+    --input: 240 4% 18%;
+    --ring: 239 84% 67%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground antialiased overflow-hidden;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+  #root {
+    @apply h-full overflow-hidden;
+  }
+
+  ::selection {
+    @apply bg-primary/15;
+  }
+
+  :focus-visible {
+    @apply outline-2 outline-primary outline-offset-2 rounded-sm;
+  }
+  :focus:not(:focus-visible) {
+    @apply outline-none;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
