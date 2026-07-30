@@ -1,4 +1,5 @@
 const path = require('path');
+const webpack = require('webpack');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
 
 module.exports = (env, argv) => {
@@ -24,7 +25,12 @@ module.exports = (env, argv) => {
         { test: /\.(png|svg|jpg|jpeg|gif)$/, type: 'asset/resource' },
       ],
     },
-    plugins: [new HtmlWebpackPlugin({ template: './public/index.html', title: 'Polaris' })],
+    plugins: [
+      new HtmlWebpackPlugin({ template: './public/index.html', title: 'Polaris' }),
+      new webpack.DefinePlugin({
+        'process.env.POLARIS_SUPABASE_ANON_KEY': JSON.stringify(process.env.POLARIS_SUPABASE_ANON_KEY || ''),
+      }),
+    ],
     devServer: { port: 3000, hot: true, historyApiFallback: true },
     devtool: isDev ? 'eval-source-map' : false,
   };

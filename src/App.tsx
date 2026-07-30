@@ -2,8 +2,12 @@
 import React,{useState,useCallback,useRef,useEffect}from'react';
 import{useAppSelector,useAppDispatch}from'./store';
 import{addMessage,editMessage,loadSessions as lr,newSession as ns,setActiveSession,setStreaming,setStrategy,toggleSettings,setTheme,deleteSession,branchSession}from'./store/chatSlice';
+import{restoreAuth,incrementUsage}from'./store/authSlice';
 import{saveSessions,loadSessions as ld}from'./store/persist';
 import SettingsPanel from'./components/SettingsPanel';
+import{LoginModal}from'./components/LoginModal';
+import{UserMenu}from'./components/UserMenu';
+import{AuthBanner}from'./components/AuthBanner';
 import{Button}from'./components/ui/button';
 import{Badge}from'./components/ui/badge';
 import{Separator}from'./components/ui/separator';
@@ -240,7 +244,7 @@ const App:React.FC=()=>{
 
   // ── Init ──
   useEffect(()=>{const t=setTimeout(()=>{setSplashFade(true);setTimeout(()=>setSplash(false),500)},2200);return()=>clearTimeout(t)},[]);
-  useEffect(()=>{document.documentElement.classList.toggle('dark',settings.theme==='dark');document.documentElement.style.fontSize=settings.fontSize+'px';const s=ld();if(s.length>0)d(lr(s))},[]);
+  useEffect(()=>{document.documentElement.classList.toggle('dark',settings.theme==='dark');document.documentElement.style.fontSize=settings.fontSize+'px';d(restoreAuth());const s=ld();if(s.length>0)d(lr(s))},[]);
   useEffect(()=>{if(sessions.length>0){const t=setTimeout(()=>saveSessions(sessions),500);return()=>clearTimeout(t)}},[sessions]);
   useEffect(()=>{const h=(e:KeyboardEvent)=>{if((e.ctrlKey||e.metaKey)&&e.key==='p'){e.preventDefault();setCmd(true)}if(e.key==='Escape'){stop.current=true;d(setStreaming(false));setThk('');setCmd(false)}if((e.ctrlKey||e.metaKey)&&e.key==='n'){e.preventDefault();d(ns())}if((e.ctrlKey||e.metaKey)&&e.key===','){e.preventDefault();d(toggleSettings())}};window.addEventListener('keydown',h);return()=>window.removeEventListener('keydown',h)},[d]);
   useEffect(()=>{const api=window.electronAPI;if(!api)return;api.monitorStart();api.onIntervention((card:any)=>{card.ts=Date.now();setInterventions(p=>[...p.slice(-4),card])});api.onPlanProgress((data:any)=>setPlanProg(data));api.onExecLog((data:any)=>{addExecLog(data.tool,data.status,data.detail||'')});api.onTodoUpdate((data:any)=>{if(data.steps)setTodoSteps(data.steps)});api.onStreamError((ed:any)=>{showToast('Stream Error: '+(ed?.message||'未知'),'error');dispatchRef.current(setStreaming(false));setThk('')});let kc=0;const onKb=()=>{kc++;if(kc%30===0)api.monitorUpdate({count:kc,lastPress:Date.now(),window:document.title})};window.addEventListener('keydown',onKb);return()=>window.removeEventListener('keydown',onKb)},[]);
@@ -266,6 +270,7 @@ const App:React.FC=()=>{
       let cnt=(res?.responses||[]).map((r:any)=>r?.content||'').join('\n\n')||'';
       if(!cnt||cnt.trim().length===0){showToast('服务器返回空回复','warn');cnt='*[空回复]*'}
       d(addMessage({sessionId:sid,message:{id:'a'+Date.now(),role:'assistant',content:cnt,timestamp:Date.now(),model:res?.routing?.selected_models?.join(', ')||'',routing:{intent:res?.routing?.top_intent,models:res?.routing?.selected_models||[],rationale:res?.routing?.rationale||''}}}));
+      d(incrementUsage());
     }catch(e:any){showToast('连接失败: '+(e.message||'未知错误'),'error');d(addMessage({sessionId:sid,message:{id:'e'+Date.now(),role:'assistant',content:'Error: '+(e.message||'Connection failed'),timestamp:Date.now()}}))}
     d(setStreaming(false));setThk('');
   },[streaming,strategy,activeSessionId,d,fs,web,settings]);
@@ -349,17 +354,25 @@ const App:React.FC=()=>{
             {thk&&<Thinking label={thk}/>}
           </Conversation>
 
-          {/* ── Input ── */}
-          <div className="p-4 pb-6 shrink-0">
-            <MessageInput
-              value={inp} onChange={setInp} onSubmit={send}
-              placeholder="描述优化问题... Enter 发送，Shift+Enter 换行"
-              disabled={streaming} isStreaming={streaming}
-              onStop={()=>{stop.current=true;d(setStreaming(false));setThk('')}}
-              onCommand={()=>setCmd(true)}
-              statusText={stratLabel+' · '+activeModel+' · '+(web?'联网搜索':'本地引擎')}
-              toolbarRight={<WebSearchButton active={web}onClick={()=>setWeb(!web)}/>}
-            />
+          {/* ── Input Area ── */}
+          <div className="shrink-0">
+            <AuthBanner/>
+            <div className="flex items-end gap-2 px-4 pb-6 pt-2">
+              <div className="shrink-0 pb-1">
+                <UserMenu/>
+              </div>
+              <div className="flex-1">
+                <MessageInput
+                  value={inp} onChange={setInp} onSubmit={send}
+                  placeholder="描述优化问题... Enter 发送，Shift+Enter 换行"
+                  disabled={streaming} isStreaming={streaming}
+                  onStop={()=>{stop.current=true;d(setStreaming(false));setThk('')}}
+                  onCommand={()=>setCmd(true)}
+                  statusText={stratLabel+' · '+activeModel+' · '+(web?'联网搜索':'本地引擎')}
+                  toolbarRight={<WebSearchButton active={web}onClick={()=>setWeb(!web)}/>}
+                />
+              </div>
+            </div>
           </div>
         </div>
 
@@ -380,6 +393,7 @@ const App:React.FC=()=>{
     </div>
     {settingsOpen&&<SettingsPanel/>}
     {cmd&&<CmdPalette onClose={()=>setCmd(false)}/>}
+    <LoginModal/>
   </>);
 };
 
