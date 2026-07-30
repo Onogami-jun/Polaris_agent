@@ -1,61 +1,45 @@
 /**
- * Polaris Router v4 — DeepSeek function calling + polaris tools.
+ * Polaris Router v5 — Semantic intent + reliable multi-path solver.
  */
 const https = require('https');
 const { TOOLS } = require('./tools');
-const { prepareMessages, compressToolOutput, compressMessages, estimateMessageTokens } = require('./token_budget');
 const logger = require('./logger');
 const { reliableSolve, diagnose } = require('./reliability');
-const DEFAULT_KEY = 'sk-665f376d7c0f4b91b4c3029bf82e670a';
 const { SkillManager } = require('./skills');
 const { runPipeline } = require('./subagents');
-const { saveExperimentOutput } = require('./experiment_memory');
-
-// Filesystem state: save every tool result as a markdown log
-function fsState(workDir, filename, content) {
-  try {
-    const fs = require('fs');
-    if (!fs.existsSync(workDir)) fs.mkdirSync(workDir, { recursive: true });
-    fs.writeFileSync(require('path').join(workDir, filename), content);
-  } catch (e) {}
-}
+const DEFAULT_KEY = 'sk-665f376d7c0f4b91b4c3029bf82e670a';
 const skillManager = new SkillManager();
 
 function buildToolDeclarations() {
   return [
-    { type: 'function', function: { name: 'polaris_solve', description: '求解优化问题。把用户描述的问题原文传给prompt参数即可', parameters: { type: 'object', properties: { prompt: { type: 'string', description: '用户的问题描述原文' } }, required: ['prompt'] } } },
-    { type: 'function', function: { name: 'polaris_analyze', description: '分析问题结构，推荐求解策略。调用它向用户展示思考过程', parameters: { type: 'object', properties: { prompt: { type: 'string', description: '问题描述' } }, required: ['prompt'] } } },
+    { type: 'function', function: { name: 'polaris_solve', description: '求解优化问题。把用户描述的问题原文传给prompt参数即可', parameters: { type: 'object', properties: { prompt: { type: 'string' } }, required: ['prompt'] } } },
+    { type: 'function', function: { name: 'polaris_analyze', description: '分析问题结构，推荐求解策略', parameters: { type: 'object', properties: { prompt: { type: 'string' } }, required: ['prompt'] } } },
   ];
 }
 
 async function executeAnalyze(prompt) {
-  const normalized = JSON.stringify(prompt);
+  const n = JSON.stringify(prompt);
   const code = `import sys; sys.stdout.reconfigure(encoding='utf-8')
 from polaris.chat import _parse,_build_model
 from polaris.analyze.structure import analyze
 try:
- p=_parse(${normalized});m=_build_model(p);s=analyze(m)
- print(f"问题结构：{[l.name for l in s.labels]}")
- print(f"推荐策略：{s.strategy.value}")
- print(f"变量数：{s.n_scalar_vars}，约束数：{s.n_constraints}")
+ p=_parse(${n});m=_build_model(p);s=analyze(m)
+ print(f"Labels: {[l.name for l in s.labels]}")
+ print(f"Strategy: {s.strategy.value}")
+ print(f"Vars: {s.n_scalar_vars}, Cons: {s.n_constraints}")
 except Exception as e:
- print(f"结构分析：该问题需要自定义建模（不在预制模板中）")`;
+ print(f"Structure analysis: custom problem (not in templates)")`;
   const { spawnSync: sp } = require('child_process');
   const env = { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1' };
   let r = sp('python', ['-c', code], { timeout: 15000, encoding: 'utf8', env });
   if (r.error || !r.stdout) r = sp('python3', ['-c', code], { timeout: 15000, encoding: 'utf8', env });
-  const out = (r.stdout || r.stderr || '').trim();
-  return { success: true, result: out || '已完成结构分析' };
-}
-
-async function executePolarisSolve(prompt, onExec) {
-  return reliableSolve(prompt, onExec);
+  return { success: true, result: (r.stdout || r.stderr || '').trim() || 'Analysis complete' };
 }
 
 async function executeTool(name, args, onExec) {
   if (onExec) onExec({ tool: name, status: 'running', detail: JSON.stringify(args).slice(0, 100) });
   if (name === 'polaris_solve') {
-    const result = await executePolarisSolve(args.prompt || '', onExec);
+    const result = await reliableSolve(args.prompt || '', onExec);
     if (onExec) onExec({ tool: name, status: result.success ? 'done' : 'error', detail: (result.result || result.error || '').slice(0, 120) });
     return result;
   }
@@ -89,7 +73,7 @@ function callDeepSeek(messages, tools, apiKey) {
       timeout: 30000,
     }, resp => {
       let d = ''; resp.on('data', c => d += c.toString());
-      resp.on('end', () => { try { resolve(JSON.parse(d)); } catch { resolve({ error: 'Parse failed' }); } });
+      resp.on('end', () => { try { resolve(JSON.parse(d)); } catch { resolve({ error: 'Parse' }); } });
     });
     req.on('error', e => resolve({ error: e.message }));
     req.on('timeout', () => { req.destroy(); resolve({ error: 'Timeout' }); });
@@ -100,25 +84,28 @@ function callDeepSeek(messages, tools, apiKey) {
 async function runAgentLoop(userMessage, apiKey, onExec, onTodo = null) {
   const activeSkill = skillManager.getActive();
 
-  // Subagent pipeline for multi-phase tasks
-  if (activeSkill.name === '实验模式' || activeSkill.name === '分析模式') {
-    const steps = activeSkill.name === '实验模式'
-      ? ['analyzer', 'experimenter', 'writer']
-      : ['analyzer'];
+  // Subagent pipeline for multi-phase skills
+  const pipelineSteps = {
+    '实验模式': ['analyzer', 'experimenter', 'writer'],
+    '分析模式': ['analyzer'],
+  };
+  const steps = pipelineSteps[activeSkill.name];
+
+  if (steps && steps.length > 0) {
     const onProgress = (evt) => {
       if (onExec) onExec({ tool: 'subagent:' + evt.agent, status: evt.status, detail: evt.summary || evt.error || '' });
     };
     const pipelineResult = await runPipeline(userMessage, steps, onProgress, onTodo, apiKey);
     if (pipelineResult && pipelineResult.results.length > 0) {
-      const finalOutput = pipelineResult.results.map(r =>
-        '### ' + r.name + '\n\n' + r.content + '\n\n').join('');
+      const finalOutput = pipelineResult.results.map(r => '### ' + r.name + '\n\n' + r.content + '\n\n').join('');
       return '**子代理协同** · ' + pipelineResult.results.length + ' 个阶段\n\n' + finalOutput + '\n📁 工作目录：' + pipelineResult.workDir;
     }
   }
 
+  // Standard LLM loop
   const toolDecls = buildToolDeclarations();
-  const effectivePrompt = skillManager.getEffectivePrompt(userMessage);
-  logger.info('Skill active', { skill: activeSkill.name, phase: skillManager.currentPhase });
+  const effectivePrompt = await skillManager.getEffectivePrompt(userMessage); // async semantic classifier
+  logger.info('Skill active', { skill: skillManager.getActive().name, phase: skillManager.currentPhase });
 
   const messages = [
     { role: 'system', content: effectivePrompt },
@@ -127,10 +114,7 @@ async function runAgentLoop(userMessage, apiKey, onExec, onTodo = null) {
 
   for (let round = 0; round < 2; round++) {
     const resp = await callDeepSeek(messages, toolDecls, apiKey);
-    if (resp.error) {
-      logger.warn('DeepSeek error, skipping to direct solve', { error: resp.error });
-      break;
-    }
+    if (resp.error) break;
     const choice = resp.choices?.[0];
     if (!choice) break;
     if (!choice.message?.tool_calls?.length) {
@@ -141,31 +125,17 @@ async function runAgentLoop(userMessage, apiKey, onExec, onTodo = null) {
     const toolCalls = choice.message.tool_calls;
     messages.push({ role: 'assistant', content: '正在求解...', tool_calls: toolCalls });
     for (const tc of toolCalls) {
-      const fn = tc.function;
       let args = {};
-      try { args = JSON.parse(fn.arguments); } catch {}
-      const prompt = args.prompt || userMessage;
-      const result = await executeTool(fn.name, { prompt }, onExec);
+      try { args = JSON.parse(tc.function.arguments); } catch { args = { prompt: userMessage }; }
+      const result = await executeTool(tc.function.name, args, onExec);
       const toolResult = result.success ? (result.result || 'Done') : `Error: ${result.error}`;
       messages.push({ role: 'tool', tool_call_id: tc.id, content: String(toolResult).slice(0, 3000) });
     }
   }
 
-  // terminal fallback — multi-path reliable solve
-  const directResult = await executePolarisSolve(userMessage, onExec);
+  const directResult = await reliableSolve(userMessage, onExec);
   if (directResult.success) return directResult.result;
-  // All paths failed — return diagnostic
-  return directResult.error || `Polaris 求解引擎未返回结果。
-
-🔧 快速诊断：请将以下描述发送给我，我会自动检查：
-"帮我诊断环境"
-
-或者你也可以手动检查：
-1. 打开终端运行 python --version（需要 3.11+）
-2. 运行 pip show polaris-opt（确认已安装）
-3. 运行 python -c "from polaris import solve; print(solve('背包容量50，价值60 100 120，重量10 20 30'))"（确认引擎可用）
-
-支持的问题类型：背包、排产、指派、设施选址、多背包、集合覆盖、VRP`;
+  return directResult.error || 'Polaris 求解引擎未返回结果，请用"帮我诊断环境"检查配置';
 }
 
 async function executeQuery(text, strategy, systemPrompt, images, onStreamChunk, apiKeys = {}) {
@@ -182,7 +152,6 @@ async function executeQuery(text, strategy, systemPrompt, images, onStreamChunk,
     };
   }
 
-  // Self-diagnosis command
   if (/诊断|检查.*环境|检查.*引擎|self.*check|diagnos/i.test(text.trim())) {
     const { results } = diagnose();
     const dsResult = await diagnose().dsPromise;
@@ -202,16 +171,15 @@ async function executeQuery(text, strategy, systemPrompt, images, onStreamChunk,
     const elapsed = Date.now() - startTime;
     logger.info('Request completed', { tid, ms: elapsed });
     return {
-      routing: { strategy: 'function_calling', top_intent: skillManager.getActive().name, selected_models: ['deepseek-v4-flash'], rationale: 'DeepSeek function calling · ' + skillManager.getActive().name, total_ms: elapsed },
+      routing: { strategy: 'function_calling', top_intent: skillManager.getActive().name, selected_models: ['deepseek-v4-flash'], rationale: 'Semantic intent · ' + skillManager.getActive().name, total_ms: elapsed },
       responses: [{ model_id: 'deepseek-v4-flash', model_display: 'DeepSeek V4 Flash', content }],
-      skill: { name: skillManager.getActive().name, phase: skillManager.currentPhase },
       total_latency_ms: elapsed,
     };
   } catch (e) {
     logger.error('Request failed', { tid, error: e.message });
     return {
       routing: { strategy: 'error', top_intent: 'error', selected_models: [], rationale: e.message },
-      responses: [{ model_id: 'error', model_display: 'Error', content: `Agent 执行异常：${e.message}。请重试。` }],
+      responses: [{ model_id: 'error', model_display: 'Error', content: `Agent 执行异常：${e.message}` }],
       total_latency_ms: Date.now() - startTime,
     };
   }

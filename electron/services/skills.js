@@ -21,6 +21,27 @@ const SKILLS = {
     temperature: 0.1,
   },
 
+
+  discuss: {
+    name: '讨论模式',
+    description: '开放讨论——用户没有具体数据，想先聊聊问题类型和思路',
+    tools: [],
+    systemPrompt: `你是 Polaris 运筹优化讨论助手。用户想探讨一个问题但没有提供具体数据。
+
+阶段：
+【阶段1：理解需求】先告诉用户你听到了什么："你想讨论港口泊位问题，对吗？"
+【阶段2：聚焦问题】帮用户把模糊的需求收敛到具体方向：是泊位分配？岸桥调度？进港排队？
+【阶段3：要数据】引导用户提供建模需要的数据：船舶数、泊位数、到达时间、处理时间、目标是什么
+【阶段4：给出方向】根据用户描述的问题类型，简单说一下可能的建模方式——是 assignment？time-indexed scheduling？不需要详细分析，给一个方向就行
+
+规则：
+- 用中文，友好但不啰嗦
+- 不要假装你知道了用户没说的信息
+- 不要擅自建模——数据不全时建模没有意义
+- 每次回复结尾引导用户提供下一个关键参数`,
+    maxTokens: 2048,
+    temperature: 0.5,
+  },
   experiment: {
     name: '实验模式',
     description: '跑批量实验、对比求解器、生成性能表格。用于论文的实验部分。',
@@ -87,20 +108,7 @@ class SkillManager {
   /**
    * Detect the appropriate skill based on user's message.
    */
-  detectSkill(text) {
-    const tl = text.toLowerCase();
-    // Experiment keywords → experiment mode (highest priority — explicit research intent)
-    if (/对比|实验|benchmark|论文.*实验|跑.*实验|规模.*对比|求解器.*对比|Benders.*vs|CG.*vs|HiGHS.*vs/i.test(tl)) {
-      return 'experiment';
-    }
-    // Analysis/discussion keywords → analyze mode (medium priority — asks "why" or "which")
-    if (/(分析|讨论|推荐|建议|策略|选哪个|哪个好|为什么|怎么建模|结构|适合|decompose|分解|方法)/i.test(tl) && text.length > 20 && !/背包|排产|指派|容量|价值|重量|处理时间/i.test(tl)) {
-      return 'analyze';
-    }
-    // Solver mode default
-    return 'solve';
-  }
-
+  // detectSkill() removed — replaced by semantic LLM classifier (intent.js)
   /**
    * Switch to a new skill and reset phase.
    */
@@ -148,17 +156,21 @@ class SkillManager {
 
   /**
    * Build the effective system prompt with phase context.
+   * Uses semantic intent classifier (LLM) instead of regex keywords.
    */
-  getEffectivePrompt(userMessage) {
+  async getEffectivePrompt(userMessage) {
     const skill = this.getActive();
     const phaseCtx = this.getPhaseContext();
-    const autoDetected = this.detectSkill(userMessage);
 
-    // If auto-detection suggests a different skill than current,
-    // and we're in solve mode (the default), auto-switch
-    if (this.currentSkill === 'solve' && autoDetected !== 'solve') {
-      this.switchTo(autoDetected);
-      return this.getEffectivePrompt(userMessage);
+    try {
+      const { classifyIntent } = require('./intent');
+      const autoDetected = await classifyIntent(userMessage);
+      if (this.currentSkill === 'solve' && autoDetected !== 'solve') {
+        this.switchTo(autoDetected);
+        return this.getEffectivePrompt(userMessage);
+      }
+    } catch (e) {
+      // classification failed — stick with current skill
     }
 
     return `${skill.systemPrompt}\n\n${phaseCtx ? phaseCtx + '\n\n' : ''}用户当前模式：${skill.name}。保持在此模式的行为范围内。`;
