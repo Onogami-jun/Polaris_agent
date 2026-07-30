@@ -10,7 +10,7 @@ module.exports = (env, argv) => {
     resolve: { extensions: ['.ts', '.tsx', '.js', '.jsx'] },
     module: {
       rules: [
-        { test: /\.tsx?$/, use: { loader: 'ts-loader', options: { configFile: path.resolve(__dirname, 'tsconfig.json') } }, exclude: /node_modules/ },
+        { test: /\.tsx?$/, use: { loader: 'ts-loader', options: { configFile: path.resolve(__dirname, 'tsconfig.json'), transpileOnly: true } }, exclude: /node_modules/ },
         { test: /\.css$/, use: ['style-loader', 'css-loader', 'postcss-loader'] },
         { test: /\.(png|svg|jpg|jpeg|gif)$/, type: 'asset/resource' },
       ],
