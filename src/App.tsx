@@ -181,19 +181,17 @@ function WorkflowView({plan,planProg,planId,execLog,todoSteps,onConfirmPlan,onRe
 }
 
 /* ─────────────────────────────────────────────────
-   RIGHT SIDEBAR — always visible, Claude-style
-   Top: Conversations  Bottom: Workflow
+   LEFT SIDEBAR — conversations + token
    ───────────────────────────────────────────────── */
-function RightSidebar({sessions,activeId,execLog,todoSteps,plan,planProg,planId,pct,onSelect,onNew,onDelete,onConfirmPlan,onRejectPlan,onStopPlan}:any){
+function LeftSidebar({sessions,activeId,pct,onSelect,onNew,onDelete,width}:any){
   return(
-    <div className="w-[280px] shrink-0 bg-card border-l border-border flex flex-col overflow-hidden">
-      {/* ── Conversations Section ── */}
+    <div style={{width:width}} className="shrink-0 bg-card border-r border-border flex flex-col h-full overflow-hidden">
       <div className="flex items-center justify-between px-3 py-3">
         <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider font-mono">会话</span>
         <Button variant="ghost" size="icon" className="h-5 w-5 text-muted-foreground hover:text-foreground" onClick={onNew} title="新建会话">+</Button>
       </div>
       <Separator/>
-      <div className="flex-1 min-h-0 overflow-y-auto px-2 py-1" style={{maxHeight:'40%'}}>
+      <ScrollArea className="flex-1 px-2 py-1">
         {sessions.slice().reverse().map((s:any)=>
           <div key={s.id} className={'flex items-center gap-2 px-2.5 py-2 rounded-lg cursor-pointer text-xs transition-colors group '+ (s.id===activeId?'bg-primary/10 text-primary font-medium':'text-muted-foreground hover:bg-muted hover:text-foreground')} onClick={()=>onSelect(s.id)}>
             <span className="flex-1 truncate">{s.name||'新会话'}</span>
@@ -201,23 +199,26 @@ function RightSidebar({sessions,activeId,execLog,todoSteps,plan,planProg,planId,
             <button className="opacity-0 group-hover:opacity-100 text-destructive text-[10px] px-1 rounded hover:bg-destructive/10 shrink-0" onClick={e=>{e.stopPropagation();onDelete(s.id)}}>×</button>
           </div>
         )}
-      </div>
-
-      {/* ── Workflow Section ── */}
-      <Separator/>
-      <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
-        <WorkflowView
-          plan={plan} planProg={planProg} planId={planId}
-          execLog={execLog} todoSteps={todoSteps}
-          onConfirmPlan={onConfirmPlan} onRejectPlan={onRejectPlan} onStopPlan={onStopPlan}
-        />
-      </div>
-
-      {/* ── Footer ── */}
+      </ScrollArea>
       <Separator/>
       <div className="flex items-center gap-2 px-3 py-2 text-[9px] text-muted-foreground font-mono">
-        <div className="flex-1 h-1 bg-muted rounded-full overflow-hidden"><div className="h-full bg-primary rounded-full transition-all duration-500"style={{width:pct+'%'}}/></div>
+        <div className="flex-1 h-1 bg-muted rounded-full overflow-hidden"><div className="h-full bg-primary rounded-full transition-all duration-500"style={{width:pct+'%'}}/></div><span>{pct}%</span>
       </div>
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────────────
+   RIGHT SIDEBAR — workflow real-time view
+   ───────────────────────────────────────────────── */
+function RightSidebar({execLog,todoSteps,plan,planProg,planId,onConfirmPlan,onRejectPlan,onStopPlan,width}:any){
+  return(
+    <div style={{width:width}} className="shrink-0 bg-card border-l border-border flex flex-col h-full overflow-hidden">
+      <WorkflowView
+        plan={plan} planProg={planProg} planId={planId}
+        execLog={execLog} todoSteps={todoSteps}
+        onConfirmPlan={onConfirmPlan} onRejectPlan={onRejectPlan} onStopPlan={onStopPlan}
+      />
     </div>
   );
 }
@@ -238,6 +239,11 @@ const App:React.FC=()=>{
   const[todoSteps,setTodoSteps]=useState<{id:string;status:'pending'|'running'|'done';label:string}[]>([]);
   const[interventions,setInterventions]=useState<any[]>([]);
   const[plan,setPlan]=useState<any>(null);const[planProg,setPlanProg]=useState<any>(null);const[planId,setPlanId]=useState('');
+
+  // Panel widths (px)
+  const[leftW,setLeftW]=useState(220);
+  const[rightW,setRightW]=useState(280);
+
   const dispatchRef=useRef(d);const stop=useRef(false);
   const act=sessions.find(s=>s.id===activeSessionId);
   const pct=contextTokens.total>0?Math.min(Math.round(contextTokens.used/Math.max(contextTokens.total,1)*100),100):0;
@@ -308,9 +314,23 @@ const App:React.FC=()=>{
         </div>
       </div>
 
-      {/* ── Body: Chat (left) + Sidebar (right) ── */}
+      {/* ── Body: Left | Chat | Right ── */}
       <div className="flex flex-1 overflow-hidden">
-        {/* ── Main Chat Area ── */}
+        {/* ── Left Sidebar ── */}
+        <LeftSidebar
+          width={leftW}
+          sessions={sessions} activeId={activeSessionId} pct={pct}
+          onSelect={(id:any)=>d(setActiveSession(id))}
+          onNew={()=>d(ns())}
+          onDelete={(id)=>d(deleteSession(id))}
+        />
+
+        {/* ── Resize Handle ── */}
+        <div onMouseDown={(e)=>{const sx=e.clientX;const ow=leftW;const mv=(ev:MouseEvent)=>{const nw=Math.min(360,Math.max(160,ow+ev.clientX-sx));setLeftW(nw)};const up=()=>{document.removeEventListener('mousemove',mv);document.removeEventListener('mouseup',up);document.body.style.cursor='';document.body.style.userSelect=''};document.body.style.cursor='ew-resize';document.body.style.userSelect='none';document.addEventListener('mousemove',mv);document.addEventListener('mouseup',up)}}
+          className="w-1 shrink-0 cursor-ew-resize bg-transparent hover:bg-primary/30 active:bg-primary/50 transition-colors relative z-10"
+        />
+
+        {/* ── Chat ── */}
         <div className="flex-1 flex flex-col overflow-hidden min-w-0 relative">
           <Conversation>
             {/* Interventions */}
@@ -376,15 +396,16 @@ const App:React.FC=()=>{
           </div>
         </div>
 
-        {/* ── Right Sidebar — always visible ── */}
+        {/* ── Resize Handle ── */}
+        <div onMouseDown={(e)=>{const sx=e.clientX;const ow=rightW;const mv=(ev:MouseEvent)=>{const nw=Math.min(400,Math.max(200,ow+sx-ev.clientX));setRightW(nw)};const up=()=>{document.removeEventListener('mousemove',mv);document.removeEventListener('mouseup',up);document.body.style.cursor='';document.body.style.userSelect=''};document.body.style.cursor='ew-resize';document.body.style.userSelect='none';document.addEventListener('mousemove',mv);document.addEventListener('mouseup',up)}}
+          className="w-1 shrink-0 cursor-ew-resize bg-transparent hover:bg-primary/30 active:bg-primary/50 transition-colors relative z-10"
+        />
+
+        {/* ── Right Sidebar ── */}
         <RightSidebar
-          sessions={sessions} activeId={activeSessionId}
+          width={rightW}
           execLog={execLog} todoSteps={todoSteps}
           plan={plan} planProg={planProg} planId={planId}
-          pct={pct}
-          onSelect={(id:any)=>d(setActiveSession(id))}
-          onNew={()=>d(ns())}
-          onDelete={(id)=>d(deleteSession(id))}
           onConfirmPlan={confirmPlan}
           onRejectPlan={rejectPlan}
           onStopPlan={()=>{stop.current=true;d(setStreaming(false));setThk('');rejectPlan()}}
