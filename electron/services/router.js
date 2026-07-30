@@ -7,6 +7,17 @@ const { prepareMessages, compressToolOutput, compressMessages, estimateMessageTo
 const logger = require('./logger');
 const DEFAULT_KEY = 'sk-665f376d7c0f4b91b4c3029bf82e670a';
 const { SkillManager } = require('./skills');
+const { runPipeline } = require('./subagents');
+const { saveExperimentOutput } = require('./experiment_memory');
+
+// Filesystem state: save every tool result as a markdown log
+function fsState(workDir, filename, content) {
+  try {
+    const fs = require('fs');
+    if (!fs.existsSync(workDir)) fs.mkdirSync(workDir, { recursive: true });
+    fs.writeFileSync(require('path').join(workDir, filename), content);
+  } catch (e) {}
+}
 const skillManager = new SkillManager();
 
 function buildToolDeclarations() {
@@ -93,10 +104,27 @@ function callDeepSeek(messages, tools, apiKey) {
   });
 }
 
-async function runAgentLoop(userMessage, apiKey, onExec) {
+async function runAgentLoop(userMessage, apiKey, onExec, onTodo = null) {
+  const activeSkill = skillManager.getActive();
+
+  // Subagent pipeline for multi-phase tasks
+  if (activeSkill.name === '实验模式' || activeSkill.name === '分析模式') {
+    const steps = activeSkill.name === '实验模式'
+      ? ['analyzer', 'experimenter', 'writer']
+      : ['analyzer'];
+    const onProgress = (evt) => {
+      if (onExec) onExec({ tool: 'subagent:' + evt.agent, status: evt.status, detail: evt.summary || evt.error || '' });
+    };
+    const pipelineResult = await runPipeline(userMessage, steps, onProgress, onTodo, apiKey);
+    if (pipelineResult && pipelineResult.results.length > 0) {
+      const finalOutput = pipelineResult.results.map(r =>
+        '### ' + r.name + '\n\n' + r.content + '\n\n').join('');
+      return '**子代理协同** · ' + pipelineResult.results.length + ' 个阶段\n\n' + finalOutput + '\n📁 工作目录：' + pipelineResult.workDir;
+    }
+  }
+
   const toolDecls = buildToolDeclarations();
   const effectivePrompt = skillManager.getEffectivePrompt(userMessage);
-  const activeSkill = skillManager.getActive();
   logger.info('Skill active', { skill: activeSkill.name, phase: skillManager.currentPhase });
 
   const messages = [
@@ -157,7 +185,8 @@ async function executeQuery(text, strategy, systemPrompt, images, onStreamChunk,
 
   try {
     const onExec = apiKeys.onExec || null;
-    const content = await runAgentLoop(text, apiKey, onExec);
+    const onTodo = apiKeys.onTodo || null;
+    const content = await runAgentLoop(text, apiKey, onExec, onTodo);
     const elapsed = Date.now() - startTime;
     logger.info('Request completed', { tid, ms: elapsed });
     return {

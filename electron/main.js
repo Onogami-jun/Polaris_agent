@@ -46,8 +46,9 @@ function createTray() {
 ipcMain.handle('polaris:query', async (_e, { text, strategy, systemPrompt, images, apiKeys }) => {
   console.log('[polaris:query] text:', (text||'').slice(0,80));
   const onExec = (evt) => { if (win && !win.isDestroyed()) win.webContents.send('polaris:exec-log', evt); };
+  const onTodo = (evt) => { if (win && !win.isDestroyed()) win.webContents.send('polaris:todo-update', evt); };
   try {
-    const result = await executeQuery(text, strategy, systemPrompt, images, undefined, { ...(apiKeys||{}), onExec });
+    const result = await executeQuery(text, strategy, systemPrompt, images, undefined, { ...(apiKeys||{}), onExec, onTodo });
     const responseContent = result?.responses?.[0]?.content || '';
     console.log('[polaris:query] response:', responseContent.slice(0,80));
     if (!responseContent) console.error('[polaris:query] WARNING: empty response!');
