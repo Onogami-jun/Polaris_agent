@@ -17,7 +17,7 @@ const mcpProcesses = new Map();
 
 function createWindow() {
   win = new BrowserWindow({
-    width: 1100, height: 750, minWidth: 720, minHeight: 500, center: true,
+    width: 1200, height: 750, minWidth: 900, minHeight: 500, center: true,
     title: 'Polaris Solver — 优化科研助手', titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 16, y: 14 }, backgroundColor: '#0b0e14',
     frame: false, show: false,
