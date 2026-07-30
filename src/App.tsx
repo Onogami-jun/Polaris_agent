@@ -1,6 +1,6 @@
 import React,{useState,useCallback,useRef,useEffect,useMemo}from'react';
 import{useAppSelector,useAppDispatch}from'./store';
-import{addMessage,editMessage,loadSessions as lr,newSession as ns,setActiveSession,setStreaming,toggleSidebar,toggleSettings,setTheme,deleteSession,branchSession,addMemory}from'./store/chatSlice';
+import{addMessage,editMessage,loadSessions as lr,newSession as ns,setActiveSession,setStreaming,setStrategy,toggleSidebar,toggleSettings,setTheme,deleteSession,branchSession,addMemory}from'./store/chatSlice';
 import type{ChatMessage,Strategy}from'./store/chatSlice';
 import{saveSessions,loadSessions as ld}from'./store/persist';
 import SettingsPanel from'./components/SettingsPanel';
@@ -84,14 +84,15 @@ const App:React.FC=()=>{
       if(web){try{const{webSearch}=await import('./utils/search');const r=await webSearch(t,settings.apiKeys.serper);if(r.length>0&&!r[0].title.includes('not configured'))ctx+='\n[Web]\n'+r.map((x:any)=>'- '+x.title+': '+x.snippet).join('\n')}catch(e:any){console.error('[App] web search error:',e?.message||e)}}
       const api=window.electronAPI;if(!api)throw new Error('Electron API not ready');
       let res;
-      try{res=await api.queryStream({text:ctx,strategy,apiKeys:settings.apiKeys})}catch(e:any){res=await api.query({text:ctx,strategy,apiKeys:settings.apiKeys})}
+      const _s = strategy;
+      try{res=await api.queryStream({text:ctx,strategy:_s,apiKeys:settings.apiKeys})}catch(e:any){res=await api.query({text:ctx,strategy:_s,apiKeys:settings.apiKeys})}
       if(stop.current)return;setThk(res?.routing?.selected_models?.join(', ')||'');
       let cnt=(res?.responses||[]).map((r:any)=>r?.content||'').join('\n\n')||'';
       if(!cnt||cnt.trim().length===0){showToast('服务器返回空回复','warn');cnt='*[空回复]*'}
       d(addMessage({sessionId:sid,message:{id:'a'+Date.now(),role:'assistant',content:cnt,timestamp:Date.now(),model:res?.routing?.selected_models?.join(', ')||'',routing:{intent:res?.routing?.top_intent,models:res?.routing?.selected_models||[],rationale:res?.routing?.rationale||''}}}));
     }catch(e:any){showToast('连接失败: '+(e.message||'未知错误'),'error');d(addMessage({sessionId:sid,message:{id:'e'+Date.now(),role:'assistant',content:'Error: '+(e.message||'Connection failed'),timestamp:Date.now()}}))}
     d(setStreaming(false));setThk('');
-  },[streaming,strategy,activeSessionId,d,fs,web,settings]);
+  },[streaming,activeSessionId,d,fs,web,settings]);
 
   const send=()=>{const t=inp.trim();if(!t||streaming)return;query(t)}
   const cp=(c:string)=>{navigator.clipboard.writeText(c).catch(()=>{});setCid(c.slice(0,20));setTimeout(()=>setCid(''),1500)}
@@ -179,8 +180,8 @@ const App:React.FC=()=>{
 // ── Sidebar ──
 function Sidebar({sessions,activeId,execLog,todoSteps,pct,onSelect,onNew,onDelete,onClose}:any){
   const[tab,setTab]=useState('chats');
-  const statusIcons={running:'●',done:'✓',error:'✗'};
-  const statusColors={running:'text-primary',done:'text-emerald-500',error:'text-destructive'};
+  const statusIcons:{[k:string]:string}={running:'●',done:'✓',error:'✗'};
+  const statusColors:{[k:string]:string}={running:'text-primary',done:'text-emerald-500',error:'text-destructive'};
   return(
     <div className="w-[272px] shrink-0 bg-card border-r flex flex-col overflow-hidden">
       <div className="flex items-center justify-between px-4 py-3"><span className="text-xs font-semibold font-mono tracking-tight">POLARIS</span><Button variant="ghost" size="icon" className="h-6 w-6"onClick={onClose}>×</Button></div>
@@ -190,8 +191,8 @@ function Sidebar({sessions,activeId,execLog,todoSteps,pct,onSelect,onNew,onDelet
       <Button variant="ghost" className="mx-3 my-1 text-xs text-muted-foreground"onClick={onNew}>+ 新会话</Button>
       <Separator/>
       <ScrollArea className="flex-1 px-2 py-1">
-        {tab==='chats'&&sessions.slice().reverse().map((s:any)=><div key={s.id} className={`flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer text-xs transition-colors ${s.id===activeId?'bg-primary/10 text-primary font-medium':'text-muted-foreground hover:bg-muted'}`}onClick={()=>onSelect(s.id)}><span className="flex-1 truncate">{s.name||'新会话'}</span><span className="text-[9px] text-muted-foreground font-mono">{new Date(s.createdAt).toLocaleDateString('en-US',{month:'short',day:'numeric'})}</span><button className="opacity-0 hover:opacity-100 text-destructive text-[10px] px-1 rounded hover:bg-destructive/10"onClick={e=>{e.stopPropagation();onDelete(s.id)}}>×</button></div>)}
-        {tab==='exec'&&(execLog.length===0?<p className="text-[10px] text-muted-foreground p-2">等待工具调用...</p>:execLog.slice().reverse().map((e:any)=><div key={e.id} className="flex gap-2 px-2 py-1 text-[10px] font-mono"><span className={`${statusColors[e.status]} shrink-0`}>{statusIcons[e.status]}</span><span className="flex-1"><span className="font-medium text-foreground">{e.tool}</span><span className="text-muted-foreground ml-1">{e.time}</span><br/><span className="text-muted-foreground break-all">{e.detail}</span></span></div>)}
+        {tab==='chats'&&=><div key={s.id} className={`flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer text-xs transition-colors ${s.id===activeId?'bg-primary/10 text-primary font-medium':'text-muted-foreground hover:bg-muted'}`}onClick={()=>onSelect(s.id)}><span className="flex-1 truncate">{s.name||'新会话'}</span><span className="text-[9px] text-muted-foreground font-mono">{new Date(s.createdAt).toLocaleDateString('en-US',{month:'short',day:'numeric'})}</span><button className="opacity-0 hover:opacity-100 text-destructive text-[10px] px-1 rounded hover:bg-destructive/10"onClick={e=>{e.stopPropagation();onDelete(s.id)}}>×</button></div>)}
+        {tab==='exec'&&(execLog.length===0?<p className="text-[10px] text-muted-foreground p-2">等待工具调用...</p>:=><div key={e.id} className="flex gap-2 px-2 py-1 text-[10px] font-mono"><span className={`${statusColors[e.status]} shrink-0`}>{statusIcons[e.status]}</span><span className="flex-1"><span className="font-medium text-foreground">{e.tool}</span><span className="text-muted-foreground ml-1">{e.time}</span><br/><span className="text-muted-foreground break-all">{e.detail}</span></span></div>)}
         {tab==='tasks'&&(todoSteps.length===0?<p className="text-[10px] text-muted-foreground p-2">暂无任务...</p>:todoSteps.map((t:any)=><div key={t.id} className="flex items-center gap-2 px-2 py-1.5 text-[11px]"><span className={statusColors[t.status]}>{statusIcons[t.status]}</span><span className={t.status==='running'?'font-semibold text-foreground':'text-muted-foreground'}>{t.label}</span></div>)}
         {tab==='tools'&&<div className="flex flex-col gap-0.5 p-1">{['polaris_opt','polaris_analyze','polaris_research','polaris_model','polaris_remember','polaris_paper','polaris_literature','polaris_code'].map(t=><div key={t} className="px-3 py-1.5 text-[10px] text-muted-foreground font-mono hover:text-foreground rounded cursor-pointer">{t}</div>)}</div>}
       </ScrollArea>
