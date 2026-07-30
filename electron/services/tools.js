@@ -3,6 +3,44 @@
  * Optimization-centric tools: solve, decompose, benchmark.
  */
 const { spawnSync } = require('child_process');
+const path = require('path');
+const os = require('os');
+
+/* ── Resolve Python executable ── */
+function getPython() {
+  // 1. Bundled sandbox
+  const sandboxPy = path.join(os.homedir(), 'AppData', 'Roaming', 'polaris-agent', 'sandbox', 'python.exe');
+  try {
+    const fs = require('fs');
+    if (fs.existsSync(sandboxPy)) {
+      const r = spawnSync(sandboxPy, ['-c', 'print("OK")'], { timeout: 5000, encoding: 'utf8', windowsHide: true });
+      if (r.status === 0 && r.stdout.includes('OK')) return sandboxPy;
+    }
+  } catch {}
+
+  // 2. System Python
+  for (const cmd of ['python', 'python3']) {
+    const r = spawnSync(cmd, ['-c', 'print("OK")'], { timeout: 5000, encoding: 'utf8', windowsHide: true });
+    if (r.status === 0 && r.stdout.includes('OK')) return cmd;
+  }
+  return null;
+}
+
+function runPython(code, timeout = 60000) {
+  const py = getPython();
+  if (!py) return { success: false, error: 'Python 未安装。请点击左侧栏底部"安装沙箱"按钮，一键部署 Python 环境。' };
+  const maxOut = 1_000_000; // 1MB cap
+  const r = spawnSync(py, ['-c', code], {
+    timeout, encoding: 'utf8', windowsHide: true,
+    env: { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1' },
+  });
+  return {
+    success: r.status === 0,
+    stdout: (r.stdout || '').slice(0, maxOut),
+    stderr: (r.stderr || '').slice(0, 10000),
+    exitCode: r.status,
+  };
+}
 
 // ============================================================
 // Tool registry
@@ -21,16 +59,13 @@ const TOOLS = {
       try {
         const normalized = prompt.replace(/"/g, '\\"').replace(/\n/g, ' ');
         const code = `from polaris.engine import Engine\nfrom polaris.chat import solve\nprint(solve("${normalized}"))`;
-        let result = spawnSync('python', ['-c', code], { timeout: 60000, encoding: 'utf8' });
-        if (result.error) {
-          result = spawnSync('python3', ['-c', code], { timeout: 60000, encoding: 'utf8' });
-          if (result.error) {
-            return { success: false, error: `Polaris 引擎未安装或未响应。\n\n请先安装：pip install polaris-opt[highs]\n\n然后重试。` };
-          }
+        const result = runPython(code, 60000);
+        if (!result.success) {
+          return { success: false, error: result.stderr || result.error || '求解失败' };
         }
-        const output = result.stdout?.trim() || result.stderr?.trim() || '';
+        const output = result.stdout;
         if (output.includes('ModuleNotFoundError') || output.includes('ImportError')) {
-          return { success: false, error: 'Polaris 引擎未安装。请运行: pip install polaris-opt[highs]' };
+          return { success: false, error: 'Polaris 引擎未安装。点击左侧栏底部"安装沙箱"按钮一键部署。' };
         }
         return { success: true, result: output };
       } catch(e) {
@@ -50,10 +85,8 @@ const TOOLS = {
       try {
         const normalized = prompt.replace(/"/g, '\\"');
         const code = `from polaris.engine import Engine\nfrom polaris.chat import _parse, _build_model\nparsed = _parse("${normalized}")\nmodel = _build_model(parsed)\neng = Engine()\nresult = eng.solve(model)\nprint(result.summary())`;
-        let result = spawnSync('python', ['-c', code], { timeout: 30000, encoding: 'utf8' });
-        if (result.error) result = spawnSync('python3', ['-c', code], { timeout: 30000, encoding: 'utf8' });
-        const output = result.stdout?.trim() || result.stderr?.trim() || '';
-        return { success: true, result: output };
+        const result = runPython(code, 30000);
+        return { success: result.success, result: result.stdout || result.stderr || 'No output' };
       } catch(e) {
         return { success: false, error: e.message };
       }
@@ -74,9 +107,8 @@ const TOOLS = {
       } else {
         return { success: false, error: 'Benchmark 目前支持: knapsack' };
       }
-      let result = spawnSync('python', ['-c', code], { timeout: 120000, encoding: 'utf8' });
-      if (result.error) result = spawnSync('python3', ['-c', code], { timeout: 120000, encoding: 'utf8' });
-      return { success: true, result: result.stdout?.trim() || result.stderr?.trim() || 'No output' };
+      const result = runPython(code, 120000);
+      return { success: result.success, result: result.stdout || result.stderr || 'No output' };
     }
   },
 
@@ -101,10 +133,8 @@ print(r.latex_table())
 print("=== CONVERGENCE ===")
 print(json.dumps(r.convergence_data(), indent=2))
 print("=== DONE ===")`;
-      let result = spawnSync('python', ['-c', code], { timeout: 300000, encoding: 'utf8' });
-      if (result.error) result = spawnSync('python3', ['-c', code], { timeout: 300000, encoding: 'utf8' });
-      const output = result.stdout?.trim() || result.stderr?.trim() || 'No output';
-      return { success: true, result: output };
+      const result = runPython(code, 300000);
+      return { success: true, result: result.stdout || result.stderr || 'No output' };
     }
   },
 
@@ -127,9 +157,8 @@ try:
  print("Vars:",s.n_scalar_vars,"Cons:",s.n_constraints)
 except Exception as e:
  print("Error:",e)`;
-      let r=spawnSync('python',['-c',code],{timeout:15000,encoding:'utf8'});
-      if(r.error)r=spawnSync('python3',['-c',code],{timeout:15000,encoding:'utf8'});
-      return {success:true,result:r.stdout?.trim()||r.stderr?.trim()||'No output'};
+      const r=runPython(code,15000);
+      return {success:true,result:r.stdout||r.stderr||'No output'};
     }
   },
 
@@ -143,9 +172,8 @@ except Exception as e:
       if (!prompt || prompt.trim().length < 10) return { success: false, error: '请提供优化问题的完整描述' };
       const normalized = prompt.replace(/"/g,'\\"').replace(/\n/g,' ');
       const code = `from polaris.chat import solve; print(solve("${normalized}"))`;
-      let r = spawnSync('python', ['-c', code], { timeout: 30000, encoding: 'utf8' });
-      if (r.error) r = spawnSync('python3', ['-c', code], { timeout: 30000, encoding: 'utf8' });
-      return { success: true, result: r.stdout?.trim() || r.stderr?.trim() || '求解失败' };
+      const r = runPython(code, 30000);
+      return { success: r.success, result: r.stdout || r.stderr || '求解失败' };
     }
   },
 
@@ -282,23 +310,13 @@ except Exception as e:
 
   run_code: {
     name: 'Run Code',
-    description: '在沙箱中执行 Python 代码（可用于 polaris 引擎脚本）',
+    description: '在沙箱中执行 Python 代码',
     requires_confirm: true,
     category: 'execution',
     execute: async (params) => {
       const { code } = params;
-      try {
-        const tmp = require('os').tmpdir();
-        const fs = require('fs');
-        const path = require('path');
-        const fp = path.join(tmp, `polaris_run_${Date.now()}.py`);
-        fs.writeFileSync(fp, code);
-        const result = spawnSync('python', ['-c', code], { timeout: 30000, encoding: 'utf8' });
-        fs.unlinkSync(fp);
-        return { success: true, stdout: result.stdout?.slice(0, 5000) || '', stderr: result.stderr?.slice(0, 1000) || '' };
-      } catch(e) {
-        return { success: false, error: e.message };
-      }
+      const result = runPython(code, 30000);
+      return { success: result.success, stdout: result.stdout?.slice(0, 5000) || '', stderr: result.stderr?.slice(0, 1000) || '' };
     }
   },
 

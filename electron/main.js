@@ -141,6 +141,35 @@ ipcMain.handle('notify', (_e, { title, body }) => { if (Notification.isSupported
 const { runHealthCheck } = require('./services/health_check');
 ipcMain.handle('health:check', async () => runHealthCheck());
 
+// IPC: Sandbox (enriched)
+const sandbox = require('./services/sandbox');
+ipcMain.handle('sandbox:ready', () => sandbox.isReady());
+ipcMain.handle('sandbox:needsSetup', () => sandbox.needsSetup());
+ipcMain.handle('sandbox:getProgress', () => sandbox.getProgress());
+ipcMain.handle('sandbox:health', () => sandbox.getSandboxHealth());
+ipcMain.handle('sandbox:packages', () => sandbox.getInstalledPackages());
+ipcMain.handle('sandbox:safety', (_e, { code }) => sandbox.checkSafety(code));
+ipcMain.handle('sandbox:setup', async (event) => {
+  const onProgress = (data) => { if (win && !win.isDestroyed()) win.webContents.send('sandbox:progress', data); };
+  return sandbox.setup(app.getPath('userData'), onProgress);
+});
+ipcMain.handle('sandbox:repair', async (event) => {
+  const onProgress = (data) => { if (win && !win.isDestroyed()) win.webContents.send('sandbox:progress', data); };
+  return sandbox.repair(app.getPath('userData'), onProgress);
+});
+ipcMain.handle('sandbox:installPackage', (_e, { packageName }) => {
+  return new Promise((resolve) => {
+    const onProgress = (data) => { if (win && !win.isDestroyed()) win.webContents.send('sandbox:progress', data); };
+    sandbox.installPackage(packageName, app.getPath('userData'), onProgress).then(resolve);
+  });
+});
+ipcMain.handle('sandbox:uninstallPackage', (_e, { packageName }) => {
+  return sandbox.uninstallPackage(packageName, app.getPath('userData'));
+});
+ipcMain.handle('sandbox:runCode', (_e, { code, safeMode }) => {
+  return sandbox.runCode(code, app.getPath('userData'), { safeMode });
+});
+
 app.whenReady().then(() => { createWindow(); createTray(); systemMonitor.startMonitoring((card) => { if (win && !win.isDestroyed()) win.webContents.send('polaris:intervention', card); }); });
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
 app.on('will-quit', () => { globalShortcut.unregisterAll(); for (const [, p] of mcpProcesses) p.kill(); systemMonitor.stopMonitoring(); });

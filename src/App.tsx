@@ -1,12 +1,13 @@
 // @ts-nocheck
 import React,{useState,useCallback,useRef,useEffect}from'react';
 import{useAppSelector,useAppDispatch}from'./store';
-import{addMessage,editMessage,loadSessions as lr,newSession as ns,setActiveSession,setStreaming,setStrategy,toggleSettings,setTheme,deleteSession,branchSession}from'./store/chatSlice';
+import{addMessage,editMessage,loadSessions as lr,newSession as ns,setActiveSession,setStreaming,setStrategy,toggleSettings,setTheme,deleteSession,branchSession,setEngineStatus}from'./store/chatSlice';
 import{restoreAuth,incrementUsage,openLoginModal,logoutUser}from'./store/authSlice';
 import{saveSessions,loadSessions as ld}from'./store/persist';
 import SettingsPanel from'./components/SettingsPanel';
 import{LoginModal}from'./components/LoginModal';
 import{AuthBanner}from'./components/AuthBanner';
+import{SandboxWizard,SandboxHealthPanel}from'./components/SandboxWizard';
 import{Button}from'./components/ui/button';
 import{Badge}from'./components/ui/badge';
 import{Separator}from'./components/ui/separator';
@@ -182,8 +183,9 @@ function WorkflowView({plan,planProg,planId,execLog,todoSteps,onConfirmPlan,onRe
 /* ─────────────────────────────────────────────────
    LEFT SIDEBAR — conversations + token
    ───────────────────────────────────────────────── */
-function LeftSidebar({sessions,activeId,pct,onSelect,onNew,onDelete,onOpenSettings,width}:any){
+function LeftSidebar({sessions,activeId,pct,onSelect,onNew,onDelete,onOpenSettings,onSetupSandbox,sandboxReady,width}:any){
   const auth = useAppSelector(s=>s.auth);
+  const engine = useAppSelector(s=>s.chat.engineStatus);
   const d = useAppDispatch();
   return(
     <div style={{width:width}} className="shrink-0 bg-card border-r border-border flex flex-col h-full overflow-hidden">
@@ -202,11 +204,24 @@ function LeftSidebar({sessions,activeId,pct,onSelect,onNew,onDelete,onOpenSettin
         )}
       </ScrollArea>
       <Separator/>
+      {/* Token usage */}
       <div className="flex items-center gap-2 px-3 py-2 text-[9px] text-muted-foreground font-mono">
-        <div className="flex-1 h-1 bg-muted rounded-full overflow-hidden"><div className="h-full bg-primary rounded-full transition-all duration-500"style={{width:pct+'%'}}/></div><span>{pct}%</span>
+        <div className="flex-1 h-1 bg-muted rounded-full overflow-hidden"><div className="h-full bg-primary rounded-full transition-all duration-500"style={{width:pct+'%'}}/></div>
+      </div>
+      {/* Engine status */}
+      <div className="px-3 py-1.5 space-y-1 text-[9px] font-mono">
+        <div className="flex items-center justify-between"><span className="text-muted-foreground/50">Python</span><span className={engine.python?'text-emerald-500':'text-destructive'}>{engine.python?'✓':'✗'}</span></div>
+        <div className="flex items-center justify-between"><span className="text-muted-foreground/50">Polaris</span><span className={engine.polaris?'text-emerald-500':'text-destructive'}>{engine.polaris?'✓':'✗'}</span></div>
+        <div className="flex items-center justify-between"><span className="text-muted-foreground/50">DeepSeek</span><span className={engine.deepseek?'text-emerald-500':'text-destructive'}>{engine.deepseek?'✓':'✗'}</span></div>
       </div>
       {/* Settings + Login buttons */}
       <div className="px-2 py-1.5 space-y-1 border-t border-border">
+        {!sandboxReady && (
+          <button onClick={onSetupSandbox} className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs text-amber-600 hover:text-amber-700 hover:bg-amber-500/10 transition-all">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="2" y="2" width="12" height="12" rx="2"/><line x1="8" y1="6" x2="8" y2="10"/><line x1="6" y1="8" x2="10" y2="8"/></svg>
+            <span>安装沙箱</span>
+          </button>
+        )}
         <button onClick={onOpenSettings} className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs text-muted-foreground hover:text-foreground hover:bg-muted transition-all">
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="8" cy="8" r="2.5"/><path d="M8 1v2m0 10v2M1 8h2m10 0h2"/></svg>
           <span>设置</span>
@@ -234,11 +249,15 @@ function LeftSidebar({sessions,activeId,pct,onSelect,onNew,onDelete,onOpenSettin
 function RightSidebar({execLog,todoSteps,plan,planProg,planId,onConfirmPlan,onRejectPlan,onStopPlan,width}:any){
   return(
     <div style={{width:width}} className="shrink-0 bg-card border-l border-border flex flex-col h-full overflow-hidden">
-      <WorkflowView
-        plan={plan} planProg={planProg} planId={planId}
-        execLog={execLog} todoSteps={todoSteps}
-        onConfirmPlan={onConfirmPlan} onRejectPlan={onRejectPlan} onStopPlan={onStopPlan}
-      />
+      <SandboxHealthPanel/>
+      <Separator/>
+      <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
+        <WorkflowView
+          plan={plan} planProg={planProg} planId={planId}
+          execLog={execLog} todoSteps={todoSteps}
+          onConfirmPlan={onConfirmPlan} onRejectPlan={onRejectPlan} onStopPlan={onStopPlan}
+        />
+      </div>
     </div>
   );
 }
@@ -263,6 +282,7 @@ const App:React.FC=()=>{
   // Panel widths (px) & visibility
   const[leftW,setLeftW]=useState(220);const[leftOpen,setLeftOpen]=useState(true);
   const[rightW,setRightW]=useState(280);const[rightOpen,setRightOpen]=useState(true);
+  const[sandboxReady,setSandboxReady]=useState(false);const[showSandbox,setShowSandbox]=useState(false);
 
   const dispatchRef=useRef(d);const stop=useRef(false);
   const act=sessions.find(s=>s.id===activeSessionId);
@@ -273,7 +293,12 @@ const App:React.FC=()=>{
   useEffect(()=>{document.documentElement.classList.toggle('dark',settings.theme==='dark');document.documentElement.style.fontSize=settings.fontSize+'px';d(restoreAuth());const s=ld();if(s.length>0)d(lr(s))},[]);
   useEffect(()=>{if(sessions.length>0){const t=setTimeout(()=>saveSessions(sessions),500);return()=>clearTimeout(t)}},[sessions]);
   useEffect(()=>{const h=(e:KeyboardEvent)=>{if((e.ctrlKey||e.metaKey)&&e.key==='p'){e.preventDefault();setCmd(true)}if(e.key==='Escape'){stop.current=true;d(setStreaming(false));setThk('');setCmd(false)}if((e.ctrlKey||e.metaKey)&&e.key==='n'){e.preventDefault();d(ns())}if((e.ctrlKey||e.metaKey)&&e.key===','){e.preventDefault();d(toggleSettings())}};window.addEventListener('keydown',h);return()=>window.removeEventListener('keydown',h)},[d]);
-  useEffect(()=>{const api=window.electronAPI;if(!api)return;api.monitorStart();api.onIntervention((card:any)=>{card.ts=Date.now();setInterventions(p=>[...p.slice(-4),card])});api.onPlanProgress((data:any)=>setPlanProg(data));api.onExecLog((data:any)=>{addExecLog(data.tool,data.status,data.detail||'')});api.onTodoUpdate((data:any)=>{if(data.steps)setTodoSteps(data.steps)});api.onStreamError((ed:any)=>{showToast('Stream Error: '+(ed?.message||'未知'),'error');dispatchRef.current(setStreaming(false));setThk('')});let kc=0;const onKb=()=>{kc++;if(kc%30===0)api.monitorUpdate({count:kc,lastPress:Date.now(),window:document.title})};window.addEventListener('keydown',onKb);return()=>window.removeEventListener('keydown',onKb)},[]);
+  useEffect(()=>{const api=window.electronAPI;if(!api)return;api.monitorStart();api.onIntervention((card:any)=>{card.ts=Date.now();setInterventions(p=>[...p.slice(-4),card])});api.onPlanProgress((data:any)=>setPlanProg(data));api.onExecLog((data:any)=>{addExecLog(data.tool,data.status,data.detail||'')});api.onTodoUpdate((data:any)=>{if(data.steps)setTodoSteps(data.steps)});api.onStreamError((ed:any)=>{showToast('Stream Error: '+(ed?.message||'未知'),'error');dispatchRef.current(setStreaming(false));setThk('')});
+  // Health check
+  api.healthCheck().then((r:any)=>{if(Array.isArray(r)){const s={python:false,polaris:false,highs:false,deepseek:false};r.forEach((x:any)=>{if(x.service==='Python')s.python=x.ok;if(x.service==='Polaris Engine')s.polaris=x.ok;if(x.service==='HiGHS Solver')s.highs=x.ok;if(x.service==='DeepSeek API')s.deepseek=x.ok;});d(setEngineStatus(s))}}).catch(()=>{});
+  // Sandbox check
+  api.sandboxReady().then((r:boolean)=>setSandboxReady(r)).catch(()=>{});
+  let kc=0;const onKb=()=>{kc++;if(kc%30===0)api.monitorUpdate({count:kc,lastPress:Date.now(),window:document.title})};window.addEventListener('keydown',onKb);return()=>window.removeEventListener('keydown',onKb)},[]);
   useEffect(()=>{document.documentElement.classList.toggle('dark',settings.theme==='dark');document.documentElement.style.fontSize=settings.fontSize+'px'},[settings.theme,settings.fontSize]);
 
   // ── Helpers ──
@@ -341,6 +366,8 @@ const App:React.FC=()=>{
           <LeftSidebar
             width={leftW}
             sessions={sessions} activeId={activeSessionId} pct={pct}
+            sandboxReady={sandboxReady}
+            onSetupSandbox={()=>setShowSandbox(true)}
             onSelect={(id:any)=>d(setActiveSession(id))}
             onNew={()=>d(ns())}
             onDelete={(id)=>d(deleteSession(id))}
@@ -432,6 +459,7 @@ const App:React.FC=()=>{
     {settingsOpen&&<SettingsPanel/>}
     {cmd&&<CmdPalette onClose={()=>setCmd(false)}/>}
     <LoginModal/>
+    {showSandbox&&<SandboxWizard onClose={()=>{setShowSandbox(false);setSandboxReady(true);window.electronAPI?.healthCheck().then((r:any)=>{if(Array.isArray(r)){const s={python:false,polaris:false,highs:false,deepseek:false};r.forEach((x:any)=>{if(x.service==='Python')s.python=x.ok;if(x.service==='Polaris Engine')s.polaris=x.ok;if(x.service==='HiGHS Solver')s.highs=x.ok;if(x.service==='DeepSeek API')s.deepseek=x.ok;});d(setEngineStatus(s))}}).catch(()=>{})}}/>}
   </>);
 };
 

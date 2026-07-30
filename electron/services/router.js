@@ -10,6 +10,19 @@ const { runPipeline } = require('./subagents');
 const DEFAULT_KEY = 'sk-665f376d7c0f4b91b4c3029bf82e670a';
 const skillManager = new SkillManager();
 
+// Cached health check — runs once then reuses
+let _hcCache = null;
+let _hcTime = 0;
+async function healthCheckCache() {
+  if (_hcCache && Date.now() - _hcTime < 60000) return _hcCache;
+  try {
+    const { runHealthCheck } = require('./health_check');
+    _hcCache = await runHealthCheck();
+    _hcTime = Date.now();
+  } catch { _hcCache = []; }
+  return _hcCache;
+}
+
 function buildToolDeclarations() {
   return [
     { type: 'function', function: { name: 'polaris_solve', description: '求解优化问题。把用户描述的问题原文传给prompt参数即可', parameters: { type: 'object', properties: { prompt: { type: 'string' } }, required: ['prompt'] } } },
@@ -39,11 +52,25 @@ except Exception as e:
 async function executeTool(name, args, onExec) {
   if (onExec) onExec({ tool: name, status: 'running', detail: JSON.stringify(args).slice(0, 100) });
   if (name === 'polaris_solve') {
+    const hc = await healthCheckCache();
+    const engineOk = hc.some(r => r.service === 'Polaris Engine' && r.ok);
+    if (!engineOk) {
+      const err = 'Polaris 引擎未安装。请告诉用户：由于本地未安装 Python 或 polaris-opt 引擎，无法执行求解。请用你的数学知识直接分析这个问题，给出理论解或推理过程。提醒用户运行 pip install polaris-opt[highs] 可解锁求解功能。';
+      if (onExec) onExec({ tool: name, status: 'error', detail: '引擎未安装' });
+      return { success: false, error: err };
+    }
     const result = await reliableSolve(args.prompt || '', onExec);
     if (onExec) onExec({ tool: name, status: result.success ? 'done' : 'error', detail: (result.result || result.error || '').slice(0, 120) });
     return result;
   }
   if (name === 'polaris_analyze') {
+    const hc = await healthCheckCache();
+    const engineOk = hc.some(r => r.service === 'Polaris Engine' && r.ok);
+    if (!engineOk) {
+      const err = 'Polaris 引擎未安装。请告诉用户：无法运行结构分析，但你可以根据问题描述推断其代数结构（如是否是 block-angular、time-indexed 等），给出理论分析。提醒用户 pip install polaris-opt[highs]。';
+      if (onExec) onExec({ tool: name, status: 'error', detail: '引擎未安装' });
+      return { success: false, error: err };
+    }
     const result = await executeAnalyze(args.prompt || '');
     if (onExec) onExec({ tool: name, status: 'done', detail: (result.result || '').slice(0, 200) });
     return result;
@@ -104,8 +131,13 @@ async function runAgentLoop(userMessage, apiKey, onExec, onTodo = null) {
 
   // Standard LLM loop
   const toolDecls = buildToolDeclarations();
-  const effectivePrompt = await skillManager.getEffectivePrompt(userMessage); // async semantic classifier
+  let effectivePrompt = await skillManager.getEffectivePrompt(userMessage);
   logger.info('Skill active', { skill: skillManager.getActive().name, phase: skillManager.currentPhase });
+
+  // Inject environment capability note into system prompt
+  const { buildAgentCapabilityNote } = require('./health_check');
+  const hcResults = await healthCheckCache();
+  effectivePrompt += buildAgentCapabilityNote(hcResults);
 
   const messages = [
     { role: 'system', content: effectivePrompt },
