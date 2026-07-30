@@ -1,18 +1,16 @@
 /**
  * supabase.ts — BitWool 统一认证客户端
- * Polaris 复用启文的 Supabase 项目，共享用户体系
+ * 启文的 Supabase 项目，Polaris 直接复用，账号互通
+ *
+ * 获取 ANON_KEY：
+ *   打开 https://supabase.com/dashboard/project/spwishxhydvgqbfchjgj/settings/api
+ *   左边栏 Project Settings → API → anon public key
+ *   复制下面那段 eyJ... 开头的长字符串，替换掉 YOUR_ANON_KEY
  */
 import { createClient } from '@supabase/supabase-js';
 
 const SUPABASE_URL = 'https://spwishxhydvgqbfchjgj.supabase.co';
-
-// 获取 key 的优先级：
-//   1. 构建时 webpack DefinePlugin 注入的 process.env
-//   2. 下面的硬编码（如果启文项目不在同一台机器上，直接在下面填）
-//      → 去 https://supabase.com/dashboard/project/spwishxhydvgqbfchjgj/settings/api
-//      → 复制 "anon public" key
-const SUPABASE_ANON_KEY =
-  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNwd2lzaHh5ZHZncWJmY2hqZ2oiLCJyb2xlIjoiYW5vbiIsImlhdCI6MTcxMzg0MjQ5NywiZXhwIjoyMDI5NDE4NDk3fQ._PLACEHOLDER_FILL_ME_IN';
+const SUPABASE_ANON_KEY = 'YOUR_ANON_KEY';  // ← 把上面的 anon public key 贴在这里
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: {
@@ -22,19 +20,18 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   },
 });
 
-/** 检查 session 是否已过期并尝试恢复 */
+/** 检查并恢复已有的登录态（Electron 重启后自动登录） */
 export async function restoreSession(): Promise<boolean> {
   const { data: { session }, error } = await supabase.auth.getSession();
   if (error) { console.warn('[Auth] Session restore error:', error.message); return false; }
   return !!session;
 }
 
-/** 获取当前用户（含自定义 display_name / avatar / plan） */
+/** 获取当前用户完整信息 */
 export async function getCurrentUser() {
   const { data: { user }, error } = await supabase.auth.getUser();
   if (error || !user) return null;
 
-  // 拉取 profile 扩展字段
   const { data: profile } = await supabase
     .from('profiles')
     .select('display_name, avatar_color, plan')
