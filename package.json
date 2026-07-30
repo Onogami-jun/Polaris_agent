@@ -7,7 +7,7 @@
   "scripts": {
     "start": "electron .",
     "dev": "concurrently \"webpack serve --mode development --config config/webpack.config.js\" \"wait-on http://localhost:3000 && electron .\"",
-    "build:renderer": "cross-env NODE_ENV=production webpack --mode production --config config/webpack.config.js",
+    "build:renderer": "npx cross-env NODE_ENV=production webpack --mode production --config config/webpack.config.js",
     "build": "npm run build:renderer && electron-builder build --publish=never",
     "postinstall": "electron-builder install-app-deps"
   },
