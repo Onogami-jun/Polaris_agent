@@ -4,6 +4,9 @@ import{addMessage,editMessage,loadSessions as lr,newSession as ns,setActiveSessi
 import type{ChatMessage,Strategy}from'./store/chatSlice';
 import{saveSessions,loadSessions as ld}from'./store/persist';
 import SettingsPanel from'./components/SettingsPanel';
+import{Button}from'./components/ui/button';
+import{Card,CardContent}from'./components/ui/card';
+import{Badge}from'./components/ui/badge';
 
 const SUGGESTIONS=['背包容量50，3件物品价值60 100 120，重量10 20 30','排产5个任务，处理时间2 3 1 4 2','指派4个工人做4个任务，成本10 2 8 7  5 12 3 6','车辆路径，5个客户，需求量1 2 1 3 2，车辆容量5'];
 
@@ -19,7 +22,7 @@ const WinBtns=()=>(<div className="wb-row"><button onClick={()=>window.electronA
 const MsgRow:React.FC<{msg:ChatMessage;isLast:boolean;onCopy:()=>void;onRegen:()=>void;onEdit:(v:string)=>void;onBranch:()=>void;onDownload:(code:string,name?:string)=>void;cid:boolean}>=({msg,isLast,onCopy,onRegen,onEdit,onBranch,onDownload,cid})=>{
   const[ed,setEd]=useState(false);const[v,setV]=useState(msg.content);const[rtOpen,setRtOpen]=useState(false);const dlRegex=/```(python|py|code)\n([\s\S]*?)```/g;const dlBlocks=[];let dm;while((dm=dlRegex.exec(msg.content))!==null)dlBlocks.push({lang:dm[1],code:dm[2].trim()});
   if(msg.role==='user')return(<div className="msg-row u"><div className="ub">{msg.content}{msg.edited&&<span className="ed">(edited)</span>}</div></div>);
-  return(<div className="msg-row"><div className="ab">
+  return(<div className="msg-row"><Card className="max-w-full">
     {msg.routing&&<div className="rt-wrap"><button className="rt-toggle"onClick={()=>setRtOpen(!rtOpen)}>{rtOpen?'▾':'▸'} {msg.routing.intent}{msg.routing.models.length>1?` +${msg.routing.models.length}`:''}</button><div className={'rt-body'+(rtOpen?' open':'')}><span className="rt-i">{msg.routing.intent}</span>→{msg.routing.models.map((m,i)=><span key={i}className="rt-m">{m}</span>)}</div></div>}
     {ed?(<div><textarea className="ed-tx"value={v}onChange={e=>setV(e.target.value)}rows={6}/><div className="ed-bar"><button onClick={()=>{onEdit(v);setEd(false)}}className="ed-bt">Save</button><button onClick={()=>setEd(false)}className="ed-bt ed-c">Cancel</button></div></div>):<div dangerouslySetInnerHTML={{__html:md(msg.content)}}/>}
     <div className="ab-ft"><span className="ab-md">{msg.model||''}</span>{dlBlocks.length>0&&<span style={{marginLeft:8,color:"var(--text3)",fontSize:11}}>{dlBlocks.length}个代码块</span>}<span className="ab-act">{dlBlocks.map((b,j)=><button key={j}className="ab-btn ab-dl"onClick={()=>onDownload(b.code,b.lang==="py"?"polaris_model.py":"model.py")}title="下载建模代码">⬇</button>)}<button className="ab-btn ab-qw"onClick={()=>{const title=msg.content.slice(0,30).replace(/[\\n\\r*#]/g,'').trim()||'polaris';const api=window.electronAPI;if(api)api.toolsExecute({tool:'polaris_qiwen',params:{content:msg.content,title}})}}title="在启文中打开">◈</button><button className="ab-btn"onClick={onCopy}title="Copy">{cid?'✓':'⎘'}</button>{isLast&&<><button className="ab-btn"onClick={onRegen}title="Retry">↺</button><button className="ab-btn"onClick={onBranch}title="Branch">⑂</button></>}<button className="ab-btn"onClick={()=>{setEd(true);setV(msg.content)}}title="Edit">✎</button></span></div></div></div>);
@@ -153,7 +156,7 @@ const App:React.FC=()=>{
     {splash&&<div className={'splash'+(splashFade?' hidden':'')}><div className="splash-logo">POLARIS SOLVER</div><div className="splash-loader"><div className="splash-ring"/><div className="splash-ring"/><div className="splash-ring"/><div className="splash-dot"/></div></div>}
     {toasts.length>0&&<Toast toasts={toasts} onDone={(id:number)=>setToasts(p=>p.filter(t=>t.id!==id))}/>}
     <div className={"app"+(splash?'':' app-loaded')}onDragOver={e=>{e.preventDefault();setDrag(true)}}onDragLeave={()=>setDrag(false)}onDrop={dp}>
-    <div className="tb"><div className="tb-l"><span className="tb-lg">Polaris</span><span className="tb-meta">v3</span><span className="tb-tokens">{contextTokens.used>0?Math.round(contextTokens.used/1000)+'k':''}</span></div><div className="tb-r"><button className="tb-btn"onClick={()=>d(toggleSidebar())}title="Sidebar (Ctrl+B)">☰</button><button className="tb-btn"onClick={()=>setCmd(true)}title="Command Palette (Ctrl+P)">⌘</button><button className="tb-btn"onClick={ex}title="Export">↓</button><button className="tb-btn"onClick={()=>d(toggleSettings())}title="Settings (Ctrl+,)">⚙</button><WinBtns/></div></div>
+    <div className="tb"><div className="tb-l"><span className="tb-lg">Polaris</span><span className="tb-meta">v3</span><span className="tb-tokens">{contextTokens.used>0?Math.round(contextTokens.used/1000)+'k':''}</span></div><div className="tb-r"><Button variant="ghost" size="icon" className="h-8 w-8"onClick={()=>d(toggleSidebar())}title="Sidebar">☰</Button><Button variant="ghost" size="icon" className="h-8 w-8"onClick={()=>setCmd(true)}title="Command Palette">⌘</Button><Button variant="ghost" size="icon" className="h-8 w-8"onClick={ex}title="Export">↓</Button><Button variant="ghost" size="icon" className="h-8 w-8"onClick={()=>d(toggleSettings())}title="Settings">⚙</Button><WinBtns/></div></div>
     {drag&&<div className="dov"><div className="doz"><p>Drop files to upload</p></div></div>}
     {fs.length>0&&<div className="fb">{fs.map((f,i)=><div key={i}className="fc"><span>{f.n}</span><button onClick={()=>setFs(p=>p.filter((_,j)=>j!==i))}className="fcx">&times;</button></div>)}</div>}
 
@@ -175,7 +178,7 @@ const App:React.FC=()=>{
               <div className="ia-actions">
                 <button className={`ia-btn${web?' on':''}`}onClick={()=>setWeb(!web)}title="Web Search">⌖</button>
                 <button className="ia-btn"onClick={async()=>{try{const{startListening}=await import('./utils/voice');startListening('zh-CN',(t:string)=>{setInp(p=>p+t)},()=>{})}catch{}}}disabled={streaming}title="Voice">♬</button>
-                {streaming?<button className="ia-st"onClick={()=>{stop.current=true;d(setStreaming(false));setThk('')}}>■</button>:<button className="ia-send"onClick={send}disabled={!inp.trim()}>↑</button>}
+                {streaming?<Button variant="destructive" size="icon" className="rounded-full h-9 w-9"onClick={()=>{stop.current=true;d(setStreaming(false));setThk('')}}>■</Button>:<Button size="icon" className="rounded-full h-9 w-9"onClick={send}disabled={!inp.trim()}>↑</Button>}
               </div>
             </div>
             <div className="ia-status"><span>{'SOLVER'} &middot; {activeModel}</span><span>{web?'WEB':'READY'}</span></div>
