@@ -2,11 +2,10 @@
 import React,{useState,useCallback,useRef,useEffect}from'react';
 import{useAppSelector,useAppDispatch}from'./store';
 import{addMessage,editMessage,loadSessions as lr,newSession as ns,setActiveSession,setStreaming,setStrategy,toggleSettings,setTheme,deleteSession,branchSession}from'./store/chatSlice';
-import{restoreAuth,incrementUsage}from'./store/authSlice';
+import{restoreAuth,incrementUsage,openLoginModal,logoutUser}from'./store/authSlice';
 import{saveSessions,loadSessions as ld}from'./store/persist';
 import SettingsPanel from'./components/SettingsPanel';
 import{LoginModal}from'./components/LoginModal';
-import{UserMenu}from'./components/UserMenu';
 import{AuthBanner}from'./components/AuthBanner';
 import{Button}from'./components/ui/button';
 import{Badge}from'./components/ui/badge';
@@ -183,7 +182,9 @@ function WorkflowView({plan,planProg,planId,execLog,todoSteps,onConfirmPlan,onRe
 /* ─────────────────────────────────────────────────
    LEFT SIDEBAR — conversations + token
    ───────────────────────────────────────────────── */
-function LeftSidebar({sessions,activeId,pct,onSelect,onNew,onDelete,width}:any){
+function LeftSidebar({sessions,activeId,pct,onSelect,onNew,onDelete,onOpenSettings,width}:any){
+  const auth = useAppSelector(s=>s.auth);
+  const d = useAppDispatch();
   return(
     <div style={{width:width}} className="shrink-0 bg-card border-r border-border flex flex-col h-full overflow-hidden">
       <div className="flex items-center justify-between px-3 py-3">
@@ -203,6 +204,25 @@ function LeftSidebar({sessions,activeId,pct,onSelect,onNew,onDelete,width}:any){
       <Separator/>
       <div className="flex items-center gap-2 px-3 py-2 text-[9px] text-muted-foreground font-mono">
         <div className="flex-1 h-1 bg-muted rounded-full overflow-hidden"><div className="h-full bg-primary rounded-full transition-all duration-500"style={{width:pct+'%'}}/></div><span>{pct}%</span>
+      </div>
+      {/* Settings + Login buttons */}
+      <div className="px-2 py-1.5 space-y-1 border-t border-border">
+        <button onClick={onOpenSettings} className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs text-muted-foreground hover:text-foreground hover:bg-muted transition-all">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="8" cy="8" r="2.5"/><path d="M8 1v2m0 10v2M1 8h2m10 0h2"/></svg>
+          <span>设置</span>
+        </button>
+        {auth.user ? (
+          <button onClick={() => d(logoutUser())} className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs text-muted-foreground hover:text-foreground hover:bg-muted transition-all">
+            <div className="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold text-white shrink-0" style={{background:auth.user.avatar}}>{auth.user.displayName.slice(0,1).toUpperCase()}</div>
+            <span className="truncate">{auth.user.displayName}</span>
+            <span className="ml-auto text-[9px] text-muted-foreground/50">登出</span>
+          </button>
+        ) : (
+          <button onClick={() => d(openLoginModal())} className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs text-muted-foreground hover:text-foreground hover:bg-muted transition-all">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="8" cy="5" r="3"/><path d="M2 14c0-3.3 2.7-6 6-6s6 2.7 6 6"/></svg>
+            <span>登录 BitWool</span>
+          </button>
+        )}
       </div>
     </div>
   );
@@ -240,9 +260,9 @@ const App:React.FC=()=>{
   const[interventions,setInterventions]=useState<any[]>([]);
   const[plan,setPlan]=useState<any>(null);const[planProg,setPlanProg]=useState<any>(null);const[planId,setPlanId]=useState('');
 
-  // Panel widths (px)
-  const[leftW,setLeftW]=useState(220);
-  const[rightW,setRightW]=useState(280);
+  // Panel widths (px) & visibility
+  const[leftW,setLeftW]=useState(220);const[leftOpen,setLeftOpen]=useState(true);
+  const[rightW,setRightW]=useState(280);const[rightOpen,setRightOpen]=useState(true);
 
   const dispatchRef=useRef(d);const stop=useRef(false);
   const act=sessions.find(s=>s.id===activeSessionId);
@@ -307,9 +327,9 @@ const App:React.FC=()=>{
           {thk&&<span className="text-[10px] text-muted-foreground font-mono animate-pulse">{thk}</span>}
         </div>
         <div className="flex items-center gap-1 no-drag">
-          <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground"onClick={()=>setCmd(true)}title="命令面板 (Ctrl+P)">⌘</Button>
-          <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground"onClick={ex}title="导出对话">↓</Button>
-          <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground"onClick={()=>d(toggleSettings())}title="设置 (Ctrl+,)">⚙</Button>
+          <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground" onClick={()=>setLeftOpen(!leftOpen)} title={leftOpen?'隐藏侧栏' :'显示侧栏'}>◧</Button>
+          <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground" onClick={()=>setRightOpen(!rightOpen)} title={rightOpen?'隐藏工作流' :'显示工作流'}>◨</Button>
+          <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground" onClick={()=>setCmd(true)} title="命令面板 (Ctrl+P)">⌘</Button>
           <WinBtns/>
         </div>
       </div>
@@ -317,18 +337,19 @@ const App:React.FC=()=>{
       {/* ── Body: Left | Chat | Right ── */}
       <div className="flex flex-1 overflow-hidden">
         {/* ── Left Sidebar ── */}
-        <LeftSidebar
-          width={leftW}
-          sessions={sessions} activeId={activeSessionId} pct={pct}
-          onSelect={(id:any)=>d(setActiveSession(id))}
-          onNew={()=>d(ns())}
-          onDelete={(id)=>d(deleteSession(id))}
-        />
-
-        {/* ── Resize Handle ── */}
-        <div onMouseDown={(e)=>{const sx=e.clientX;const ow=leftW;const mv=(ev:MouseEvent)=>{const nw=Math.min(360,Math.max(160,ow+ev.clientX-sx));setLeftW(nw)};const up=()=>{document.removeEventListener('mousemove',mv);document.removeEventListener('mouseup',up);document.body.style.cursor='';document.body.style.userSelect=''};document.body.style.cursor='ew-resize';document.body.style.userSelect='none';document.addEventListener('mousemove',mv);document.addEventListener('mouseup',up)}}
-          className="w-1 shrink-0 cursor-ew-resize bg-transparent hover:bg-primary/30 active:bg-primary/50 transition-colors relative z-10"
-        />
+        {leftOpen && <>
+          <LeftSidebar
+            width={leftW}
+            sessions={sessions} activeId={activeSessionId} pct={pct}
+            onSelect={(id:any)=>d(setActiveSession(id))}
+            onNew={()=>d(ns())}
+            onDelete={(id)=>d(deleteSession(id))}
+            onOpenSettings={()=>d(toggleSettings())}
+          />
+          <div onMouseDown={(e)=>{const sx=e.clientX;const ow=leftW;const mv=(ev:MouseEvent)=>{const nw=Math.min(360,Math.max(160,ow+ev.clientX-sx));setLeftW(nw)};const up=()=>{document.removeEventListener('mousemove',mv);document.removeEventListener('mouseup',up);document.body.style.cursor='';document.body.style.userSelect=''};document.body.style.cursor='ew-resize';document.body.style.userSelect='none';document.addEventListener('mousemove',mv);document.addEventListener('mouseup',up)}}
+            className="w-1 shrink-0 cursor-ew-resize bg-transparent hover:bg-primary/30 active:bg-primary/50 transition-colors relative z-10"
+          />
+        </>}
 
         {/* ── Chat ── */}
         <div className="flex-1 flex flex-col overflow-hidden min-w-0 relative">
@@ -377,12 +398,8 @@ const App:React.FC=()=>{
           {/* ── Input Area ── */}
           <div className="shrink-0">
             <AuthBanner/>
-            <div className="flex items-end gap-2 px-4 pb-6 pt-2">
-              <div className="shrink-0 pb-1">
-                <UserMenu/>
-              </div>
-              <div className="flex-1">
-                <MessageInput
+            <div className="px-4 pb-6 pt-2">
+              <MessageInput
                   value={inp} onChange={setInp} onSubmit={send}
                   placeholder="描述优化问题... Enter 发送，Shift+Enter 换行"
                   disabled={streaming} isStreaming={streaming}
@@ -396,20 +413,20 @@ const App:React.FC=()=>{
           </div>
         </div>
 
-        {/* ── Resize Handle ── */}
-        <div onMouseDown={(e)=>{const sx=e.clientX;const ow=rightW;const mv=(ev:MouseEvent)=>{const nw=Math.min(400,Math.max(200,ow+sx-ev.clientX));setRightW(nw)};const up=()=>{document.removeEventListener('mousemove',mv);document.removeEventListener('mouseup',up);document.body.style.cursor='';document.body.style.userSelect=''};document.body.style.cursor='ew-resize';document.body.style.userSelect='none';document.addEventListener('mousemove',mv);document.addEventListener('mouseup',up)}}
-          className="w-1 shrink-0 cursor-ew-resize bg-transparent hover:bg-primary/30 active:bg-primary/50 transition-colors relative z-10"
-        />
-
         {/* ── Right Sidebar ── */}
-        <RightSidebar
-          width={rightW}
-          execLog={execLog} todoSteps={todoSteps}
-          plan={plan} planProg={planProg} planId={planId}
-          onConfirmPlan={confirmPlan}
-          onRejectPlan={rejectPlan}
-          onStopPlan={()=>{stop.current=true;d(setStreaming(false));setThk('');rejectPlan()}}
-        />
+        {rightOpen && <>
+          <div onMouseDown={(e)=>{const sx=e.clientX;const ow=rightW;const mv=(ev:MouseEvent)=>{const nw=Math.min(400,Math.max(200,ow+sx-ev.clientX));setRightW(nw)};const up=()=>{document.removeEventListener('mousemove',mv);document.removeEventListener('mouseup',up);document.body.style.cursor='';document.body.style.userSelect=''};document.body.style.cursor='ew-resize';document.body.style.userSelect='none';document.addEventListener('mousemove',mv);document.addEventListener('mouseup',up)}}
+            className="w-1 shrink-0 cursor-ew-resize bg-transparent hover:bg-primary/30 active:bg-primary/50 transition-colors relative z-10"
+          />
+          <RightSidebar
+            width={rightW}
+            execLog={execLog} todoSteps={todoSteps}
+            plan={plan} planProg={planProg} planId={planId}
+            onConfirmPlan={confirmPlan}
+            onRejectPlan={rejectPlan}
+            onStopPlan={()=>{stop.current=true;d(setStreaming(false));setThk('');rejectPlan()}}
+          />
+        </>}
       </div>
     </div>
     {settingsOpen&&<SettingsPanel/>}

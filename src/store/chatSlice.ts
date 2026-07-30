@@ -32,7 +32,7 @@ const initialState: ChatState = {
   activeSessionId: 'default', streaming: false, strategy: 'best_quality', sidebarOpen: true, settingsOpen: false,
   contextTokens: { used: 0, total: 128000 },
   settings: {
-    apiKeys: { deepseek: '', anthropic: '', openai: '', serper: '' }, theme: 'dark', language: 'zh-CN', fontSize: 15,
+    apiKeys: { deepseek: '', anthropic: '', openai: '', serper: '' }, theme: 'light', language: 'zh-CN', fontSize: 15,
     mobileLink: { enabled: false, qrCode: '', deviceName: '' }, thirdParty: { apiEnabled: false, apiPort: 8720, webhookUrl: '' },
     proxy: { enabled: false, host: '', port: '', auth: '' }, agent: defaultAgent,
     plugins: [{ id:'filesystem',name:'文件系统',description:'读写和管理本地文件',enabled:true,type:'tool' },{ id:'browser',name:'网页浏览器',description:'打开和控制浏览器标签页',enabled:false,type:'tool' },{ id:'terminal',name:'终端',description:'执行 Shell 命令',enabled:true,type:'tool' },{ id:'calendar',name:'日历',description:'管理日历事件',enabled:false,type:'skill' },{ id:'email',name:'邮件',description:'发送和阅读邮件',enabled:false,type:'tool' }],
