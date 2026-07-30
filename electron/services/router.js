@@ -5,6 +5,7 @@ const https = require('https');
 const { TOOLS } = require('./tools');
 const { prepareMessages, compressToolOutput, compressMessages, estimateMessageTokens } = require('./token_budget');
 const logger = require('./logger');
+const { reliableSolve, diagnose } = require('./reliability');
 const DEFAULT_KEY = 'sk-665f376d7c0f4b91b4c3029bf82e670a';
 const { SkillManager } = require('./skills');
 const { runPipeline } = require('./subagents');
@@ -47,22 +48,14 @@ except Exception as e:
   return { success: true, result: out || '已完成结构分析' };
 }
 
-async function executePolarisSolve(prompt) {
-  const normalized = JSON.stringify(prompt);
-  const code = `import sys; sys.stdout.reconfigure(encoding='utf-8')\nfrom polaris.chat import solve\nprint(solve(${normalized}))`;
-  const { spawnSync: sp } = require('child_process');
-  const env = { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1' };
-  let r = sp('python', ['-c', code], { timeout: 30000, encoding: 'utf8', env });
-  if (r.error || !r.stdout) r = sp('python3', ['-c', code], { timeout: 30000, encoding: 'utf8', env });
-  const out = (r.stdout || r.stderr || '').trim();
-  if (out && !out.includes('ModuleNotFoundError') && !out.includes('No module')) return { success: true, result: out };
-  return { success: false, error: out || 'Python/polaris not available' };
+async function executePolarisSolve(prompt, onExec) {
+  return reliableSolve(prompt, onExec);
 }
 
 async function executeTool(name, args, onExec) {
   if (onExec) onExec({ tool: name, status: 'running', detail: JSON.stringify(args).slice(0, 100) });
   if (name === 'polaris_solve') {
-    const result = await executePolarisSolve(args.prompt || '');
+    const result = await executePolarisSolve(args.prompt || '', onExec);
     if (onExec) onExec({ tool: name, status: result.success ? 'done' : 'error', detail: (result.result || result.error || '').slice(0, 120) });
     return result;
   }
@@ -158,13 +151,19 @@ async function runAgentLoop(userMessage, apiKey, onExec, onTodo = null) {
     }
   }
 
-  // terminal fallback
-  const directResult = await executePolarisSolve(userMessage);
+  // terminal fallback — multi-path reliable solve
+  const directResult = await executePolarisSolve(userMessage, onExec);
   if (directResult.success) return directResult.result;
-  return `求解引擎未返回结果。可能的原因：
-1. Polaris Python 引擎未安装 → 运行 pip install polaris-opt[highs]
-2. Python 版本过低 → 需要 Python 3.11+
-3. 问题描述过于复杂 → 请尝试用更简洁的格式重新描述
+  // All paths failed — return diagnostic
+  return directResult.error || `Polaris 求解引擎未返回结果。
+
+🔧 快速诊断：请将以下描述发送给我，我会自动检查：
+"帮我诊断环境"
+
+或者你也可以手动检查：
+1. 打开终端运行 python --version（需要 3.11+）
+2. 运行 pip show polaris-opt（确认已安装）
+3. 运行 python -c "from polaris import solve; print(solve('背包容量50，价值60 100 120，重量10 20 30'))"（确认引擎可用）
 
 支持的问题类型：背包、排产、指派、设施选址、多背包、集合覆盖、VRP`;
 }
@@ -179,6 +178,19 @@ async function executeQuery(text, strategy, systemPrompt, images, onStreamChunk,
     return {
       routing: { strategy: 'direct', top_intent: '对话', selected_models: ['deepseek'], rationale: '简单问候' },
       responses: [{ model_id: 'deepseek', model_display: 'DeepSeek', content: '你好！我是 Polaris，运筹优化科研助手。直接描述你的优化问题，我来帮你分析求解。' }],
+      total_latency_ms: Date.now() - startTime,
+    };
+  }
+
+  // Self-diagnosis command
+  if (/诊断|检查.*环境|检查.*引擎|self.*check|diagnos/i.test(text.trim())) {
+    const { results } = diagnose();
+    const dsResult = await diagnose().dsPromise;
+    for (const r of results) { if (r.check === 'DeepSeek API') r.ok = dsResult; }
+    const content = '🔧 环境诊断\n\n' + results.map(r => (r.ok ? '✅' : '❌') + ' ' + r.check + (r.detail ? ' — ' + r.detail : '')).join('\n');
+    return {
+      routing: { strategy: 'diagnose', top_intent: '诊断', selected_models: [], rationale: '环境自诊断' },
+      responses: [{ model_id: 'diagnose', model_display: 'Self-Diagnosis', content }],
       total_latency_ms: Date.now() - startTime,
     };
   }
