@@ -11,7 +11,7 @@ module.exports = (env, argv) => {
     module: {
       rules: [
         { test: /\.tsx?$/, use: { loader: 'ts-loader', options: { configFile: path.resolve(__dirname, 'tsconfig.json') } }, exclude: /node_modules/ },
-        { test: /\.css$/, use: ['style-loader', 'css-loader'] },
+        { test: /\.css$/, use: ['style-loader', 'css-loader', 'postcss-loader'] },
         { test: /\.(png|svg|jpg|jpeg|gif)$/, type: 'asset/resource' },
       ],
     },
