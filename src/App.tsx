@@ -22,7 +22,7 @@ const MsgRow:React.FC<{msg:ChatMessage;isLast:boolean;onCopy:()=>void;onRegen:()
   return(<div className="msg-row"><div className="ab">
     {msg.routing&&<div className="rt-wrap"><button className="rt-toggle"onClick={()=>setRtOpen(!rtOpen)}>{rtOpen?'▾':'▸'} {msg.routing.intent}{msg.routing.models.length>1?` +${msg.routing.models.length}`:''}</button><div className={'rt-body'+(rtOpen?' open':'')}><span className="rt-i">{msg.routing.intent}</span>→{msg.routing.models.map((m,i)=><span key={i}className="rt-m">{m}</span>)}</div></div>}
     {ed?(<div><textarea className="ed-tx"value={v}onChange={e=>setV(e.target.value)}rows={6}/><div className="ed-bar"><button onClick={()=>{onEdit(v);setEd(false)}}className="ed-bt">Save</button><button onClick={()=>setEd(false)}className="ed-bt ed-c">Cancel</button></div></div>):<div dangerouslySetInnerHTML={{__html:md(msg.content)}}/>}
-    <div className="ab-ft"><span className="ab-md">{msg.model||''}</span>{dlBlocks.length>0&&<span style={{marginLeft:8,color:"var(--text3)",fontSize:11}}>{dlBlocks.length}个代码块</span>}<span className="ab-act">{dlBlocks.map((b,j)=><button key={j}className="ab-btn ab-dl"onClick={()=>onDownload(b.code,b.lang==="py"?"polaris_model.py":"model.py")}title="下载建模代码">⬇</button>)}<button className="ab-btn"onClick={onCopy}title="Copy">{cid?'✓':'⎘'}</button>{isLast&&<><button className="ab-btn"onClick={onRegen}title="Retry">↺</button><button className="ab-btn"onClick={onBranch}title="Branch">⑂</button></>}<button className="ab-btn"onClick={()=>{setEd(true);setV(msg.content)}}title="Edit">✎</button></span></div></div></div>);
+    <div className="ab-ft"><span className="ab-md">{msg.model||''}</span>{dlBlocks.length>0&&<span style={{marginLeft:8,color:"var(--text3)",fontSize:11}}>{dlBlocks.length}个代码块</span>}<span className="ab-act">{dlBlocks.map((b,j)=><button key={j}className="ab-btn ab-dl"onClick={()=>onDownload(b.code,b.lang==="py"?"polaris_model.py":"model.py")}title="下载建模代码">⬇</button>)}<button className="ab-btn ab-qw"onClick={()=>{const title=msg.content.slice(0,30).replace(/[\\n\\r*#]/g,'').trim()||'polaris';const api=window.electronAPI;if(api)api.toolsExecute({tool:'polaris_qiwen',params:{content:msg.content,title}})}}title="在启文中打开">◈</button><button className="ab-btn"onClick={onCopy}title="Copy">{cid?'✓':'⎘'}</button>{isLast&&<><button className="ab-btn"onClick={onRegen}title="Retry">↺</button><button className="ab-btn"onClick={onBranch}title="Branch">⑂</button></>}<button className="ab-btn"onClick={()=>{setEd(true);setV(msg.content)}}title="Edit">✎</button></span></div></div></div>);
 };
 
 const CmdPalette:React.FC<{onClose:()=>void;onCommand:(cmd:string)=>void}>=({onClose,onCommand})=>{
@@ -56,7 +56,7 @@ const App:React.FC=()=>{
   useEffect(()=>{const t=setTimeout(()=>{setSplashFade(true);setTimeout(()=>setSplash(false),500)},2000);return()=>clearTimeout(t)},[]);
   const[toasts,setToasts]=useState<any[]>([]);
   const[execLog,setExecLog]=useState<{id:string;time:string;tool:string;status:'running'|'done'|'error';detail:string}[]>([]);
-  const addExecLog=(tool:string,status:'running'|'done'|'error',detail:string='')=>{const id=Date.now()+Math.random().toString(36);setExecLog(p=>[...p.slice(-30),{id,time:new Date().toLocaleTimeString(),tool,status,detail}]);if(status!=='running'){setTimeout(()=>setExecLog(p=>p.filter(e=>e.id!==id||e.status==='running'||p.slice(-3).some(x=>x.id===id))),8000)}};
+  const addExecLog=(tool:string,status:'running'|'done'|'error',detail:string='')=>{const id=Date.now()+Math.random().toString(36);setExecLog(p=>[...p.slice(-30),{id,time:new Date().toLocaleTimeString(),tool,status,detail}]);if(status==='running'&&!sidebarOpen)d(toggleSidebar());if(status!=='running'){setTimeout(()=>setExecLog(p=>p.filter(e=>e.id!==id||e.status==='running'||p.slice(-3).some(x=>x.id===id))),8000)}};
   const dispatchRef=useRef(d);
   dispatchRef.current=d;
   const showToast=(msg:string,type:string='error')=>{const id=Date.now();setToasts(p=>[...p.slice(-3),{id,msg,type}]);setTimeout(()=>setToasts(p=>p.filter(t=>t.id!==id)),4000)};
@@ -86,7 +86,7 @@ const App:React.FC=()=>{
     d(setStreaming(true));setThk('分析中...');
     // Planner: auto-generate task plan for complex optimization queries
     if(/优化|求解|排产|调度|指派|实验|对比|build|model|solve|benchmark|Benders|分解/.test(t) && t.length > 15){
-      try{const api=window.electronAPI;if(api){const p=await api.plannerGenerate(t);setPlan(p);setPlanId(p.id);addExecLog('planner','running','正在分析任务...');}}catch{}
+      try{const api=window.electronAPI;if(api){const p=await api.plannerGenerate(t);setPlan(p);setPlanId(p.id);addExecLog('planner','running','正在分析任务...');if(!sidebarOpen)d(toggleSidebar());}}catch{}
     }
     try{
       let ctx=t;if(txts)ctx+='\n\n'+txts;

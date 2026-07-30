@@ -224,6 +224,47 @@ except Exception as e:
     }
   },
 
+  polaris_qiwen: {
+    name: 'Send to Qiwen',
+    description: '把当前的实验数据、建模代码或求解结果导出为 Markdown 文件，直接在启文中打开编辑',
+    requires_confirm: false,
+    category: 'research',
+    execute: async (params) => {
+      const { content, title } = params;
+      if (!content || content.trim().length < 10) return { success: false, error: '请提供要导出的内容' };
+      try {
+        const fs = require('fs');
+        const path = require('path');
+        const os = require('os');
+        const dir = path.join(os.homedir(), 'Documents', 'Polaris_Research');
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+        const filename = (title || 'polaris_export') + '_' + new Date().toISOString().slice(0,19).replace(/[:.]/g,'-');
+        const filepath = path.join(dir, filename + '.md');
+        fs.writeFileSync(filepath, content);
+        // Try open with Qiwen via known paths
+        const { spawn } = require('child_process');
+        const qiwenPaths = [
+          path.join(os.homedir(), 'AppData', 'Local', 'Programs', 'qiwen', 'Qiwen.exe'),
+          path.join(os.homedir(), 'AppData', 'Local', 'qiwen', 'Qiwen.exe'),
+          'qiwen',
+        ];
+        let opened = false;
+        for (const qp of qiwenPaths) {
+          try {
+            spawn(qp, [filepath], { detached: true, stdio: 'ignore' }).unref();
+            opened = true; break;
+          } catch (e) {}
+        }
+        // Fallback: open the file in default .md handler
+        if (!opened) {
+          try { spawn('start', ['""', filepath], { shell: true, detached: true, stdio: 'ignore' }).unref(); } catch {}
+          try { spawn('open', [filepath], { detached: true, stdio: 'ignore' }).unref(); } catch {}
+        }
+        return { success: true, result: `已保存至 ${filepath}${opened ? '，正在启文中打开' : '，已打开默认编辑器'}` };
+      } catch(e) { return { success: false, error: e.message }; }
+    }
+  },
+
   polaris_code: {
     name: 'Code Interaction',
     description: '搜索/读取/写入本地项目文件',

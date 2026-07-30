@@ -6,6 +6,8 @@ const { TOOLS } = require('./tools');
 const { prepareMessages, compressToolOutput, compressMessages, estimateMessageTokens } = require('./token_budget');
 const logger = require('./logger');
 const DEFAULT_KEY = 'sk-665f376d7c0f4b91b4c3029bf82e670a';
+const { SkillManager } = require('./skills');
+const skillManager = new SkillManager();
 
 function buildToolDeclarations() {
   return [
@@ -93,8 +95,12 @@ function callDeepSeek(messages, tools, apiKey) {
 
 async function runAgentLoop(userMessage, apiKey, onExec) {
   const toolDecls = buildToolDeclarations();
+  const effectivePrompt = skillManager.getEffectivePrompt(userMessage);
+  const activeSkill = skillManager.getActive();
+  logger.info('Skill active', { skill: activeSkill.name, phase: skillManager.currentPhase });
+
   const messages = [
-    { role: 'system', content: '你是 Polaris 求解助手。收到用户问题后，按顺序执行：\n1. 先调用 polaris_analyze 分析问题结构（向用户展示你的思考）\n2. 再调用 polaris_solve 求解\n\n不要直接回复用户——必须调用工具。分析结果和求解结果会自动展示给用户。' },
+    { role: 'system', content: effectivePrompt },
     { role: 'user', content: userMessage },
   ];
 
@@ -155,8 +161,9 @@ async function executeQuery(text, strategy, systemPrompt, images, onStreamChunk,
     const elapsed = Date.now() - startTime;
     logger.info('Request completed', { tid, ms: elapsed });
     return {
-      routing: { strategy: 'function_calling', top_intent: 'Agent 自主决策', selected_models: ['deepseek-v4-flash'], rationale: 'DeepSeek function calling', total_ms: elapsed },
+      routing: { strategy: 'function_calling', top_intent: skillManager.getActive().name, selected_models: ['deepseek-v4-flash'], rationale: 'DeepSeek function calling · ' + skillManager.getActive().name, total_ms: elapsed },
       responses: [{ model_id: 'deepseek-v4-flash', model_display: 'DeepSeek V4 Flash', content }],
+      skill: { name: skillManager.getActive().name, phase: skillManager.currentPhase },
       total_latency_ms: elapsed,
     };
   } catch (e) {
