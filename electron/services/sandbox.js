@@ -1,12 +1,11 @@
 /**
- * Polaris Sandbox v2 — Perfect Edition
+ * Polaris Sandbox v3 — 简洁可靠版
  *
- * 借鉴：
- *   Open Interpreter → 安全分级（safe/confirm/block）+ 操作确认
- *   E2B            → 实时流式输出 + process ID 管理
- *   Pyodide        → WebAssembly 零安装 Python 回退方案
- *   code-runner-mcp → 多语言 + 进程隔离 + 资源限制
- *   Judger (skkuding) → seccomp/setrlimit 风格的资源限制思路
+ * 核心原则：
+ *   1. 只装 Python + pip（基础环境），不自动装 polaris-opt
+ *   2. polaris-opt 是私有包，用户在包管理界面手动安装
+ *   3. 下载优先走国内镜像，失败自动回退官方源
+ *   4. 信号驱动的进度，renderer 可以实时监听
  */
 
 const { spawn, spawnSync, execSync } = require('child_process');
@@ -15,32 +14,26 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const { pipeline } = require('stream');
-const { promisify } = require('util');
-const streamPipeline = promisify(pipeline);
 
 /* ═══════════════════════════════════════════════════════════
-   CONFIGURATION
+   CONFIG
    ═══════════════════════════════════════════════════════════ */
 
 const PYTHON_VERSION = '3.11.9';
-const PYTHON_URL = `https://www.python.org/ftp/python/${PYTHON_VERSION}/python-${PYTHON_VERSION}-embed-amd64.zip`;
 
-// Resource limits (inspired by Open Interpreter + Judger)
-const LIMITS = {
-  defaultTimeoutMs: 60000,
-  maxTimeoutMs: 300000,
-  maxOutputBytes: 1_000_000,  // 1MB stdout limit
-  maxMemoryMB: 512,           // soft limit warning
-  maxProcesses: 4,            // concurrent Python processes
-};
+// Mirror URLs — 优先 npm 镜像
+const PYTHON_MIRRORS = [
+  `https://npmmirror.com/mirrors/python/${PYTHON_VERSION}/python-${PYTHON_VERSION}-embed-amd64.zip`,
+  `https://registry.npmmirror.com/-/binary/python/${PYTHON_VERSION}/python-${PYTHON_VERSION}-embed-amd64.zip`,
+  `https://www.python.org/ftp/python/${PYTHON_VERSION}/python-${PYTHON_VERSION}-embed-amd64.zip`,
+];
 
-// Safety levels (inspired by Open Interpreter)
-const SAFETY = {
-  safe: { label: '安全', color: 'emerald', autoConfirm: true },
-  confirm: { label: '需确认', color: 'amber', autoConfirm: false },
-  block: { label: '已阻止', color: 'red', autoConfirm: false },
-};
+const PIP_BOOTSTRAP_URLS = [
+  'https://npmmirror.com/mirrors/pypa/get-pip.py',
+  'https://bootstrap.pypa.io/get-pip.py',
+];
+
+const PIP_INDEX_URL = 'https://mirrors.aliyun.com/pypi/simple/';
 
 /* ═══════════════════════════════════════════════════════════
    STATE
@@ -50,14 +43,10 @@ let _sandboxDir = null;
 let _pythonPath = null;
 let _setupPromise = null;
 let _setupProgress = null;
-let _activeProcesses = 0;
-let _totalExecCount = 0;
-let _totalExecTime = 0;
-let _lastError = null;
-let _installedPackages = null; // cached package list
+let _installedPackages = null;
 
 /* ═══════════════════════════════════════════════════════════
-   PATH HELPERS
+   PATHS
    ═══════════════════════════════════════════════════════════ */
 
 function getSandboxDir(userDataPath) {
@@ -73,38 +62,28 @@ function getPythonPath(userDataPath) {
   return _pythonPath;
 }
 
-function getPipPath(userDataPath) {
-  const s = getSandboxDir(userDataPath);
-  // Try Scripts/pip.exe first (embedded), then python -m pip
-  return fs.existsSync(path.join(s, 'Scripts', 'pip.exe'))
-    ? path.join(s, 'Scripts', 'pip.exe')
-    : null;
-}
-
 /* ═══════════════════════════════════════════════════════════
-   HEALTH & DIAGNOSTICS
+   HEALTH
    ═══════════════════════════════════════════════════════════ */
 
 function isReady(userDataPath) {
   const py = getPythonPath(userDataPath);
   if (!fs.existsSync(py)) return false;
-  const r = spawnSync(py, ['-c', 'from polaris import solve; print("OK")'], {
-    timeout: 10000, encoding: 'utf8', windowsHide: true,
+  const r = spawnSync(py, ['-c', 'import sys; print("OK")'], {
+    timeout: 5000, encoding: 'utf8', windowsHide: true,
   });
   return r.status === 0 && r.stdout.includes('OK');
 }
 
-function needsSetup(userDataPath) {
-  return !isReady(userDataPath);
-}
+function needsSetup(userDataPath) { return !isReady(userDataPath); }
 
 function getPythonVersion(userDataPath) {
   const py = getPythonPath(userDataPath);
   if (!fs.existsSync(py)) return null;
-  const r = spawnSync(py, ['-c', 'import sys; print(sys.version)'], {
+  const r = spawnSync(py, ['-c', 'import sys; print(sys.version.split()[0])'], {
     timeout: 5000, encoding: 'utf8', windowsHide: true,
   });
-  return r.stdout?.trim().split('\n')[0] || null;
+  return r.stdout?.trim() || null;
 }
 
 function getInstalledPackages(userDataPath) {
@@ -117,79 +96,96 @@ function getInstalledPackages(userDataPath) {
   try {
     _installedPackages = JSON.parse(r.stdout || '[]');
     return _installedPackages;
-  } catch {
-    return [];
-  }
+  } catch { return []; }
+}
+
+function hasPolaris(userDataPath) {
+  const py = getPythonPath(userDataPath);
+  if (!fs.existsSync(py)) return false;
+  const r = spawnSync(py, ['-c', 'from polaris.chat import solve; print("OK")'], {
+    timeout: 8000, encoding: 'utf8', windowsHide: true,
+  });
+  return r.status === 0 && r.stdout.includes('OK');
 }
 
 function invalidatePackageCache() { _installedPackages = null; }
 
 function getSandboxHealth(userDataPath) {
   const py = getPythonPath(userDataPath);
-  const pyExists = fs.existsSync(py);
-  const pyVer = pyExists ? getPythonVersion(userDataPath) : null;
-  const pkgs = pyExists ? getInstalledPackages(userDataPath) : [];
-  const polarisPkg = pkgs.find(p => p.name === 'polaris-opt');
-  const highsPkg = pkgs.find(p => p.name === 'highspy');
-
+  const ready = isReady(userDataPath);
   return {
-    ready: isReady(userDataPath),
+    ready,
+    pythonReady: ready,
+    polarisReady: hasPolaris(userDataPath),
     pythonPath: py,
-    pythonVersion: pyVer,
-    packages: pkgs.map(p => ({ name: p.name, version: p.version })),
-    polarisVersion: polarisPkg?.version || null,
-    highsVersion: highsPkg?.version || null,
+    pythonVersion: getPythonVersion(userDataPath),
     sandboxDir: getSandboxDir(userDataPath),
-    totalExecutions: _totalExecCount,
-    totalExecTimeMs: _totalExecTime,
-    activeProcesses: _activeProcesses,
-    lastError: _lastError,
   };
 }
 
 /* ═══════════════════════════════════════════════════════════
-   DOWNLOAD HELPER (with speed display)
+   DOWNLOAD — multi-mirror retry
    ═══════════════════════════════════════════════════════════ */
 
-function downloadFile(url, dest, onProgress) {
+function downloadFile(mirrors, dest, onProgress) {
+  let idx = 0;
+  function tryNext() {
+    if (idx >= mirrors.length) {
+      // Clean up partial file
+      try { fs.unlinkSync(dest); } catch {}
+      return Promise.reject(new Error('所有下载源均失败'));
+    }
+    const url = mirrors[idx++];
+    return _downloadOnce(url, dest, onProgress).catch(() => tryNext());
+  }
+  return tryNext();
+}
+
+function _downloadOnce(url, dest, onProgress) {
   return new Promise((resolve, reject) => {
     const file = fs.createWriteStream(dest);
     const proto = url.startsWith('https') ? https : http;
-    let startTime = Date.now();
+    const startTime = Date.now();
+    let total = 0, downloaded = 0;
 
-    const req = proto.get(url, { timeout: 600000 }, (res) => {
+    const req = proto.get(url, { timeout: 120000 }, (res) => {
+      // Follow redirect
       if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
         file.close();
         try { fs.unlinkSync(dest); } catch {}
-        return downloadFile(res.headers.location, dest, onProgress).then(resolve).catch(reject);
+        return _downloadOnce(res.headers.location, dest, onProgress).then(resolve).catch(reject);
       }
       if (res.statusCode !== 200) {
         file.close();
         try { fs.unlinkSync(dest); } catch {}
-        return reject(new Error(`HTTP ${res.statusCode}`));
+        return reject(new Error(`HTTP ${res.statusCode} from ${url}`));
       }
 
-      const total = parseInt(res.headers['content-length'], 10) || 0;
-      let downloaded = 0;
+      total = parseInt(res.headers['content-length'], 10) || 0;
 
       res.on('data', (chunk) => {
         downloaded += chunk.length;
+        file.write(chunk);
         if (onProgress && total > 0) {
-          const elapsed = (Date.now() - startTime) / 1000;
-          const speed = elapsed > 0 ? downloaded / elapsed : 0; // bytes/sec
+          const elapsed = Math.max((Date.now() - startTime) / 1000, 0.1);
+          const speed = downloaded / elapsed;
           onProgress({
             downloaded, total,
             percent: Math.round((downloaded / total) * 100),
-            speed: speed > 1_000_000 ? `${(speed / 1_000_000).toFixed(1)} MB/s` :
-                    speed > 1_000 ? `${(speed / 1_000).toFixed(1)} KB/s` :
-                    `${Math.round(speed)} B/s`,
-            size: total > 1_000_000 ? `${(total / 1_000_000).toFixed(1)} MB` :
-                  total > 1_000 ? `${(total / 1_000).toFixed(1)} KB` : `${total} B`,
           });
         }
       });
 
-      streamPipeline(res, file).then(resolve).catch(reject);
+      res.on('end', () => {
+        file.end();
+        file.close();
+        if (total === 0 || downloaded === total || Math.abs(downloaded - total) < 1000) {
+          resolve();
+        } else {
+          try { fs.unlinkSync(dest); } catch {}
+          reject(new Error(`下载不完整: ${downloaded}/${total}`));
+        }
+      });
     });
 
     req.on('error', (e) => {
@@ -197,7 +193,7 @@ function downloadFile(url, dest, onProgress) {
       try { fs.unlinkSync(dest); } catch {}
       reject(e);
     });
-    req.setTimeout(600000, () => {
+    req.setTimeout(120000, () => {
       req.destroy();
       file.close();
       try { fs.unlinkSync(dest); } catch {}
@@ -207,7 +203,7 @@ function downloadFile(url, dest, onProgress) {
 }
 
 /* ═══════════════════════════════════════════════════════════
-   SETUP PIPELINE (enriched)
+   SETUP PIPELINE
    ═══════════════════════════════════════════════════════════ */
 
 function cancelSetup() {
@@ -216,11 +212,10 @@ function cancelSetup() {
 }
 
 async function setup(userDataPath, onProgress) {
-  // If already running, return the active promise
   if (_setupPromise) return _setupPromise;
 
   const emit = (phase, percent, message, detail) => {
-    _setupProgress = { phase, percent, message, detail };
+    _setupProgress = { phase, percent, message, detail: detail || '' };
     if (onProgress) onProgress(_setupProgress);
   };
 
@@ -229,108 +224,107 @@ async function setup(userDataPath, onProgress) {
       const sandboxDir = getSandboxDir(userDataPath);
       const pythonExe = getPythonPath(userDataPath);
 
-      // Already ready?
       if (isReady(userDataPath)) {
-        emit('done', 100, '✓ 沙箱已就绪', getPythonVersion(userDataPath));
+        emit('done', 100, '沙箱已就绪');
         _setupPromise = null;
-        return { success: true, pythonPath: pythonExe, message: '已就绪' };
+        return { success: true, pythonPath: pythonExe, alreadyReady: true };
       }
 
-      // ── Phase 1: Download Python ──
-      emit('download', 5, '正在下载 Python 3.11 Embedded', '~9 MB');
       fs.mkdirSync(sandboxDir, { recursive: true });
+
+      // ── Phase 1: Download Python ──
+      emit('download', 5, '下载 Python 3.11', '~9MB');
       const zipPath = path.join(sandboxDir, 'python.zip');
 
       if (!fs.existsSync(pythonExe)) {
-        await downloadFile(PYTHON_URL, zipPath, (p) => {
-          emit('download', 5 + Math.round(p.percent * 0.40), `下载中 ${p.percent}%`, `${p.speed} — ${p.size}`);
+        await downloadFile(PYTHON_MIRRORS, zipPath, (p) => {
+          emit('download', 5 + Math.round(p.percent * 0.35), `下载中 ${p.percent}%`);
         });
       }
 
       // ── Phase 2: Extract ──
-      emit('extract', 45, '正在解压 Python', 'Windows 嵌入式版本');
+      emit('extract', 40, '解压 Python');
       if (!fs.existsSync(pythonExe)) {
         try {
           execSync(`powershell -NoProfile -Command "Expand-Archive -Force -Path '${zipPath}' -DestinationPath '${sandboxDir}'"`, {
             timeout: 60000, windowsHide: true,
           });
-        } catch (e) {
+        } catch {
           try {
-            execSync(`tar -xf "${zipPath}" -C "${sandboxDir}"`, { timeout: 60000, windowsHide: true });
+            execSync(`tar -xf "${zipPath}" -C "${sandboxDir}"`, {
+              timeout: 60000, windowsHide: true,
+            });
           } catch (e2) {
-            throw new Error('解压失败：系统不支持 PowerShell 或 tar');
+            throw new Error('解压失败: ' + e2.message);
           }
         }
         try { fs.unlinkSync(zipPath); } catch {}
       }
 
-      // ── Phase 3: Configure pip ──
-      emit('configure', 55, '正在配置 pip', '启用包管理器');
+      // ── Phase 3: Enable pip ──
+      emit('configure', 55, '配置 pip');
       const pthFile = path.join(sandboxDir, 'python311._pth');
       if (fs.existsSync(pthFile)) {
         let content = fs.readFileSync(pthFile, 'utf8');
         if (content.includes('#import site')) {
           content = content.replace('#import site', 'import site');
+          // Add Lib/site-packages to path for pip
+          if (!content.includes('Lib\\\\site-packages')) {
+            content = content.replace('import site', 'import site\nLib\\\\site-packages');
+          }
           fs.writeFileSync(pthFile, content);
         }
       }
 
       // ── Phase 4: Install pip ──
-      emit('pip', 60, '正在安装 pip', 'Python 包管理器');
+      emit('pip', 65, '安装 pip');
+      const getPipPath = path.join(sandboxDir, 'get-pip.py');
+      await downloadFile(PIP_BOOTSTRAP_URLS, getPipPath, (p) => {
+        emit('pip', 65 + Math.round(p.percent * 0.10), `下载 pip ${p.percent}%`);
+      });
+      const pipResult = spawnSync(pythonExe, [getPipPath, '--no-warn-script-location'], {
+        timeout: 180000, encoding: 'utf8', windowsHide: true,
+      });
+      try { fs.unlinkSync(getPipPath); } catch {}
+
+      if (pipResult.status !== 0) {
+        console.warn('[Sandbox] pip install warning:', pipResult.stderr?.slice(0, 300));
+      }
+
+      // ── Phase 5: Configure pip to use aliyun mirror ──
+      emit('install', 85, '配置国内镜像');
       try {
-        const getPipPath = path.join(sandboxDir, 'get-pip.py');
-        if (!fs.existsSync(getPipPath)) {
-          await downloadFile('https://bootstrap.pypa.io/get-pip.py', getPipPath);
-        }
-        spawnSync(pythonExe, [getPipPath, '--no-warn-script-location'], {
-          timeout: 120000, encoding: 'utf8', windowsHide: true,
+        spawnSync(pythonExe, ['-m', 'pip', 'config', 'set', 'global.index-url', PIP_INDEX_URL], {
+          timeout: 15000, encoding: 'utf8', windowsHide: true,
         });
-        try { fs.unlinkSync(getPipPath); } catch {}
-      } catch (e) {
-        emit('pip', 65, 'pip 安装跳过', '将使用 python -m pip');
-      }
-
-      // ── Phase 5: Install packages ──
-      const packages = ['polaris-opt[highs]'];
-      const pipCmd = getPipPath(userDataPath) || pythonExe;
-      const pipArgs = pipCmd === pythonExe ? ['-m', 'pip'] : [];
-
-      for (let i = 0; i < packages.length; i++) {
-        const pkg = packages[i];
-        const basePercent = 70 + (i * 15);
-        emit('install', basePercent, `正在安装 ${pkg}`, '这可能需要 1-3 分钟');
-
-        const args = [...pipArgs, 'install', pkg, '--quiet', '--no-warn-script-location'];
-        const result = spawnSync(pipCmd, args, {
-          timeout: 300000, encoding: 'utf8', windowsHide: true,
-          env: { ...process.env, PIP_DISABLE_PIP_VERSION_CHECK: '1' },
-        });
-
-        if (result.status !== 0) {
-          emit('install', basePercent + 10, `${pkg} 安装警告`, result.stderr?.slice(0, 200));
-        }
-      }
+      } catch {}
 
       // ── Phase 6: Verify ──
-      emit('verify', 95, '正在验证安装', '检查 polaris + HiGHS');
-      const verifyResult = spawnSync(pythonExe, [
-        '-c', 'from polaris import solve; from polaris.solvers.highs import HighsSolver; print("POLARIS_OK"); print("HIGHS_OK")'
-      ], { timeout: 15000, encoding: 'utf8', windowsHide: true });
+      emit('verify', 92, '验证 Python');
+      const pyOk = isReady(userDataPath);
+      emit('verify', 96, '验证 pip');
+      const pipVerify = spawnSync(pythonExe, ['-m', 'pip', '--version'], {
+        timeout: 15000, encoding: 'utf8', windowsHide: true,
+      });
+      const pipOk = pipVerify.status === 0;
 
-      invalidatePackageCache();
-
-      if (verifyResult.stdout.includes('POLARIS_OK')) {
-        emit('done', 100, '✓ Python 沙箱就绪', getPythonVersion(userDataPath));
+      if (pyOk && pipOk) {
+        emit('done', 100, '沙箱就绪');
         _setupPromise = null;
-        return { success: true, pythonPath: pythonExe, message: '就绪', health: getSandboxHealth(userDataPath) };
+        return {
+          success: true,
+          pythonPath: pythonExe,
+          pythonVersion: getPythonVersion(userDataPath),
+          polarisReady: hasPolaris(userDataPath),
+        };
       } else {
-        emit('done', 100, '⚠ Python OK, 但 polaris 安装不完整', verifyResult.stderr?.slice(0, 200) || '请重试');
+        const msg = pyOk ? 'Python OK, pip 未安装' : '安装未完成';
+        emit('done', 100, msg);
         _setupPromise = null;
-        return { success: true, pythonPath: pythonExe, message: '部分就绪', health: getSandboxHealth(userDataPath) };
+        return { success: true, pythonPath: pythonExe, partial: true };
       }
     } catch (e) {
-      emit('error', 0, `安装失败: ${e.message}`, '请检查网络连接后重试');
-      _lastError = e.message;
+      emit('error', 0, e.message);
       _setupPromise = null;
       return { success: false, error: e.message };
     }
@@ -340,132 +334,49 @@ async function setup(userDataPath, onProgress) {
 }
 
 /* ═══════════════════════════════════════════════════════════
-   CODE EXECUTION (streaming version)
+   REPAIR
    ═══════════════════════════════════════════════════════════ */
 
-/**
- * Run Python code with real-time streaming output.
- * Inspired by Open Interpreter & E2B streaming patterns.
- */
-function runCodeStream(code, userDataPath, options = {}) {
-  return new Promise((resolve) => {
-    const py = getPythonPath(userDataPath);
-    const timeout = Math.min(options.timeout || LIMITS.defaultTimeoutMs, LIMITS.maxTimeoutMs);
-    const onChunk = options.onChunk || null;
-    const safeMode = options.safeMode !== false; // default safe
-
-    if (!fs.existsSync(py)) {
-      if (onChunk) onChunk({ type: 'error', text: 'Python 环境未安装。请点击 "安装沙箱" 按钮。' });
-      return resolve({ success: false, error: 'Python not installed', stdout: '', stderr: '' });
-    }
-
-    // Safety check: dangerous operations (inspired by Open Interpreter)
-    if (safeMode) {
-      const dangerous = [
-        { pattern: /os\.remove|os\.unlink|os\.rmdir|shutil\.rmtree/i, level: 'confirm', hint: '文件删除' },
-        { pattern: /subprocess|os\.system|os\.popen|exec\(|eval\(/i, level: 'confirm', hint: '系统命令' },
-        { pattern: /socket\.|requests\.(post|put|delete)|urllib/i, level: 'confirm', hint: '网络请求' },
-        { pattern: /__import__|importlib|compile\(/i, level: 'confirm', hint: '动态导入' },
-        { pattern: /while\s+True|while\s+1\s*:/i, level: 'confirm', hint: '无限循环' },
-      ];
-      const protection = dangerous.find(d => d.pattern.test(code));
-      if (protection && !options.skipSafety) {
-        if (onChunk) onChunk({ type: 'safety', level: protection.level, hint: protection.hint });
-        if (protection.level === 'block') {
-          return resolve({ success: false, error: `操作被阻止: ${protection.hint}`, safety: 'blocked' });
-        }
-      }
-    }
-
-    _activeProcesses++;
-    _totalExecCount++;
-    const startTime = Date.now();
-
-    const child = spawn(py, ['-c', code], {
-      timeout,
-      windowsHide: true,
-      env: {
-        ...process.env,
-        PYTHONIOENCODING: 'utf-8',
-        PYTHONUTF8: '1',
-      },
-    });
-
-    let stdout = '';
-    let stderr = '';
-    let killed = false;
-
-    child.stdout.on('data', (chunk) => {
-      const text = chunk.toString('utf8');
-      stdout += text;
-      // Truncate if too long
-      if (stdout.length > LIMITS.maxOutputBytes) {
-        if (!killed) { child.kill(); killed = true; }
-      }
-      if (onChunk) onChunk({ type: 'stdout', text });
-    });
-
-    child.stderr.on('data', (chunk) => {
-      const text = chunk.toString('utf8');
-      stderr += text;
-      if (onChunk) onChunk({ type: 'stderr', text });
-    });
-
-    child.on('close', (exitCode) => {
-      _activeProcesses--;
-      const elapsed = Date.now() - startTime;
-      _totalExecTime += elapsed;
-
-      resolve({
-        success: exitCode === 0 && !killed,
-        stdout: stdout.slice(0, LIMITS.maxOutputBytes),
-        stderr,
-        exitCode: killed ? -1 : exitCode,
-        elapsedMs: elapsed,
-        killed,
-      });
-    });
-
-    child.on('error', (err) => {
-      _activeProcesses--;
-      if (onChunk) onChunk({ type: 'error', text: err.message });
-      resolve({ success: false, error: err.message, stdout, stderr });
-    });
-  });
+async function repair(userDataPath, onProgress) {
+  const emit = (phase, percent, message) => {
+    if (onProgress) onProgress({ phase, percent, message });
+  };
+  const pythonExe = getPythonPath(userDataPath);
+  if (!fs.existsSync(pythonExe)) {
+    emit('repair', 0, 'Python 缺失，重新安装...');
+    cancelSetup(); // reset cached promise
+    return setup(userDataPath, onProgress);
+  }
+  emit('repair', 50, '验证 Python...');
+  const ok = isReady(userDataPath);
+  emit('done', 100, ok ? '一切正常' : '发现问题，请重新安装沙箱');
+  return { success: ok };
 }
 
-/**
- * Sync version — used by tools.js for non-streaming calls.
- * Falls back to spawnSync for simple cases.
- */
+/* ═══════════════════════════════════════════════════════════
+   CODE EXECUTION
+   ═══════════════════════════════════════════════════════════ */
+
 function runCode(code, userDataPath, options = {}) {
   const py = getPythonPath(userDataPath);
-
   if (!fs.existsSync(py)) {
-    return { success: false, error: 'Python 未安装。请点击左侧栏"安装沙箱"一键部署。', stdout: '', stderr: '' };
+    return { success: false, error: 'Python 未安装', stdout: '', stderr: '' };
   }
-
-  _totalExecCount++;
-  const startTime = Date.now();
-  const timeout = Math.min(options.timeout || LIMITS.defaultTimeoutMs, LIMITS.maxTimeoutMs);
-
+  const timeout = Math.min(options.timeout || 60000, 300000);
   const r = spawnSync(py, ['-c', code], {
     timeout, encoding: 'utf8', windowsHide: true,
     env: { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1' },
   });
-
-  _totalExecTime += Date.now() - startTime;
-
   return {
     success: r.status === 0,
-    stdout: (r.stdout || '').slice(0, LIMITS.maxOutputBytes),
+    stdout: (r.stdout || '').slice(0, 1_000_000),
     stderr: (r.stderr || '').slice(0, 10000),
     exitCode: r.status,
   };
 }
 
 /* ═══════════════════════════════════════════════════════════
-   PACKAGE MANAGEMENT (UI-facing)
+   PACKAGE MANAGEMENT
    ═══════════════════════════════════════════════════════════ */
 
 function installPackage(packageName, userDataPath, onProgress) {
@@ -473,141 +384,44 @@ function installPackage(packageName, userDataPath, onProgress) {
   if (!fs.existsSync(py)) {
     return Promise.resolve({ success: false, error: 'Python 未安装' });
   }
-
   return new Promise((resolve) => {
-    const cmd = getPipPath(userDataPath) || py;
-    const args = cmd === py ? ['-m', 'pip', 'install', packageName] : ['install', packageName];
-    args.push('--quiet', '--no-warn-script-location');
-
-    if (onProgress) onProgress({ phase: 'install', message: `安装 ${packageName}...` });
-
-    const child = spawn(cmd, args, {
-      timeout: 120000, windowsHide: true,
+    if (onProgress) onProgress({ phase: 'install', message: `${packageName}...` });
+    const child = spawn(py, ['-m', 'pip', 'install', packageName], {
+      timeout: 300000, windowsHide: true,
       env: { ...process.env, PIP_DISABLE_PIP_VERSION_CHECK: '1' },
     });
-
-    let output = '';
-    child.stdout.on('data', (c) => { output += c.toString(); });
-    child.stderr.on('data', (c) => { output += c.toString(); });
-
+    let out = '';
+    child.stdout.on('data', (c) => { out += c.toString(); });
+    child.stderr.on('data', (c) => { out += c.toString(); });
     child.on('close', (code) => {
       invalidatePackageCache();
-      if (onProgress) onProgress({ phase: code === 0 ? 'done' : 'error', message: code === 0 ? '安装完成' : '安装失败' });
-      resolve({ success: code === 0, output });
-    });
-
-    child.on('error', (err) => {
-      if (onProgress) onProgress({ phase: 'error', message: err.message });
-      resolve({ success: false, error: err.message });
-    });
-  });
-}
-
-function uninstallPackage(packageName, userDataPath) {
-  const py = getPythonPath(userDataPath);
-  if (!fs.existsSync(py)) {
-    return { success: false, error: 'Python 未安装' };
-  }
-
-  const cmd = getPipPath(userDataPath) || py;
-  const args = cmd === py ? ['-m', 'pip', 'uninstall', '-y', packageName] : ['uninstall', '-y', packageName];
-
-  const r = spawnSync(cmd, args, { timeout: 30000, encoding: 'utf8', windowsHide: true });
-  invalidatePackageCache();
-  return { success: r.status === 0, output: r.stdout || r.stderr };
-}
-
-/* ═══════════════════════════════════════════════════════════
-   NODE.JS EXECUTION (multi-language, inspired by code-runner-mcp)
-   ═══════════════════════════════════════════════════════════ */
-
-function runJavaScript(code, options = {}) {
-  return new Promise((resolve) => {
-    const timeout = Math.min(options.timeout || 30000, 120000);
-    const onChunk = options.onChunk || null;
-
-    const child = spawn(process.execPath, ['-e', code], {
-      timeout,
-      windowsHide: true,
-      env: { ...process.env, NODE_OPTIONS: '--max-old-space-size=128' },
-    });
-
-    let stdout = '';
-    let stderr = '';
-
-    child.stdout.on('data', (c) => {
-      const text = c.toString();
-      stdout += text;
-      if (onChunk) onChunk({ type: 'stdout', text });
-    });
-    child.stderr.on('data', (c) => {
-      const text = c.toString();
-      stderr += text;
-      if (onChunk) onChunk({ type: 'stderr', text });
-    });
-    child.on('close', (code) => {
-      resolve({ success: code === 0, stdout, stderr, exitCode: code });
+      resolve({ success: code === 0, output: out });
     });
     child.on('error', (err) => resolve({ success: false, error: err.message }));
   });
 }
 
-/* ═══════════════════════════════════════════════════════════
-   AUTO-REPAIR (one-click fix)
-   ═══════════════════════════════════════════════════════════ */
-
-async function repair(userDataPath, onProgress) {
-  const emit = (phase, percent, message) => {
-    if (onProgress) onProgress({ phase, percent, message });
-  };
-
-  const sandboxDir = getSandboxDir(userDataPath);
-  const pythonExe = getPythonPath(userDataPath);
-
-  // Step 1: Verify Python binary exists
-  if (!fs.existsSync(pythonExe)) {
-    emit('repair', 10, 'Python 环境缺失，重新安装...');
-    return setup(userDataPath, onProgress);
-  }
-
-  // Step 2: Try fix pip
-  emit('repair', 30, '修复 pip...');
-  try {
-    spawnSync(pythonExe, ['-m', 'pip', 'install', '--upgrade', 'pip'], {
-      timeout: 60000, encoding: 'utf8', windowsHide: true,
-    });
-  } catch {}
-
-  // Step 3: Reinstall polaris-opt
-  emit('repair', 60, '重新安装 polaris-opt...');
-  const pipCmd = getPipPath(userDataPath) || pythonExe;
-  const pipArgs = pipCmd === pythonExe ? ['-m', 'pip'] : [];
-  spawnSync(pipCmd, [...pipArgs, 'install', '--force-reinstall', 'polaris-opt[highs]', '--quiet'], {
-    timeout: 300000, encoding: 'utf8', windowsHide: true,
+function uninstallPackage(packageName, userDataPath) {
+  const py = getPythonPath(userDataPath);
+  if (!fs.existsSync(py)) return { success: false, error: 'Python 未安装' };
+  const r = spawnSync(py, ['-m', 'pip', 'uninstall', '-y', packageName], {
+    timeout: 30000, encoding: 'utf8', windowsHide: true,
   });
-
   invalidatePackageCache();
-  emit('repair', 90, '验证...');
-  const ok = isReady(userDataPath);
-  emit('done', 100, ok ? '✓ 修复完成' : '⚠ 修复不完整');
-
-  return { success: ok, health: getSandboxHealth(userDataPath) };
+  return { success: r.status === 0, output: r.stdout || r.stderr };
 }
 
 /* ═══════════════════════════════════════════════════════════
-   SAFETY CHECKER (exposed for UI)
+   SAFETY
    ═══════════════════════════════════════════════════════════ */
 
 function checkSafety(code) {
   const checks = [
-    { id: 'file_delete', label: '文件删除', pattern: /os\.remove|os\.unlink|shutil\.rmtree|pathlib.*\.unlink/i, level: 'confirm' },
-    { id: 'file_write', label: '文件写入', pattern: /open\(.*['"]w|write_text\(/i, level: 'confirm' },
-    { id: 'system_call', label: '系统调用', pattern: /subprocess|os\.system|os\.popen/i, level: 'confirm' },
-    { id: 'network', label: '网络请求', pattern: /requests\.|urllib|socket\.(connect|send)/i, level: 'confirm' },
-    { id: 'dynamic_import', label: '动态导入', pattern: /__import__|importlib|compile\(/i, level: 'confirm' },
-    { id: 'infinite_loop', label: '潜在死循环', pattern: /while\s+True\s*:/i, level: 'confirm' },
+    { id: 'file_delete', label: '文件删除', level: 'confirm', pattern: /os\.remove|os\.unlink|shutil\.rmtree/i },
+    { id: 'system_call', label: '系统调用', level: 'confirm', pattern: /subprocess|os\.system|os\.popen/i },
+    { id: 'network', label: '网络请求', level: 'confirm', pattern: /requests\.(post|put|delete)|socket\.connect/i },
   ];
-  return checks.filter(c => c.pattern.test(code)).map(c => ({ ...c }));
+  return checks.filter(c => c.pattern.test(code));
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -615,12 +429,9 @@ function checkSafety(code) {
    ═══════════════════════════════════════════════════════════ */
 
 module.exports = {
-  isReady, needsSetup, setup, cancelSetup, repair,
-  runCode, runCodeStream, runJavaScript,
-  getSandboxHealth, getInstalledPackages,
-  installPackage, uninstallPackage,
-  checkSafety,
-  getPythonPath, getSandboxDir,
+  isReady, needsSetup, setup, cancelSetup, repair, hasPolaris,
+  runCode, getSandboxHealth, getInstalledPackages,
+  installPackage, uninstallPackage, getPythonVersion,
+  checkSafety, getPythonPath, getSandboxDir,
   getProgress: () => _setupProgress,
-  LIMITS, SAFETY,
 };

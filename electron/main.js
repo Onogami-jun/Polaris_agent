@@ -149,12 +149,13 @@ ipcMain.handle('sandbox:needsSetup', () => sandbox.needsSetup(sandboxDataPath())
 ipcMain.handle('sandbox:getProgress', () => sandbox.getProgress());
 ipcMain.handle('sandbox:health', () => sandbox.getSandboxHealth(sandboxDataPath()));
 ipcMain.handle('sandbox:packages', () => sandbox.getInstalledPackages(sandboxDataPath()));
+ipcMain.handle('sandbox:hasPolaris', () => sandbox.hasPolaris(sandboxDataPath()));
 ipcMain.handle('sandbox:safety', (_e, { code }) => sandbox.checkSafety(code));
-ipcMain.handle('sandbox:setup', async (event) => {
+ipcMain.handle('sandbox:setup', async () => {
   const onProgress = (data) => { if (win && !win.isDestroyed()) win.webContents.send('sandbox:progress', data); };
   return sandbox.setup(sandboxDataPath(), onProgress);
 });
-ipcMain.handle('sandbox:repair', async (event) => {
+ipcMain.handle('sandbox:repair', async () => {
   const onProgress = (data) => { if (win && !win.isDestroyed()) win.webContents.send('sandbox:progress', data); };
   return sandbox.repair(sandboxDataPath(), onProgress);
 });
@@ -167,8 +168,8 @@ ipcMain.handle('sandbox:installPackage', (_e, { packageName }) => {
 ipcMain.handle('sandbox:uninstallPackage', (_e, { packageName }) => {
   return sandbox.uninstallPackage(packageName, sandboxDataPath());
 });
-ipcMain.handle('sandbox:runCode', (_e, { code, safeMode }) => {
-  return sandbox.runCode(code, sandboxDataPath(), { safeMode });
+ipcMain.handle('sandbox:runCode', (_e, { code }) => {
+  return sandbox.runCode(code, sandboxDataPath());
 });
 
 app.whenReady().then(() => { createWindow(); createTray(); systemMonitor.startMonitoring((card) => { if (win && !win.isDestroyed()) win.webContents.send('polaris:intervention', card); }); });
