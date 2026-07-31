@@ -73,7 +73,7 @@ async function withFallback(paths) {
   const report = errors.map((e, idx) => `  路径${e.path}: ${e.error}`).join('\n');
   return {
     success: false,
-    error: `所有 ${paths.length} 条求解路径均失败：\n${report}\n\n请检查：\n1. Python 3.11+ 是否已安装\n2. pip install polaris-opt[highs] 是否执行\n3. 终端运行 python -c "from polaris import solve" 是否成功`,
+    error: `求解引擎暂不可用。可在设置→沙箱中一键部署 Python + polaris-opt 环境。\n详情：\n${report}`,
   };
 }
 
@@ -83,11 +83,19 @@ function diagnose() {
   const { spawnSync } = require('child_process');
   const results = [];
 
-  // Python
+  // Python — check sandbox first
   let pythonCmd = null;
-  for (const cmd of ['python', 'python3']) {
-    const r = spawnSync(cmd, ['-c', 'print("OK")'], { timeout: 5000, encoding: 'utf8' });
-    if (r.status === 0 && r.stdout.includes('OK')) { pythonCmd = cmd; break; }
+  const path = require('path'); const os2 = require('os'); const fs2 = require('fs');
+  const sandboxPy = path.join(os2.homedir(), 'AppData', 'Roaming', 'polaris-agent', 'sandbox', 'python.exe');
+  if (fs2.existsSync(sandboxPy)) {
+    const r = spawnSync(sandboxPy, ['-c', 'print("OK")'], { timeout: 5000, encoding: 'utf8', windowsHide: true });
+    if (r.status === 0 && r.stdout.includes('OK')) pythonCmd = sandboxPy;
+  }
+  if (!pythonCmd) {
+    for (const cmd of ['python', 'python3']) {
+      const r = spawnSync(cmd, ['-c', 'print("OK")'], { timeout: 5000, encoding: 'utf8', windowsHide: true });
+      if (r.status === 0 && r.stdout.includes('OK')) { pythonCmd = cmd; break; }
+    }
   }
   results.push({ check: 'Python', ok: !!pythonCmd, detail: pythonCmd || 'Not found' });
   if (!pythonCmd) return results;
@@ -124,7 +132,7 @@ const deepseekBreaker = new CircuitBreaker('deepseek', { failureThreshold: 3, re
 /**
  * Reliable solve: try every path, never crash, always return a diagnostic message.
  */
-async function reliableSolve(prompt, onExec) {
+async function reliableSolve(prompt, onExec, pythonCmd = 'python') {
   return withFallback([
     // Path 0: Direct Python solve (offline, fastest)
     async () => {
@@ -135,7 +143,7 @@ async function reliableSolve(prompt, onExec) {
 from polaris.chat import solve
 print(solve(${normalized}))`;
       const env = { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1' };
-      const r = sp('python', ['-c', code], { timeout: 30000, encoding: 'utf8', env });
+      const r = sp(pythonCmd, ['-c', code], { timeout: 30000, encoding: 'utf8', env, windowsHide: true });
       const out = (r.stdout || r.stderr || '').trim();
       if (out && !out.includes('未能识别') && !out.includes('ModuleNotFoundError')) {
         if (onExec) onExec({ tool: 'circuit:direct', status: 'done', detail: '直接求解成功' });
@@ -159,7 +167,7 @@ if parsed.ptype is not None and str(parsed.ptype) != 'ProblemType.UNKNOWN':
 else:
     print('RULE_FAILED')`;
       const env = { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1' };
-      const r = sp('python', ['-c', code], { timeout: 30000, encoding: 'utf8', env });
+      const r = sp(pythonCmd, ['-c', code], { timeout: 30000, encoding: 'utf8', env, windowsHide: true });
       const out = (r.stdout || r.stderr || '').trim();
       if (out && !out.includes('RULE_FAILED') && !out.includes('ModuleNotFoundError') && out.length > 5) {
         if (onExec) onExec({ tool: 'circuit:rule', status: 'done', detail: '规则解析成功' });
@@ -209,7 +217,7 @@ if ptype_str in mapping:
 else:
     print('LLM_PARSE_FAILED')`;
               const env = { ...process.env, PYTHONIOENCODING: 'utf-8' };
-              const pr = sp('python', ['-c', pcode], { timeout: 30000, encoding: 'utf8', env });
+              const pr = sp(pythonCmd, ['-c', pcode], { timeout: 30000, encoding: 'utf8', env, windowsHide: true });
               const out = (pr.stdout || pr.stderr || '').trim();
               if (out && !out.includes('LLM_PARSE_FAILED') && !out.includes('Error') && out.length > 5) {
                 resolve({ success: true, result: out, path: 'llm' });

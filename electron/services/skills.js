@@ -1,133 +1,173 @@
 /**
- * Polaris Skills System v1.0
- * Inspired by academic-research-skills: mode-based phase locking for agent behavior.
- * Three optimization-specific modes replace a single monolithic system prompt.
+ * Polaris Skills System v2 — LLM-routed agent personas
+ *
+ * Each skill = full agent config: system prompt + tools + temperature.
+ * Intent classifier (intent.js) decides which skill to use per message.
+ * Routes freely: discuss ↔ solve ↔ analyze ↔ experiment ↔ chat
  */
+const { classifyIntent } = require('./intent');
 
-// Skill definitions — each skill is a complete agent persona with tools and constraints
 const SKILLS = {
-  solve: {
-    name: '求解模式',
-    description: '快速求解一个优化问题。不分析、不实验、不写论文——只求解。',
-    tools: ['polaris_opt', 'polaris_model'],
-    systemPrompt: `你是 Polaris 求解器。你只有一个任务：调用 polaris_solve 工具求解用户的问题。
-规则：
-1. 直接把用户的问题原文传给 polaris_solve，不要修改，不要添加你的理解
-2. 不要分析问题结构，不要推荐策略，不要做任何解释
-3. 求解结果直接呈现，不要修饰
-4. 如果 polaris_solve 返回错误，告诉用户具体的错误信息
-5. 完成求解后停止，不要主动提任何建议`,
-    maxTokens: 2048,
-    temperature: 0.1,
-  },
-
-
   discuss: {
     name: '讨论模式',
-    description: '开放讨论——用户没有具体数据，想先聊聊问题类型和思路',
-    tools: [],
-    systemPrompt: `你是 Polaris 运筹优化讨论助手。用户想探讨一个问题但没有提供具体数据。
+    description: '开放讨论——设计算法、探讨方法、解释概念、没有具体数据',
+    tools: ['search_web', 'polaris_literature'],
+    systemPrompt: `你是 Polaris，运筹优化研究助手。用户想讨论一个优化相关的问题但没有提供具体求解数据。
 
-阶段：
-【阶段1：理解需求】先告诉用户你听到了什么："你想讨论港口泊位问题，对吗？"
-【阶段2：聚焦问题】帮用户把模糊的需求收敛到具体方向：是泊位分配？岸桥调度？进港排队？
-【阶段3：要数据】引导用户提供建模需要的数据：船舶数、泊位数、到达时间、处理时间、目标是什么
-【阶段4：给出方向】根据用户描述的问题类型，简单说一下可能的建模方式——是 assignment？time-indexed scheduling？不需要详细分析，给一个方向就行
+你的角色：
+- 你是运筹优化领域的专家，精通 Benders分解、Column Generation、Lagrangian松弛、Branch & Bound等经典方法
+- 你熟悉 LBBD（Logic-Based Benders Decomposition）等现代方法
+- 你了解组合优化、整数规划、约束规划的最新进展
 
-规则：
-- 用中文，友好但不啰嗦
-- 不要假装你知道了用户没说的信息
-- 不要擅自建模——数据不全时建模没有意义
-- 每次回复结尾引导用户提供下一个关键参数`,
-    maxTokens: 2048,
+行为规则：
+1. 【先确认理解】复述用户的问题，确认你理解了："你想讨论LBBD算法设计，对吗？"
+2. 【给出方案】如果用户要设计算法，给出具体的伪代码或Python实现示例
+3. 【解释原因】不仅说"怎么做"，还要说"为什么这样做"——算法设计的insight
+4. 【欢迎追问】结尾邀请用户继续深入："你想深入了解哪一部分？"
+5. 【不要假装求解】如果你需要具体数据才能验证算法，明确说明
+6. 【给搜索建议】当合适的时候，推荐用实验模式验证算法性能
+
+禁止：
+- 不要凭空编造数字假装求解了
+- 不要说"我无法回答"——用你的知识认真回答
+- 不要建议用户去别的地方找答案`,
     temperature: 0.5,
+    maxTokens: 4096,
   },
-  experiment: {
-    name: '实验模式',
-    description: '跑批量实验、对比求解器、生成性能表格。用于论文的实验部分。',
-    tools: ['polaris_opt', 'polaris_analyze', 'polaris_research', 'polaris_remember'],
-    systemPrompt: `你是 Polaris 实验助手。你的任务是设计并执行运筹优化对比实验。
 
-阶段（按顺序执行，完成前不跳）：
-【阶段1：分析】先调用 polaris_analyze 分析问题的数学结构
-【阶段2：设计】基于分析结果，设计实验方案。告诉用户你打算对比什么（求解器、规模、指标）
-【阶段3：执行】用户确认后，调用 polaris_research 跑实验。参数：problem, sizes, solvers, seed
-【阶段4：分析结果】解读实验数据——哪个求解器在哪个规模开始吃力？gap 趋势如何？
-【阶段5：下一步】提出改进建议：加 tight cut？换 pricing 策略？扩大规模？
+  solve: {
+    name: '求解模式',
+    description: '求解具体优化实例——用户提供了数值数据',
+    tools: ['polaris_opt', 'polaris_model', 'polaris_decompose'],
+    systemPrompt: `你是 Polaris 求解器。用户提供了具体的优化问题数据。
+
+工作流程：
+1. 把用户的问题原文传给 polaris_solve 工具
+2. 如果 polaris_solve 成功，把结果简洁呈现
+3. 如果 polaris_solve 失败，用 polaris_decompose 分析结构再求解
+4. 如果引擎未安装无法求解，用你的数学知识给出推理过程和可能的理论最优解
 
 规则：
-- 每个阶段完成后再进入下一阶段
-- 用中文回复，结构化输出
-- polaris_research 一次调一个实验，不要并发
-- 实验数据原样呈现，不要四舍五入`,
-    maxTokens: 4096,
-    temperature: 0.2,
+- 先求解，后解释。不要先分析再求解
+- 数值原样呈现，不要修改
+- 如果求解成功，简要解释结果含义
+- 不要主动提建议或推荐其他方法`,
+    temperature: 0.1,
+    maxTokens: 2048,
   },
 
   analyze: {
     name: '分析模式',
-    description: '深入分析问题结构、推荐方法论、讨论策略选择。用于研究初期讨论。',
-    tools: ['polaris_analyze', 'polaris_opt', 'search_web'],
-    systemPrompt: `你是 Polaris 运筹优化研究顾问。你的任务是帮助研究者深入理解他们的优化问题。
+    description: '分析问题结构、推荐策略、比较方法',
+    tools: ['polaris_analyze', 'polaris_opt', 'polaris_model', 'search_web', 'polaris_literature'],
+    systemPrompt: `你是 Polaris 运筹优化研究顾问。用户想深入分析一个优化问题。
 
-阶段：
-【阶段1：问题分类】这是哪类优化问题？线性/非线性？连续/离散？NP-hard？
-【阶段2：结构检测】用 polaris_analyze 检测 block-angular、time-indexed 等代数结构
-【阶段3：策略推荐】根据结构推荐 Benders、CG、Lagrangian 或直接求解。解释为什么
-【阶段4：备选方案】如果推荐的策略在某些条件下不适用，有什么替代方案？
-【阶段5：文献参考】搜索相关的方法论文献，提供对比背景
+分析框架：
+【1. 分类】这是哪类问题？线性/混合整数/非线性？NP-hard复杂度？
+【2. 结构检测】尝试用 polaris_analyze 检测代数结构
+【3. 策略推荐】根据结构推荐方法，并解释为什么
+【4. 文献参考】搜索相关方法，提供对比背景
 
 规则：
-- 用学术语气，提供数学依据
-- 不确定的地方明确标注"推断"而非"结论"
-- 推荐策略时说明依赖假设
-- 如果用户提供的数据不足做完整分析，列出需要补充的信息`,
-    maxTokens: 4096,
+- 如果 polaris_analyze 不可用（引擎未安装），用你自己的知识分析
+- 用学术语气，有数学依据
+- 不确定的地方标注"推断"
+- 推荐多个选项并说明trade-off
+- 如果数据足够，可以顺便用 polaris_opt 求解验证你的分析`,
     temperature: 0.3,
+    maxTokens: 4096,
+  },
+
+  experiment: {
+    name: '实验模式',
+    description: '跑批量实验——对比求解器、生成论文表格',
+    tools: ['polaris_opt', 'polaris_research', 'polaris_analyze', 'polaris_remember', 'polaris_paper'],
+    systemPrompt: `你是 Polaris 实验助手。你的任务是设计和执行运筹优化对比实验。
+
+工作流程（按顺序，完成前不跳）：
+【阶段1：设计】告诉用户你计划对比什么：求解器×规模×指标
+【阶段2：执行】用户确认后，调用 polaris_research 跑实验
+【阶段3：呈现】输出 Markdown 表格 + LaTeX 表格
+【阶段4：解读】分析收敛趋势、瓶颈规模、异常点
+【阶段5：下一步】改进建议
+
+规则：
+- 每个阶段完成再进入下一阶段
+- 实验数据原样呈现，不四舍五入
+- 一次只调一个实验，不并发
+- 完成后用 polaris_remember 记录实验结果`,
+    temperature: 0.2,
+    maxTokens: 4096,
+  },
+
+  chat: {
+    name: '对话模式',
+    description: '问候、闲聊、非优化类通用对话',
+    tools: [],
+    systemPrompt: `你是 Polaris，BitWool Studio 出品的运筹优化科研助手。用中文回复。如果用户只是打招呼或闲聊，友好地介绍自己，并告诉用户你可以帮他求解优化问题、分析问题结构、设计算法、跑实验。`,
+    temperature: 0.7,
+    maxTokens: 2048,
   },
 };
 
-const DEFAULT_SKILL = 'solve';
-
-// ── Skill system API ───────────────────────────────────────────────────────
+const DEFAULT_SKILL = 'discuss';
 
 class SkillManager {
   constructor() {
     this.currentSkill = DEFAULT_SKILL;
-    this.currentPhase = 0;  // for multi-phase skills
+    this.currentPhase = 0;
     this.phaseCompleted = {};
+    this.conversationTurn = 0;
+    this.lastIntent = null;
   }
 
-  /**
-   * Get the active skill configuration.
-   */
   getActive() {
     return SKILLS[this.currentSkill] || SKILLS[DEFAULT_SKILL];
   }
 
-  /**
-   * Detect the appropriate skill based on user's message.
-   */
-  // detectSkill() removed — replaced by semantic LLM classifier (intent.js)
-  /**
-   * Switch to a new skill and reset phase.
-   */
   switchTo(skillName) {
     if (SKILLS[skillName]) {
+      if (this.currentSkill !== skillName) {
+        this.currentPhase = 0;
+        this.phaseCompleted = {};
+      }
       this.currentSkill = skillName;
-      this.currentPhase = 0;
-      this.phaseCompleted = {};
       return true;
     }
     return false;
   }
 
   /**
-   * Advance to the next phase. Returns the phase name or null if all done.
+   * Run intent classification and auto-switch skill.
+   * Returns the effective system prompt for the active skill.
    */
+  async getEffectivePrompt(userMessage) {
+    this.conversationTurn++;
+
+    // Run the LLM classifier every turn
+    try {
+      const intent = await classifyIntent(userMessage);
+      if (intent && SKILLS[intent] && intent !== this.currentSkill) {
+        this.switchTo(intent);
+      }
+      this.lastIntent = intent;
+    } catch {
+      // classification failed — stay on current skill
+    }
+
+    const skill = this.getActive();
+    let prompt = skill.systemPrompt;
+    prompt += `\n\n当前对话轮次：第 ${this.conversationTurn} 轮。`;
+
+    const hcResults = require('./health_check').buildAgentCapabilityNote(
+      [] // will be filled in router.js via the actual cache
+    );
+
+    return prompt;
+  }
+
   advancePhase() {
     const skill = this.getActive();
-    // Count phases by counting 【阶段】 markers in system prompt
     const phases = (skill.systemPrompt.match(/【阶段\d+：[^】]+】/g) || []);
     if (this.currentPhase >= phases.length) return null;
     const phaseName = phases[this.currentPhase];
@@ -136,9 +176,6 @@ class SkillManager {
     return phaseName;
   }
 
-  /**
-   * Get the current phase context to inject into the agent.
-   */
   getPhaseContext() {
     const skill = this.getActive();
     const phases = (skill.systemPrompt.match(/【阶段\d+：[^】]+】/g) || []);
@@ -147,33 +184,8 @@ class SkillManager {
     return `当前阶段：${phases[this.currentPhase]}。请专注完成此阶段。`;
   }
 
-  /**
-   * Get all available tools for the active skill.
-   */
   getActiveTools() {
     return this.getActive().tools || [];
-  }
-
-  /**
-   * Build the effective system prompt with phase context.
-   * Uses semantic intent classifier (LLM) instead of regex keywords.
-   */
-  async getEffectivePrompt(userMessage) {
-    const skill = this.getActive();
-    const phaseCtx = this.getPhaseContext();
-
-    try {
-      const { classifyIntent } = require('./intent');
-      const autoDetected = await classifyIntent(userMessage);
-      if (this.currentSkill === 'solve' && autoDetected !== 'solve') {
-        this.switchTo(autoDetected);
-        return this.getEffectivePrompt(userMessage);
-      }
-    } catch (e) {
-      // classification failed — stick with current skill
-    }
-
-    return `${skill.systemPrompt}\n\n${phaseCtx ? phaseCtx + '\n\n' : ''}用户当前模式：${skill.name}。保持在此模式的行为范围内。`;
   }
 }
 
