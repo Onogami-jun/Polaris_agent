@@ -141,33 +141,34 @@ ipcMain.handle('notify', (_e, { title, body }) => { if (Notification.isSupported
 const { runHealthCheck } = require('./services/health_check');
 ipcMain.handle('health:check', async () => runHealthCheck());
 
-// IPC: Sandbox (enriched)
+// IPC: Sandbox
 const sandbox = require('./services/sandbox');
-ipcMain.handle('sandbox:ready', () => sandbox.isReady());
-ipcMain.handle('sandbox:needsSetup', () => sandbox.needsSetup());
+const sandboxDataPath = () => app.getPath('userData');
+ipcMain.handle('sandbox:ready', () => sandbox.isReady(sandboxDataPath()));
+ipcMain.handle('sandbox:needsSetup', () => sandbox.needsSetup(sandboxDataPath()));
 ipcMain.handle('sandbox:getProgress', () => sandbox.getProgress());
-ipcMain.handle('sandbox:health', () => sandbox.getSandboxHealth());
-ipcMain.handle('sandbox:packages', () => sandbox.getInstalledPackages());
+ipcMain.handle('sandbox:health', () => sandbox.getSandboxHealth(sandboxDataPath()));
+ipcMain.handle('sandbox:packages', () => sandbox.getInstalledPackages(sandboxDataPath()));
 ipcMain.handle('sandbox:safety', (_e, { code }) => sandbox.checkSafety(code));
 ipcMain.handle('sandbox:setup', async (event) => {
   const onProgress = (data) => { if (win && !win.isDestroyed()) win.webContents.send('sandbox:progress', data); };
-  return sandbox.setup(app.getPath('userData'), onProgress);
+  return sandbox.setup(sandboxDataPath(), onProgress);
 });
 ipcMain.handle('sandbox:repair', async (event) => {
   const onProgress = (data) => { if (win && !win.isDestroyed()) win.webContents.send('sandbox:progress', data); };
-  return sandbox.repair(app.getPath('userData'), onProgress);
+  return sandbox.repair(sandboxDataPath(), onProgress);
 });
 ipcMain.handle('sandbox:installPackage', (_e, { packageName }) => {
   return new Promise((resolve) => {
     const onProgress = (data) => { if (win && !win.isDestroyed()) win.webContents.send('sandbox:progress', data); };
-    sandbox.installPackage(packageName, app.getPath('userData'), onProgress).then(resolve);
+    sandbox.installPackage(packageName, sandboxDataPath(), onProgress).then(resolve);
   });
 });
 ipcMain.handle('sandbox:uninstallPackage', (_e, { packageName }) => {
-  return sandbox.uninstallPackage(packageName, app.getPath('userData'));
+  return sandbox.uninstallPackage(packageName, sandboxDataPath());
 });
 ipcMain.handle('sandbox:runCode', (_e, { code, safeMode }) => {
-  return sandbox.runCode(code, app.getPath('userData'), { safeMode });
+  return sandbox.runCode(code, sandboxDataPath(), { safeMode });
 });
 
 app.whenReady().then(() => { createWindow(); createTray(); systemMonitor.startMonitoring((card) => { if (win && !win.isDestroyed()) win.webContents.send('polaris:intervention', card); }); });

@@ -9,6 +9,7 @@ const { SkillManager } = require('./skills');
 const { runPipeline } = require('./subagents');
 const DEFAULT_KEY = 'sk-665f376d7c0f4b91b4c3029bf82e670a';
 const skillManager = new SkillManager();
+const { buildAgentCapabilityNote } = require('./health_check');
 
 // Cached health check — runs once then reuses
 let _hcCache = null;
@@ -31,21 +32,29 @@ function buildToolDeclarations() {
 }
 
 async function executeAnalyze(prompt) {
+  // Use sandbox-aware Python resolver (matches tools.js getPython logic)
+  const path = require('path'); const os = require('os'); const fs = require('fs');
+  const sandboxPy = path.join(os.homedir(), 'AppData', 'Roaming', 'polaris-agent', 'sandbox', 'python.exe');
+  let python = null;
+  if (fs.existsSync(sandboxPy)) {
+    const { spawnSync: sp } = require('child_process');
+    const r = sp(sandboxPy, ['-c', 'print("OK")'], { timeout: 5000, encoding: 'utf8', windowsHide: true });
+    if (r.status === 0 && r.stdout.includes('OK')) python = sandboxPy;
+  }
+  if (!python) {
+    for (const cmd of ['python', 'python3']) {
+      const { spawnSync: sp } = require('child_process');
+      const r = sp(cmd, ['-c', 'print("OK")'], { timeout: 5000, encoding: 'utf8', windowsHide: true });
+      if (r.status === 0 && r.stdout.includes('OK')) { python = cmd; break; }
+    }
+  }
+  if (!python) return { success: false, error: 'Python not found. Click "安装沙箱" to auto-install.' };
+
   const n = JSON.stringify(prompt);
-  const code = `import sys; sys.stdout.reconfigure(encoding='utf-8')
-from polaris.chat import _parse,_build_model
-from polaris.analyze.structure import analyze
-try:
- p=_parse(${n});m=_build_model(p);s=analyze(m)
- print(f"Labels: {[l.name for l in s.labels]}")
- print(f"Strategy: {s.strategy.value}")
- print(f"Vars: {s.n_scalar_vars}, Cons: {s.n_constraints}")
-except Exception as e:
- print(f"Structure analysis: custom problem (not in templates)")`;
+  const code = 'import sys; sys.stdout.reconfigure(encoding="utf-8")\nfrom polaris.chat import _parse,_build_model\nfrom polaris.analyze.structure import analyze\ntry:\n p=_parse(' + n + ');m=_build_model(p);s=analyze(m)\n print("Labels:",[l.name for l in s.labels])\n print("Strategy:",s.strategy.value)\n print("Vars:",s.n_scalar_vars,"Cons:",s.n_constraints)\nexcept Exception as e:\n print("Structure analysis: custom problem (not in templates)")';
   const { spawnSync: sp } = require('child_process');
   const env = { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1' };
-  let r = sp('python', ['-c', code], { timeout: 15000, encoding: 'utf8', env });
-  if (r.error || !r.stdout) r = sp('python3', ['-c', code], { timeout: 15000, encoding: 'utf8', env });
+  const r = sp(python, ['-c', code], { timeout: 15000, encoding: 'utf8', env, windowsHide: true });
   return { success: true, result: (r.stdout || r.stderr || '').trim() || 'Analysis complete' };
 }
 
@@ -135,7 +144,6 @@ async function runAgentLoop(userMessage, apiKey, onExec, onTodo = null) {
   logger.info('Skill active', { skill: skillManager.getActive().name, phase: skillManager.currentPhase });
 
   // Inject environment capability note into system prompt
-  const { buildAgentCapabilityNote } = require('./health_check');
   const hcResults = await healthCheckCache();
   effectivePrompt += buildAgentCapabilityNote(hcResults);
 

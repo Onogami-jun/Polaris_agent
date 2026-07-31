@@ -210,7 +210,13 @@ function downloadFile(url, dest, onProgress) {
    SETUP PIPELINE (enriched)
    ═══════════════════════════════════════════════════════════ */
 
+function cancelSetup() {
+  _setupPromise = null;
+  _setupProgress = null;
+}
+
 async function setup(userDataPath, onProgress) {
+  // If already running, return the active promise
   if (_setupPromise) return _setupPromise;
 
   const emit = (phase, percent, message, detail) => {
@@ -609,7 +615,7 @@ function checkSafety(code) {
    ═══════════════════════════════════════════════════════════ */
 
 module.exports = {
-  isReady, needsSetup, setup, repair,
+  isReady, needsSetup, setup, cancelSetup, repair,
   runCode, runCodeStream, runJavaScript,
   getSandboxHealth, getInstalledPackages,
   installPackage, uninstallPackage,

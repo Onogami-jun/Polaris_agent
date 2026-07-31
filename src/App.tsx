@@ -377,7 +377,28 @@ const App:React.FC=()=>{
   var toastEl = toasts.length>0 ? <ToastC toasts={toasts}/> : null;
   var settingsEl = settingsOpen ? <SettingsPanel/> : null;
   var cmdEl = cmd ? <CmdPalette onClose={()=>setCmd(false)}/> : null;
-  var sandboxEl = showSandbox ? <SandboxWizard onClose={()=>{setShowSandbox(false);setSandboxReady(true);window.electronAPI?.healthCheck().then((r:any)=>{if(Array.isArray(r)){var s={python:false,polaris:false,highs:false,deepseek:false};r.forEach((x:any)=>{if(x.service==='Python')s.python=x.ok;if(x.service==='Polaris Engine')s.polaris=x.ok;if(x.service==='HiGHS Solver')s.highs=x.ok;if(x.service==='DeepSeek API')s.deepseek=x.ok;});d(setEngineStatus(s))}}).catch(()=>{})}}/> : null;
+  // ── Sandbox close handler ──
+  const handleSandboxClose = () => {
+    setShowSandbox(false);
+    var api = window.electronAPI;
+    if (api) {
+      api.sandboxReady().then(function(r:any){setSandboxReady(r)}).catch(function(){});
+      api.healthCheck().then(function(r:any){
+        if (Array.isArray(r)) {
+          var s = {python:false,polaris:false,highs:false,deepseek:false};
+          r.forEach(function(x:any){
+            if (x.service==='Python') s.python = x.ok;
+            if (x.service==='Polaris Engine') s.polaris = x.ok;
+            if (x.service==='HiGHS Solver') s.highs = x.ok;
+            if (x.service==='DeepSeek API') s.deepseek = x.ok;
+          });
+          d(setEngineStatus(s));
+        }
+      }).catch(function(){});
+    }
+  };
+
+  var sandboxEl = showSandbox ? <SandboxWizard onClose={handleSandboxClose}/> : null;
 
   // Precompute messages
   var msgList = null;
@@ -392,8 +413,8 @@ const App:React.FC=()=>{
   } else {
     msgList = act.messages.map((m:any,i:number)=>{
       if (m.role==='user') return <Message key={m.id} from="user" index={i}>{m.content}</Message>;
-      var dlRegex=/```(python|py|code)\n([\s\S]*?)```/g;var dlBlocks=[];var dm;while((dm=dlRegex.exec(m.content))!==null)dlBlocks.push({lang:dm[1],code:dm[2].trim()});
-      var dlEl = dlBlocks.length>0 ? <div style={{display:'flex',gap:4,marginTop:12}}>{dlBlocks.map((b:any,j:number)=><DownloadButton key={j}onClick={()=>{var blob=new Blob([b.code],{type:'text/plain'});var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=b.lang==='py'?'polaris_model.py':'model.py';a.click()}}/>)}</div> : null;
+      var dlBlocks=[];var matches=m.content.matchAll(/```(python|py|code)\n([\s\S]*?)```/g);for(var match of matches)dlBlocks.push({lang:match[1],code:match[2].trim()});
+      var dlEl = dlBlocks.length>0 ? <div className="flex gap-1 mt-3">{dlBlocks.map(function(b:any,j:number){return <DownloadButton key={j}onClick={function(){var blob=new Blob([b.code],{type:'text/plain'});var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=b.lang==='py'?'polaris_model.py':'model.py';a.click()}}/>})}</div> : null;
       var actBtns = i===act.messages.length-1 ? <div style={{display:'flex',gap:2}}><RetryButton onClick={rg}/><BranchButton onClick={br}/></div> : null;
       return <Message key={m.id} from="assistant" index={i} metadata={m.model||''}>
         {m.routing&&<Reasoning title={m.routing.intent||'路由'}>
@@ -404,7 +425,7 @@ const App:React.FC=()=>{
         </Reasoning>}
         <div dangerouslySetInnerHTML={{__html:md(m.content)}} style={{fontSize:14,lineHeight:1.625}}/>
         {dlEl}
-        <div style={{marginTop:12,paddingTop:8,borderTop:'1px solid hsl(var(--border)/.3)',display:'flex',justifyContent:'flex-end',gap:2,opacity:0}} className="group-hover:opacity-100">
+        <div className="mt-3 pt-2 border-t border-border/30 flex items-center justify-end gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
           <CopyButton onClick={()=>cp(m.content)} copied={cid===m.content.slice(0,20)}/>
           {actBtns}
         </div>
