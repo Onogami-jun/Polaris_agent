@@ -51,14 +51,16 @@ function Toggle({ on, onClick }: { on: boolean; onClick: () => void }) {
 /* ── Main Panel ── */
 const SettingsPanel: React.FC = () => {
   const dispatch = useAppDispatch();
-  const s = useAppSelector(st => st.chat.settings);
+  const chat = useAppSelector(st => st.chat);
+  const s = chat.settings;
   const auth = useAppSelector(st => st.auth);
   const [tab, setTab] = useState('general');
 
-  // Export helper
   const exportData = () => {
+    const activeSession = chat.sessions.find(x => x.id === chat.activeSessionId);
     const data = {
-      conversations: useAppSelector.getState ? useAppSelector.getState()?.chat?.sessions?.map((s: any) => ({ name: s.name, messages: s.messages.map((m: any) => ({ role: m.role, content: m.content })), createdAt: s.createdAt })) : [],
+      conversations: chat.sessions.map((x: any) => ({ name: x.name, messages: x.messages.map((m: any) => ({ role: m.role, content: m.content })), createdAt: x.createdAt })),
+      activeSessionId: chat.activeSessionId,
       settings: s,
       exportedAt: new Date().toISOString(),
     };
@@ -217,8 +219,8 @@ const SettingsPanel: React.FC = () => {
                 </Row>
                 <Row label="导出当前对话" hint="导出当前会话为 Markdown">
                   <Button variant="outline" size="sm" onClick={() => {
-                    const act = (window as any).__polaris_current_session__;
-                    const md = act?.messages?.map((m: any) => `### ${m.role === 'user' ? 'User' : 'Assistant'}\n\n${m.content}\n`).join('\n---\n') || '';
+                    const act = chat.sessions.find(x => x.id === chat.activeSessionId);
+                    const md = act ? act.messages.map((m: any) => `### ${m.role === 'user' ? 'User' : 'Assistant'}\n\n${m.content}\n`).join('\n---\n') : '';
                     const blob = new Blob([md], { type: 'text/markdown' });
                     const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'polaris-export.md'; a.click();
                   }}>导出 Markdown</Button>
