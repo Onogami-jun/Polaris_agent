@@ -341,121 +341,128 @@ const App:React.FC=()=>{
 
   if(splash)return <Splash fade={splashFade}/>;
 
-  return(<>
-    {toasts.length>0&&<ToastC toasts={toasts}/>}
+  // Precompute conditional panels to avoid Babel TSX parse issues
+  var leftPanel = null;
+  if (leftOpen) {
+    leftPanel = <div key="left" style={{display:'flex',flexShrink:0}}>
+      <LeftSidebar
+        width={leftW}
+        sessions={sessions} activeId={activeSessionId} pct={pct}
+        sandboxReady={sandboxReady}
+        onSetupSandbox={()=>setShowSandbox(true)}
+        onSelect={(id:any)=>d(setActiveSession(id))}
+        onNew={()=>d(ns())}
+        onDelete={(id)=>d(deleteSession(id))}
+        onOpenSettings={()=>d(toggleSettings())}
+      />
+      <div onMouseDown={resizeLeft} style={{width:4,cursor:'ew-resize',flexShrink:0}}/>
+    </div>;
+  }
+
+  var rightPanel = null;
+  if (rightOpen) {
+    rightPanel = <div key="right" style={{display:'flex',flexShrink:0}}>
+      <div onMouseDown={resizeRight} style={{width:4,cursor:'ew-resize',flexShrink:0}}/>
+      <RightSidebar
+        width={rightW}
+        execLog={execLog} todoSteps={todoSteps}
+        plan={plan} planProg={planProg} planId={planId}
+        onConfirmPlan={confirmPlan}
+        onRejectPlan={rejectPlan}
+        onStopPlan={()=>{stop.current=true;d(setStreaming(false));setThk('');rejectPlan()}}
+      />
+    </div>;
+  }
+
+  var toastEl = toasts.length>0 ? <ToastC toasts={toasts}/> : null;
+  var settingsEl = settingsOpen ? <SettingsPanel/> : null;
+  var cmdEl = cmd ? <CmdPalette onClose={()=>setCmd(false)}/> : null;
+  var sandboxEl = showSandbox ? <SandboxWizard onClose={()=>{setShowSandbox(false);setSandboxReady(true);window.electronAPI?.healthCheck().then((r:any)=>{if(Array.isArray(r)){var s={python:false,polaris:false,highs:false,deepseek:false};r.forEach((x:any)=>{if(x.service==='Python')s.python=x.ok;if(x.service==='Polaris Engine')s.polaris=x.ok;if(x.service==='HiGHS Solver')s.highs=x.ok;if(x.service==='DeepSeek API')s.deepseek=x.ok;});d(setEngineStatus(s))}}).catch(()=>{})}}/> : null;
+
+  // Precompute messages
+  var msgList = null;
+  if (!act || act.messages.length===0) {
+    msgList = <ConversationEmpty
+      icon={<span>✦</span>}
+      title="描述你的优化问题"
+      description="用自然语言描述优化问题——背包、排产、指派、调度——Polaris 自动建模并求解"
+    >
+      <SuggestionsList suggestions={SUGGESTIONS} onSelect={(s)=>{setInp(s);setTimeout(()=>{var el=document.querySelector('textarea');if(el)el.focus()},50)}} showIcons/>
+    </ConversationEmpty>;
+  } else {
+    msgList = act.messages.map((m:any,i:number)=>{
+      if (m.role==='user') return <Message key={m.id} from="user" index={i}>{m.content}</Message>;
+      var dlRegex=/```(python|py|code)\n([\s\S]*?)```/g;var dlBlocks=[];var dm;while((dm=dlRegex.exec(m.content))!==null)dlBlocks.push({lang:dm[1],code:dm[2].trim()});
+      var dlEl = dlBlocks.length>0 ? <div style={{display:'flex',gap:4,marginTop:12}}>{dlBlocks.map((b:any,j:number)=><DownloadButton key={j}onClick={()=>{var blob=new Blob([b.code],{type:'text/plain'});var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=b.lang==='py'?'polaris_model.py':'model.py';a.click()}}/>)}</div> : null;
+      var actBtns = i===act.messages.length-1 ? <div style={{display:'flex',gap:2}}><RetryButton onClick={rg}/><BranchButton onClick={br}/></div> : null;
+      return <Message key={m.id} from="assistant" index={i} metadata={m.model||''}>
+        {m.routing&&<Reasoning title={m.routing.intent||'路由'}>
+          <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
+            <span style={{borderRadius:9999,background:'hsl(var(--primary)/.1)',color:'hsl(var(--primary))',padding:'1px 8px',fontSize:10,fontFamily:'monospace'}}>{m.routing.intent}</span>
+            {m.routing.models?.map((md:any,j:number)=><span key={j} style={{borderRadius:9999,background:'hsl(var(--muted-foreground)/.1)',padding:'1px 8px',fontSize:10,fontFamily:'monospace'}}>{md}</span>)}
+          </div>
+        </Reasoning>}
+        <div dangerouslySetInnerHTML={{__html:md(m.content)}} style={{fontSize:14,lineHeight:1.625}}/>
+        {dlEl}
+        <div style={{marginTop:12,paddingTop:8,borderTop:'1px solid hsl(var(--border)/.3)',display:'flex',justifyContent:'flex-end',gap:2,opacity:0}} className="group-hover:opacity-100">
+          <CopyButton onClick={()=>cp(m.content)} copied={cid===m.content.slice(0,20)}/>
+          {actBtns}
+        </div>
+      </Message>;
+    });
+  }
+
+  var thinkingEl = thk ? <Thinking label={thk}/> : null;
+
+  return <div>
+    {toastEl}
     <div className="flex flex-col h-screen overflow-hidden bg-background">
       {/* ── Titlebar ── */}
       <div className="flex items-center justify-between h-11 px-4 bg-card border-b border-border shrink-0 select-none drag">
         <div className="flex items-center gap-3 no-drag">
           <div className="flex items-baseline gap-2"><span className="text-sm font-semibold font-mono tracking-tight">Polaris</span><Badge variant="secondary" className="text-[9px] font-mono px-1.5">SOLVER</Badge></div>
-          {thk&&<span className="text-[10px] text-muted-foreground font-mono animate-pulse">{thk}</span>}
+          {thk?<span className="text-[10px] text-muted-foreground font-mono animate-pulse">{thk}</span>:null}
         </div>
         <div className="flex items-center gap-1 no-drag">
-          <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground" onClick={()=>setLeftOpen(!leftOpen)} title={leftOpen?'隐藏侧栏' :'显示侧栏'}>◧</Button>
-          <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground" onClick={()=>setRightOpen(!rightOpen)} title={rightOpen?'隐藏工作流' :'显示工作流'}>◨</Button>
+          <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground" onClick={()=>setLeftOpen(!leftOpen)} title={leftOpen?'隐藏侧栏':'显示侧栏'}>◧</Button>
+          <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground" onClick={()=>setRightOpen(!rightOpen)} title={rightOpen?'隐藏工作流':'显示工作流'}>◨</Button>
           <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground" onClick={()=>setCmd(true)} title="命令面板 (Ctrl+P)">⌘</Button>
           <WinBtns/>
         </div>
       </div>
 
-      {/* ── Body: Left | Chat | Right ── */}
+      {/* ── Body ── */}
       <div className="flex flex-1 overflow-hidden">
-        {/* ── Left Sidebar ── */}
-        {leftOpen ? <div key="left" className="contents">
-          <LeftSidebar
-            width={leftW}
-            sessions={sessions} activeId={activeSessionId} pct={pct}
-            sandboxReady={sandboxReady}
-            onSetupSandbox={()=>setShowSandbox(true)}
-            onSelect={(id:any)=>d(setActiveSession(id))}
-            onNew={()=>d(ns())}
-            onDelete={(id)=>d(deleteSession(id))}
-            onOpenSettings={()=>d(toggleSettings())}
-          />
-          <div onMouseDown={resizeLeft} className="w-1 shrink-0 cursor-ew-resize bg-transparent hover:bg-primary/30 active:bg-primary/50 transition-colors relative z-10"/>
-        </div> : null}
-
-        {/* ── Chat ── */}
+        {leftPanel}
         <div className="flex-1 flex flex-col overflow-hidden min-w-0 relative">
           <Conversation>
-            {/* Interventions */}
-            {interventions.map(c=><div key={c.ts} className={'flex items-center gap-3 px-4 py-2 rounded-lg border text-xs animate-fade-in '+ (c.level===3?'border-l-2 border-destructive bg-destructive/5':'border-l-2 border-emerald-500 bg-emerald-50 dark:bg-emerald-950/20')}><span className="flex-1 text-muted-foreground">{c.body}</span><div className="flex gap-2"><Button size="sm"variant="outline"className="h-7 text-[10px]"onClick={()=>{const api=window.electronAPI;if(api&&c.eventKey)api.monitorFeedback({eventKey:c.eventKey,accepted:true});setInterventions(p=>p.filter(x=>x.ts!==c.ts))}}>接受</Button><Button size="sm"variant="ghost"className="h-7 text-[10px]"onClick={()=>{const api=window.electronAPI;if(api&&c.eventKey)api.monitorFeedback({eventKey:c.eventKey,accepted:false});setInterventions(p=>p.filter(x=>x.ts!==c.ts))}}>忽略</Button></div></div>)}
-
-            {/* Messages */}
-            <MessageList>
-              {(!act||act.messages.length===0)?(
-                <ConversationEmpty
-                  icon={<span>✦</span>}
-                  title="描述你的优化问题"
-                  description="用自然语言描述优化问题——背包、排产、指派、调度——Polaris 自动建模并求解"
-                >
-                  <SuggestionsList suggestions={SUGGESTIONS} onSelect={(s)=>{setInp(s);setTimeout(()=>{const el=document.querySelector('textarea');if(el)el.focus()},50)}} showIcons/>
-                </ConversationEmpty>
-              ):(
-                act.messages.map((m:any,i:number)=>(
-                  m.role==='user'?(
-                    <Message key={m.id} from="user" index={i}>{m.content}</Message>
-                  ):(
-                    <Message key={m.id} from="assistant" index={i} metadata={m.model||''}>
-                      {m.routing&&<Reasoning title={m.routing.intent||'路由'}>
-                        <div className="flex flex-wrap gap-1.5">
-                          <span className="rounded-full bg-primary/10 text-primary px-2 py-0.5 text-[10px] font-mono">{m.routing.intent}</span>
-                          {m.routing.models?.map((md:any,j:number)=><span key={j} className="rounded-full bg-muted-foreground/10 px-2 py-0.5 text-[10px] font-mono">{md}</span>)}
-                        </div>
-                      </Reasoning>}
-                      <div dangerouslySetInnerHTML={{__html:md(m.content)}} className="text-sm leading-relaxed"/>
-                      {(()=>{const dlRegex=/```(python|py|code)\n([\s\S]*?)```/g;const dlBlocks=[];let dm;while((dm=dlRegex.exec(m.content))!==null)dlBlocks.push({lang:dm[1],code:dm[2].trim()});return dlBlocks.length>0?<div className="flex gap-1 mt-3">{dlBlocks.map((b:any,j:number)=><DownloadButton key={j}onClick={()=>{const blob=new Blob([b.code],{type:'text/plain'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=b.lang==='py'?'polaris_model.py':'model.py';a.click()}}/>)}</div>:null})()}
-                      <div className="mt-3 pt-2 border-t border-border/30 flex items-center justify-end gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
-                        <CopyButton onClick={()=>cp(m.content)} copied={cid===m.content.slice(0,20)}/>
-                        {i===act.messages.length-1?<div className="contents"><RetryButton onClick={rg}/><BranchButton onClick={br}/></div>:null}
-                      </div>
-                    </Message>
-                  )
-                ))
-              )}
-            </MessageList>
-
-            {/* Thinking */}
-            {thk&&<Thinking label={thk}/>}
+            {interventions.map(function(c:any){return <div key={c.ts} className={'flex items-center gap-3 px-4 py-2 rounded-lg border text-xs animate-fade-in '+ (c.level===3?'border-l-2 border-destructive bg-destructive/5':'border-l-2 border-emerald-500 bg-emerald-50 dark:bg-emerald-950/20')}><span className="flex-1 text-muted-foreground">{c.body}</span><div className="flex gap-2"><Button size="sm"variant="outline"className="h-7 text-[10px]"onClick={()=>{var api=window.electronAPI;if(api&&c.eventKey)api.monitorFeedback({eventKey:c.eventKey,accepted:true});setInterventions(function(p:any){return p.filter(function(x:any){return x.ts!==c.ts})})}}>接受</Button><Button size="sm"variant="ghost"className="h-7 text-[10px]"onClick={()=>{var api=window.electronAPI;if(api&&c.eventKey)api.monitorFeedback({eventKey:c.eventKey,accepted:false});setInterventions(function(p:any){return p.filter(function(x:any){return x.ts!==c.ts})})}}>忽略</Button></div></div>})}
+            <MessageList>{msgList}</MessageList>
+            {thinkingEl}
           </Conversation>
-
-          {/* ── Input Area ── */}
           <div className="shrink-0">
             <AuthBanner/>
             <div className="px-4 pb-6 pt-2">
               <MessageInput
-                  value={inp} onChange={setInp} onSubmit={send}
-                  placeholder="描述优化问题... Enter 发送，Shift+Enter 换行"
-                  disabled={streaming} isStreaming={streaming}
-                  onStop={()=>{stop.current=true;d(setStreaming(false));setThk('')}}
-                  onCommand={()=>setCmd(true)}
-                  statusText={stratLabel+' · '+activeModel+' · '+(web?'联网搜索':'本地引擎')}
-                  toolbarRight={<WebSearchButton active={web}onClick={()=>setWeb(!web)}/>}
-                />
-              </div>
+                value={inp} onChange={setInp} onSubmit={send}
+                placeholder="描述优化问题... Enter 发送，Shift+Enter 换行"
+                disabled={streaming} isStreaming={streaming}
+                onStop={()=>{stop.current=true;d(setStreaming(false));setThk('')}}
+                onCommand={()=>setCmd(true)}
+                statusText={stratLabel+' · '+activeModel+' · '+(web?'联网搜索':'本地引擎')}
+                toolbarRight={<WebSearchButton active={web}onClick={()=>setWeb(!web)}/>}
+              />
             </div>
           </div>
         </div>
-
-        {/* ── Right Sidebar ── */}
-        {rightOpen ? <div key="right" className="contents">
-          <div onMouseDown={resizeRight} className="w-1 shrink-0 cursor-ew-resize bg-transparent hover:bg-primary/30 active:bg-primary/50 transition-colors relative z-10"/>
-          <RightSidebar
-            width={rightW}
-            execLog={execLog} todoSteps={todoSteps}
-            plan={plan} planProg={planProg} planId={planId}
-            onConfirmPlan={confirmPlan}
-            onRejectPlan={rejectPlan}
-            onStopPlan={()=>{stop.current=true;d(setStreaming(false));setThk('');rejectPlan()}}
-          />
-        </div> : null}
+        {rightPanel}
       </div>
     </div>
-    {settingsOpen&&<SettingsPanel/>}
-    {cmd&&<CmdPalette onClose={()=>setCmd(false)}/>}
+    {settingsEl}
+    {cmdEl}
     <LoginModal/>
-    {showSandbox&&<SandboxWizard onClose={()=>{setShowSandbox(false);setSandboxReady(true);window.electronAPI?.healthCheck().then((r:any)=>{if(Array.isArray(r)){const s={python:false,polaris:false,highs:false,deepseek:false};r.forEach((x:any)=>{if(x.service==='Python')s.python=x.ok;if(x.service==='Polaris Engine')s.polaris=x.ok;if(x.service==='HiGHS Solver')s.highs=x.ok;if(x.service==='DeepSeek API')s.deepseek=x.ok;});d(setEngineStatus(s))}}).catch(()=>{})}}/>}
-  </>);
+    {sandboxEl}
+  </div>;
 };
 
 /* ── Command Palette ── */
