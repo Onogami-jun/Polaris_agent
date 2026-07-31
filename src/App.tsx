@@ -207,8 +207,9 @@ function LeftSidebar({sessions,activeId,pct,onSelect,onNew,onDelete,onOpenSettin
       {/* Engine status */}
       <div className="px-3 py-1.5 space-y-1 text-[9px] font-mono">
         <div className="flex items-center justify-between"><span className="text-muted-foreground/50">Python</span><span className={engine.python?'text-emerald-500':'text-destructive'}>{engine.python?'✓':'✗'}</span></div>
-        <div className="flex items-center justify-between"><span className="text-muted-foreground/50">Polaris</span><span className={engine.polaris?'text-emerald-500':'text-destructive'}>{engine.polaris?'✓':'✗'}</span></div>
+        <div className="flex items-center justify-between"><span className="text-muted-foreground/50">polaris-opt</span><span className={engine.polaris?'text-emerald-500':'text-destructive'}>{engine.polaris?'✓':'✗'}</span></div>
         <div className="flex items-center justify-between"><span className="text-muted-foreground/50">DeepSeek</span><span className={engine.deepseek?'text-emerald-500':'text-destructive'}>{engine.deepseek?'✓':'✗'}</span></div>
+        {!engine.polaris && <div className="text-[8px] text-muted-foreground/40 text-center pt-0.5">pip install polaris-opt[highs]</div>}
       </div>
       {/* Settings + Login buttons */}
       <div className="px-2 py-1.5 space-y-1 border-t border-border">

@@ -26,9 +26,9 @@ function checkPython() {
 }
 
 function checkPolaris(pythonCmd) {
-  const r = spawnSync(pythonCmd, ['-c', 'from polaris import solve; print("POLARIS_OK")'], { timeout: 10000, encoding: 'utf8', windowsHide: true });
+  const r = spawnSync(pythonCmd, ['-c', 'from polaris.chat import solve; print("POLARIS_OK")'], { timeout: 10000, encoding: 'utf8', windowsHide: true });
   if (r.status === 0 && r.stdout.includes('POLARIS_OK')) return { ok: true };
-  return { ok: false, error: r.stderr?.slice(0, 300) || 'Polaris not installed. Click "安装沙箱" to auto-install.' };
+  return { ok: false, error: r.stderr?.slice(0, 200) || 'polaris-opt 未安装 — 在沙箱中安装' };
 }
 
 function checkHiGHS(pythonCmd) {
