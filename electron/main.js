@@ -172,6 +172,17 @@ ipcMain.handle('sandbox:runCode', (_e, { code }) => {
   return sandbox.runCode(code, sandboxDataPath());
 });
 
+// ── Auto-setup sandbox on first launch ──
+ipcMain.handle('sandbox:autoSetup', async () => {
+  if (sandbox.isReady(sandboxDataPath())) {
+    return { success: true, alreadyReady: true };
+  }
+  const onProgress = (data) => {
+    if (win && !win.isDestroyed()) win.webContents.send('sandbox:progress', data);
+  };
+  return sandbox.setup(sandboxDataPath(), onProgress);
+});
+
 app.whenReady().then(() => { createWindow(); createTray(); systemMonitor.startMonitoring((card) => { if (win && !win.isDestroyed()) win.webContents.send('polaris:intervention', card); }); });
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
 app.on('will-quit', () => { globalShortcut.unregisterAll(); for (const [, p] of mcpProcesses) p.kill(); systemMonitor.stopMonitoring(); });

@@ -69,10 +69,20 @@ function getPythonPath(userDataPath) {
 function isReady(userDataPath) {
   const py = getPythonPath(userDataPath);
   if (!fs.existsSync(py)) return false;
-  const r = spawnSync(py, ['-c', 'import sys; print("OK")'], {
+  const r = spawnSync(py, ['-c', 'import sys; print("READY")'], {
     timeout: 5000, encoding: 'utf8', windowsHide: true,
   });
-  return r.status === 0 && r.stdout.includes('OK');
+  return r.status === 0 && r.stdout.includes('READY');
+}
+
+// Separate check: can we actually import and use the polaris engine?
+function hasPolaris(userDataPath) {
+  const py = getPythonPath(userDataPath);
+  if (!fs.existsSync(py)) return false;
+  const r = spawnSync(py, ['-c', 'import polaris; from polaris.chat import solve; print("POLARIS_OK")'], {
+    timeout: 10000, encoding: 'utf8', windowsHide: true,
+  });
+  return r.status === 0 && r.stdout.includes('POLARIS_OK');
 }
 
 function needsSetup(userDataPath) { return !isReady(userDataPath); }
@@ -97,15 +107,6 @@ function getInstalledPackages(userDataPath) {
     _installedPackages = JSON.parse(r.stdout || '[]');
     return _installedPackages;
   } catch { return []; }
-}
-
-function hasPolaris(userDataPath) {
-  const py = getPythonPath(userDataPath);
-  if (!fs.existsSync(py)) return false;
-  const r = spawnSync(py, ['-c', 'from polaris.chat import solve; print("OK")'], {
-    timeout: 8000, encoding: 'utf8', windowsHide: true,
-  });
-  return r.status === 0 && r.stdout.includes('OK');
 }
 
 function invalidatePackageCache() { _installedPackages = null; }
@@ -261,19 +262,27 @@ async function setup(userDataPath, onProgress) {
         try { fs.unlinkSync(zipPath); } catch {}
       }
 
-      // ── Phase 3: Enable pip ──
-      emit('configure', 55, '配置 pip');
+      // ── Phase 3: Configure _pth — enable pip + add polaris path ──
+      emit('configure', 55, '配置 Python 路径');
       const pthFile = path.join(sandboxDir, 'python311._pth');
       if (fs.existsSync(pthFile)) {
         let content = fs.readFileSync(pthFile, 'utf8');
+        // Enable 'import site' so pip works
         if (content.includes('#import site')) {
           content = content.replace('#import site', 'import site');
-          // Add Lib/site-packages to path for pip
-          if (!content.includes('Lib\\\\site-packages')) {
-            content = content.replace('import site', 'import site\nLib\\\\site-packages');
-          }
-          fs.writeFileSync(pthFile, content);
         }
+        // Add Lib\\site-packages (Windows path format for _pth)
+        if (!content.includes('Lib')) {
+          content += '\nLib\\site-packages';
+        }
+        // Add polaris repo path so Python can find the polaris package directly (no pip install needed)
+        const polarisRepo = path.join(os.homedir(), 'Documents', 'GitHub', 'polaris');
+        if (fs.existsSync(polarisRepo) && !content.includes('GitHub\\polaris')) {
+          content += '\n' + polarisRepo;
+          // Also add the parent so absolute imports work
+          content += '\n' + path.join(os.homedir(), 'Documents', 'GitHub');
+        }
+        fs.writeFileSync(pthFile, content);
       }
 
       // ── Phase 4: Install pip ──
@@ -299,18 +308,30 @@ async function setup(userDataPath, onProgress) {
         });
       } catch {}
 
-      // ── Phase 6: Install polaris-opt from local repo ──
+      // ── Phase 6: Install polaris dependencies ──
+      // polaris source is loaded via _pth (no pip install needed).
+      // Only install runtime dependencies: numpy + highspy
       const polarisRepo = path.join(os.homedir(), 'Documents', 'GitHub', 'polaris');
-      if (fs.existsSync(polarisRepo) && !hasPolaris(userDataPath)) {
-        emit('install', 80, '安装 polaris-opt', '从本地代码仓库安装');
-        const installResult = spawnSync(pythonExe, ['-m', 'pip', 'install', '-e', polarisRepo + '[highs]'], {
+      if (fs.existsSync(polarisRepo)) {
+        emit('install', 80, '安装 polaris 依赖', 'numpy');
+        // numpy first (required by polaris)
+        let r = spawnSync(pythonExe, ['-m', 'pip', 'install', 'numpy', '--quiet'], {
           timeout: 300000, encoding: 'utf8', windowsHide: true,
           env: { ...process.env, PIP_DISABLE_PIP_VERSION_CHECK: '1' },
         });
-        invalidatePackageCache();
-        if (installResult.status !== 0) {
-          const err = installResult.stderr?.slice(0, 300) || installResult.error?.message || '';
-          emit('install', 85, 'polaris 安装警告', err);
+        if (r.status !== 0) {
+          console.warn('[Sandbox] numpy install:', r.stderr?.slice(0, 200));
+        }
+
+        emit('install', 85, '安装 polaris 依赖', 'highspy');
+        // highspy (HiGHS solver, optional but recommended)
+        r = spawnSync(pythonExe, ['-m', 'pip', 'install', 'highspy', '--quiet'], {
+          timeout: 300000, encoding: 'utf8', windowsHide: true,
+          env: { ...process.env, PIP_DISABLE_PIP_VERSION_CHECK: '1' },
+        });
+        if (r.status !== 0) {
+          console.warn('[Sandbox] highspy install:', r.stderr?.slice(0, 200));
+          // highspy failure is non-fatal — polaris works without HiGHS
         }
       }
 
@@ -357,15 +378,46 @@ async function repair(userDataPath, onProgress) {
     if (onProgress) onProgress({ phase, percent, message });
   };
   const pythonExe = getPythonPath(userDataPath);
+  const sandboxDir = getSandboxDir(userDataPath);
+
   if (!fs.existsSync(pythonExe)) {
     emit('repair', 0, 'Python 缺失，重新安装...');
-    cancelSetup(); // reset cached promise
+    cancelSetup();
     return setup(userDataPath, onProgress);
   }
-  emit('repair', 50, '验证 Python...');
+
+  // ── Fix 1: ensure polaris is in _pth ──
+  emit('repair', 25, '修复 polaris 路径');
+  const pthFile = path.join(sandboxDir, 'python311._pth');
+  const polarisRepo = path.join(os.homedir(), 'Documents', 'GitHub', 'polaris');
+  if (fs.existsSync(polarisRepo) && fs.existsSync(pthFile)) {
+    let content = fs.readFileSync(pthFile, 'utf8');
+    if (!content.includes('GitHub\\polaris')) {
+      content += '\n' + polarisRepo + '\n' + path.join(os.homedir(), 'Documents', 'GitHub');
+      fs.writeFileSync(pthFile, content);
+    }
+  }
+
+  // ── Fix 2: reinstall numpy if missing ──
+  emit('repair', 50, '检查 numpy');
+  try {
+    spawnSync(pythonExe, ['-c', 'import numpy'], {
+      timeout: 5000, encoding: 'utf8', windowsHide: true,
+    });
+  } catch {
+    emit('repair', 55, '安装 numpy');
+    spawnSync(pythonExe, ['-m', 'pip', 'install', 'numpy', '--quiet'], {
+      timeout: 180000, encoding: 'utf8', windowsHide: true,
+    });
+  }
+
+  // ── Fix 3: verify polaris ──
+  emit('repair', 80, '验证 polaris-opt');
+  invalidatePackageCache();
   const ok = isReady(userDataPath);
-  emit('done', 100, ok ? '一切正常' : '发现问题，请重新安装沙箱');
-  return { success: ok };
+  const pkOk = hasPolaris(userDataPath);
+  emit('done', 100, pkOk ? '一切正常，polaris-opt 可用' : 'Python 正常，但 polaris-opt 未找到');
+  return { success: ok, polarisReady: pkOk };
 }
 
 /* ═══════════════════════════════════════════════════════════
