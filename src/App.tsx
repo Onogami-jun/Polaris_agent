@@ -333,8 +333,11 @@ const App:React.FC=()=>{
   const br=()=>{if(!act||act.messages.length<2)return;const u=[...act.messages].reverse().find(m=>m.role==='user');if(u)d(branchSession({sourceSessionId:act.id,upToMessageId:u.id}))};
   const ex=()=>{if(!act||act.messages.length===0)return;const md2=act.messages.map(m=>'### '+(m.role==='user'?'User':'Assistant')+'\n\n'+m.content+'\n').join('\n---\n');const b=new Blob([md2],{type:'text/markdown'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=(act.name||'session')+'.md';a.click()};
 
-  const confirmPlan=async()=>{if(!planId)return;const api=window.electronAPI;if(!api)return;setThk('执行中...');d(setStreaming(true));try{await api.plannerExecute(planId);setPlan(null);setPlanId('');setPlanProg(null);addExecLog('planner','done','计划执行完成');d(addMessage({sessionId:activeSessionId!,message:{id:'p'+Date.now(),role:'assistant',content:'计划已执行完成。',timestamp:Date.now(),model:'Planner'}}))}catch(e:any){addExecLog('planner','error',e.message);d(addMessage({sessionId:activeSessionId!,message:{id:'e'+Date.now(),role:'assistant',content:'执行失败: '+e.message,timestamp:Date.now()}}))}d(setStreaming(false));setThk('')};
+  // Resize handlers (extracted for babel parse safety)
+  const resizeLeft=(e:any)=>{const sx=e.clientX;const ow=leftW;const mv=(ev:any)=>{const nw=Math.min(360,Math.max(160,ow+ev.clientX-sx));setLeftW(nw)};const up=()=>{document.removeEventListener('mousemove',mv);document.removeEventListener('mouseup',up);document.body.style.cursor='';document.body.style.userSelect=''};document.body.style.cursor='ew-resize';document.body.style.userSelect='none';document.addEventListener('mousemove',mv);document.addEventListener('mouseup',up)};
+  const resizeRight=(e:any)=>{const sx=e.clientX;const ow=rightW;const mv=(ev:any)=>{const nw=Math.min(400,Math.max(200,ow+sx-ev.clientX));setRightW(nw)};const up=()=>{document.removeEventListener('mousemove',mv);document.removeEventListener('mouseup',up);document.body.style.cursor='';document.body.style.userSelect=''};document.body.style.cursor='ew-resize';document.body.style.userSelect='none';document.addEventListener('mousemove',mv);document.addEventListener('mouseup',up)};
 
+  const confirmPlan=async()=>{if(!planId)return;const api=window.electronAPI;if(!api)return;setThk('执行中...');d(setStreaming(true));try{await api.plannerExecute(planId);setPlan(null);setPlanId('');setPlanProg(null);addExecLog('planner','done','计划执行完成');d(addMessage({sessionId:activeSessionId!,message:{id:'p'+Date.now(),role:'assistant',content:'计划已执行完成。',timestamp:Date.now(),model:'Planner'}}))}catch(e:any){addExecLog('planner','error',e.message);d(addMessage({sessionId:activeSessionId!,message:{id:'e'+Date.now(),role:'assistant',content:'执行失败: '+e.message,timestamp:Date.now()}}))}d(setStreaming(false));setThk('')};
   const rejectPlan=async()=>{const api=window.electronAPI;if(!api)return;await api.plannerReject(planId);setPlan(null);setPlanId('');setPlanProg(null);setExecLog(p=>p.filter(e=>e.tool!=='planner'))};
 
   const activeModel=sc.settings.apiKeys.anthropic?'Claude Sonnet':sc.settings.apiKeys.openai?'GPT-4o':'DeepSeek';
@@ -373,7 +376,7 @@ const App:React.FC=()=>{
             onDelete={(id)=>d(deleteSession(id))}
             onOpenSettings={()=>d(toggleSettings())}
           />
-          <div onMouseDown={(e)=>{const sx=e.clientX;const ow=leftW;const mv=(ev:MouseEvent)=>{const nw=Math.min(360,Math.max(160,ow+ev.clientX-sx));setLeftW(nw)};const up=()=>{document.removeEventListener('mousemove',mv);document.removeEventListener('mouseup',up);document.body.style.cursor='';document.body.style.userSelect=''};document.body.style.cursor='ew-resize';document.body.style.userSelect='none';document.addEventListener('mousemove',mv);document.addEventListener('mouseup',up)}}
+          <div onMouseDown={resizeLeft}
             className="w-1 shrink-0 cursor-ew-resize bg-transparent hover:bg-primary/30 active:bg-primary/50 transition-colors relative z-10"
           />
         </>}
@@ -442,7 +445,7 @@ const App:React.FC=()=>{
 
         {/* ── Right Sidebar ── */}
         {rightOpen && <>
-          <div onMouseDown={(e)=>{const sx=e.clientX;const ow=rightW;const mv=(ev:MouseEvent)=>{const nw=Math.min(400,Math.max(200,ow+sx-ev.clientX));setRightW(nw)};const up=()=>{document.removeEventListener('mousemove',mv);document.removeEventListener('mouseup',up);document.body.style.cursor='';document.body.style.userSelect=''};document.body.style.cursor='ew-resize';document.body.style.userSelect='none';document.addEventListener('mousemove',mv);document.addEventListener('mouseup',up)}}
+          <div onMouseDown={resizeRight}
             className="w-1 shrink-0 cursor-ew-resize bg-transparent hover:bg-primary/30 active:bg-primary/50 transition-colors relative z-10"
           />
           <RightSidebar
