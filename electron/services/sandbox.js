@@ -291,15 +291,30 @@ async function setup(userDataPath, onProgress) {
         console.warn('[Sandbox] pip install warning:', pipResult.stderr?.slice(0, 300));
       }
 
-      // ── Phase 5: Configure pip to use aliyun mirror ──
-      emit('install', 85, '配置国内镜像');
+      // ── Phase 5: Configure pip mirror ──
+      emit('install', 75, '配置国内镜像');
       try {
         spawnSync(pythonExe, ['-m', 'pip', 'config', 'set', 'global.index-url', PIP_INDEX_URL], {
           timeout: 15000, encoding: 'utf8', windowsHide: true,
         });
       } catch {}
 
-      // ── Phase 6: Verify ──
+      // ── Phase 6: Install polaris-opt from local repo ──
+      const polarisRepo = path.join(os.homedir(), 'Documents', 'GitHub', 'polaris');
+      if (fs.existsSync(polarisRepo) && !hasPolaris(userDataPath)) {
+        emit('install', 80, '安装 polaris-opt', '从本地代码仓库安装');
+        const installResult = spawnSync(pythonExe, ['-m', 'pip', 'install', '-e', polarisRepo + '[highs]'], {
+          timeout: 300000, encoding: 'utf8', windowsHide: true,
+          env: { ...process.env, PIP_DISABLE_PIP_VERSION_CHECK: '1' },
+        });
+        invalidatePackageCache();
+        if (installResult.status !== 0) {
+          const err = installResult.stderr?.slice(0, 300) || installResult.error?.message || '';
+          emit('install', 85, 'polaris 安装警告', err);
+        }
+      }
+
+      // ── Phase 7: Verify ──
       emit('verify', 92, '验证 Python');
       const pyOk = isReady(userDataPath);
       emit('verify', 96, '验证 pip');
