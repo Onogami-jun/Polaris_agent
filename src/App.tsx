@@ -24,9 +24,14 @@ import{
 
 const SUGGESTIONS=['背包容量50，3件物品价值60 100 120，重量10 20 30','排产5个任务，处理时间2 3 1 4 2','指派4个工人，成本10 2 8 7  5 12 3 6','车辆路径，5个客户，需求量1 2 1 3 2，车辆容量5'];
 
-/* ── Splash ── */
-const Splash=({fade}:{fade:boolean})=>(
-  <div className={'fixed inset-0 z-[9999] flex flex-col items-center justify-center gap-10 bg-background transition-opacity duration-500 '+ (fade?'opacity-0 pointer-events-none':'')}>
+/* ── Splash (auto-sandbox) ── */
+const Splash=({fade,setupProgress,setupError}:{fade:boolean;setupProgress:any;setupError:string})=>{
+  const pct = setupProgress?.percent || 0;
+  const msg = setupProgress?.message || (setupError ? setupError : '正在检查运行环境...');
+  const phase = setupProgress?.phase || '';
+  const isDone = phase === 'done' || setupError;
+  return(
+  <div className={'fixed inset-0 z-[9999] flex flex-col items-center justify-center gap-8 bg-background transition-opacity duration-500 '+ (fade?'opacity-0 pointer-events-none':'')}>
     <div className="font-mono text-xl font-semibold tracking-widest text-primary animate-fade-in-bright">POLARIS SOLVER</div>
     <div className="relative w-[120px] h-[120px]">
       <div className="absolute inset-0 rounded-full border-2 border-transparent border-t-primary animate-converge"/>
@@ -34,8 +39,17 @@ const Splash=({fade}:{fade:boolean})=>(
       <div className="absolute top-[30px] left-[30px] w-[60px] h-[60px] rounded-full border-2 border-transparent border-b-emerald-500 animate-converge"style={{animationDelay:'0.8s',animationDuration:'2s'}}/>
       <div className="absolute top-[57px] left-[57px] w-[6px] h-[6px] rounded-full bg-primary animate-pulse-dot"/>
     </div>
+    {/* Progress bar */}
+    {!isDone && <div className="w-[200px] space-y-2">
+      <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+        <div className="h-full bg-primary rounded-full transition-all duration-500"style={{width:Math.max(pct,2)+'%'}}/>
+      </div>
+      <p className="text-[10px] text-muted-foreground font-mono text-center">{msg}</p>
+    </div>}
+    {setupError && <p className="text-xs text-destructive text-center max-w-[280px]">{setupError}<br/><span className="text-muted-foreground">可跳过，在设置中手动安装</span></p>}
     <div className="text-[10px] text-muted-foreground font-mono tracking-widest">BITWOOL STUDIO</div>
   </div>);
+};
 
 /* ── Win Buttons ── */
 const WinBtns=()=>(
@@ -264,6 +278,8 @@ const App:React.FC=()=>{
   const[cid,setCid]=useState('');const[web,setWeb]=useState(false);
   const[cmd,setCmd]=useState(false);
   const[splash,setSplash]=useState(true);const[splashFade,setSplashFade]=useState(false);
+  const splashRef=useRef(true); // keep fresh for timeout closures
+  const[sandboxProg,setSandboxProg]=useState<any>(null);const[sandboxErr,setSandboxErr]=useState('');
   const[toasts,setToasts]=useState<any[]>([]);
   const[execLog,setExecLog]=useState<{id:string;time:string;tool:string;status:'running'|'done'|'error';detail:string}[]>([]);
   const[todoSteps,setTodoSteps]=useState<{id:string;status:'pending'|'running'|'done';label:string}[]>([]);
@@ -278,8 +294,21 @@ const App:React.FC=()=>{
   const act=sessions.find(s=>s.id===activeSessionId);
   const pct=contextTokens.total>0?Math.min(Math.round(contextTokens.used/Math.max(contextTokens.total,1)*100),100):0;
 
-  // ── Init ──
-  useEffect(()=>{const t=setTimeout(()=>{setSplashFade(true);setTimeout(()=>setSplash(false),500)},2200);return()=>clearTimeout(t)},[]);
+  // ── Init (auto sandbox) ──
+  useEffect(()=>{const api=window.electronAPI;if(!api)return;
+    // Fail-safe: dismiss splash after 3 min even if setup hangs
+    var failSafe=setTimeout(function(){if(splashRef.current){setSandboxProg({phase:'error',message:'安装超时，请检查网络',percent:0});setSplashFade(true);setTimeout(function(){setSplash(false)},500)}},180000);
+    // Listen for sandbox progress
+    api.onSandboxProgress((d:any)=>{clearTimeout(failSafe);setSandboxProg(d);if(d.phase==='done'||d.phase==='error'){
+      api.healthCheck().then((r:any)=>{if(Array.isArray(r)){var ss={python:false,polaris:false,highs:false,deepseek:false};r.forEach((x:any)=>{if(x.service==='Python')ss.python=x.ok;if(x.service==='Polaris Engine')ss.polaris=x.ok;if(x.service==='HiGHS Solver')ss.highs=x.ok;if(x.service==='DeepSeek API')ss.deepseek=x.ok;});d(setEngineStatus(ss));}}).catch(function(){});
+      setTimeout(function(){setSplashFade(true);setTimeout(function(){setSplash(false)},500);}, d.phase==='error'?0:400);
+    }});
+    // Auto-start sandbox setup
+    api.sandboxAutoSetup().then(function(r:any){
+      if(r.alreadyReady){clearTimeout(failSafe);setSplashFade(true);setTimeout(function(){setSplash(false)},500);}
+    }).catch(function(e:any){clearTimeout(failSafe);setSandboxErr(e.message||'沙箱自动安装失败');setTimeout(function(){setSplashFade(true);setTimeout(function(){setSplash(false)},500);},1200);});
+    return function(){clearTimeout(failSafe);};
+  },[]);
   useEffect(()=>{document.documentElement.classList.toggle('dark',settings.theme==='dark');document.documentElement.style.fontSize=settings.fontSize+'px';d(restoreAuth());const s=ld();if(s.length>0)d(lr(s))},[]);
   useEffect(()=>{if(sessions.length>0){const t=setTimeout(()=>saveSessions(sessions),500);return()=>clearTimeout(t)}},[sessions]);
   useEffect(()=>{const h=(e:KeyboardEvent)=>{if((e.ctrlKey||e.metaKey)&&e.key==='p'){e.preventDefault();setCmd(true)}if(e.key==='Escape'){stop.current=true;d(setStreaming(false));setThk('');setCmd(false)}if((e.ctrlKey||e.metaKey)&&e.key==='n'){e.preventDefault();d(ns())}if((e.ctrlKey||e.metaKey)&&e.key===','){e.preventDefault();d(toggleSettings())}};window.addEventListener('keydown',h);return()=>window.removeEventListener('keydown',h)},[d]);
@@ -331,7 +360,7 @@ const App:React.FC=()=>{
   const activeModel=sc.settings.apiKeys.anthropic?'Claude Sonnet':sc.settings.apiKeys.openai?'GPT-4o':'DeepSeek';
   const stratLabel=strategy==='best_quality'?'优质模式':strategy==='cost_optimized'?'极速模式':'协同验证';
 
-  if(splash)return <Splash fade={splashFade}/>;
+  if(splash)return <Splash fade={splashFade} setupProgress={sandboxProg} setupError={sandboxErr}/>;
 
   // Precompute conditional panels to avoid Babel TSX parse issues
   var leftPanel = null;

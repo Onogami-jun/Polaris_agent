@@ -40,6 +40,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   sandboxHasPolaris: () => ipcRenderer.invoke('sandbox:hasPolaris'),
   sandboxInstallPackage: (pkg) => ipcRenderer.invoke('sandbox:installPackage', { packageName: pkg }),
   sandboxUninstallPackage: (pkg) => ipcRenderer.invoke('sandbox:uninstallPackage', { packageName: pkg }),
+  sandboxAutoSetup: () => ipcRenderer.invoke('sandbox:autoSetup'),
   sandboxRunCode: (code) => ipcRenderer.invoke('sandbox:runCode', { code }),
   sandboxCheckSafety: (code) => ipcRenderer.invoke('sandbox:safety', { code }),
   onSandboxProgress: (cb) => { ipcRenderer.on('sandbox:progress', (_, d) => cb(d)); },
