@@ -1,5 +1,5 @@
 /**
- * Polaris Router v5 — Semantic intent + reliable multi-path solver.
+ * Polaris Router v6 — LLM-native routing with skill-aware tool calling
  */
 const https = require('https');
 const { TOOLS } = require('./tools');
@@ -7,11 +7,12 @@ const logger = require('./logger');
 const { reliableSolve, diagnose } = require('./reliability');
 const { SkillManager } = require('./skills');
 const { runPipeline } = require('./subagents');
-const DEFAULT_KEY = 'sk-665f376d7c0f4b91b4c3029bf82e670a';
-const skillManager = new SkillManager();
 const { buildAgentCapabilityNote } = require('./health_check');
 
-// Cached health check — runs once then reuses
+const DEFAULT_KEY = 'sk-665f376d7c0f4b91b4c3029bf82e670a';
+const skillManager = new SkillManager();
+
+/* ── Health cache ──────────────────────────────────────── */
 let _hcCache = null;
 let _hcTime = 0;
 async function healthCheckCache() {
@@ -24,70 +25,97 @@ async function healthCheckCache() {
   return _hcCache;
 }
 
-function buildToolDeclarations() {
-  return [
-    { type: 'function', function: { name: 'polaris_solve', description: '求解优化问题。把用户描述的问题原文传给prompt参数即可', parameters: { type: 'object', properties: { prompt: { type: 'string' } }, required: ['prompt'] } } },
-    { type: 'function', function: { name: 'polaris_analyze', description: '分析问题结构，推荐求解策略', parameters: { type: 'object', properties: { prompt: { type: 'string' } }, required: ['prompt'] } } },
-  ];
+/* ── Tool declarations — built per-skill ───────────────── */
+function buildToolDeclarations(skillTools) {
+  const all = [];
+  const requested = skillTools || skillManager.getActiveTools() || [];
+
+  const map = {
+    polaris_opt:       { name: 'polaris_opt',       description: '求解优化问题。将用户描述的问题原文传给 prompt 参数。返回最优解。适用：提供了具体数值数据的场景。', parameters: { type: 'object', properties: { prompt: { type: 'string' } }, required: ['prompt'] } },
+    polaris_analyze:   { name: 'polaris_analyze',   description: '分析优化问题的代数结构。检测 block-angular、time-indexed 等特征，推荐求解策略。', parameters: { type: 'object', properties: { prompt: { type: 'string' } }, required: ['prompt'] } },
+    polaris_research:  { name: 'polaris_research',  description: '跑批量实验。参数：problem, sizes, solvers, seed。输出 Markdown/LaTeX 论文表格。', parameters: { type: 'object', properties: { problem: { type: 'string' }, sizes: { type: 'string' }, solvers: { type: 'string' }, seed: { type: 'number' } } } },
+    polaris_remember:  { name: 'polaris_remember',  description: '记录或查询历史实验。action: record/last/list。', parameters: { type: 'object', properties: { action: { type: 'string' }, meta: { type: 'object' }, problem: { type: 'string' } } } },
+    polaris_paper:     { name: 'polaris_paper',     description: '根据实验数据生成论文段落草稿。', parameters: { type: 'object', properties: { data: { type: 'string' }, context: { type: 'string' } } } },
+    polaris_model:     { name: 'polaris_model',     description: '自动识别并求解非标准/自定义优化问题。', parameters: { type: 'object', properties: { prompt: { type: 'string' } }, required: ['prompt'] } },
+    polaris_literature:{ name: 'polaris_literature',description: '搜索运筹优化相关文献。', parameters: { type: 'object', properties: { query: { type: 'string' } } } },
+    search_web:        { name: 'search_web',        description: '搜索互联网获取最新信息。', parameters: { type: 'object', properties: { query: { type: 'string' } } } },
+  };
+
+  for (const toolName of requested) {
+    const def = map[toolName];
+    if (def) all.push({ type: 'function', function: def });
+  }
+  return all;
 }
 
-async function executeAnalyze(prompt) {
-  // Use sandbox-aware Python resolver (matches tools.js getPython logic)
+/* ── Python resolver ───────────────────────────────────── */
+function resolvePython() {
   const path = require('path'); const os = require('os'); const fs = require('fs');
   const sandboxPy = path.join(os.homedir(), 'AppData', 'Roaming', 'polaris-agent', 'sandbox', 'python.exe');
-  let python = null;
   if (fs.existsSync(sandboxPy)) {
     const { spawnSync: sp } = require('child_process');
-    const r = sp(sandboxPy, ['-c', 'print("OK")'], { timeout: 5000, encoding: 'utf8', windowsHide: true });
-    if (r.status === 0 && r.stdout.includes('OK')) python = sandboxPy;
+    const r = sp(sandboxPy, ['-c', 'from polaris.chat import solve; print("POLARIS_OK")'], {
+      timeout: 5000, encoding: 'utf8', windowsHide: true,
+    });
+    if (r.status === 0 && r.stdout.includes('POLARIS_OK')) return sandboxPy;
   }
-  if (!python) {
-    for (const cmd of ['python', 'python3']) {
-      const { spawnSync: sp } = require('child_process');
-      const r = sp(cmd, ['-c', 'print("OK")'], { timeout: 5000, encoding: 'utf8', windowsHide: true });
-      if (r.status === 0 && r.stdout.includes('OK')) { python = cmd; break; }
-    }
+  for (const cmd of ['python', 'python3']) {
+    const { spawnSync: sp } = require('child_process');
+    const r = sp(cmd, ['-c', 'from polaris.chat import solve; print("POLARIS_OK")'], {
+      timeout: 5000, encoding: 'utf8', windowsHide: true,
+    });
+    if (r.status === 0 && r.stdout.includes('POLARIS_OK')) return cmd;
   }
-  if (!python) return { success: false, error: 'Python not found. Click "安装沙箱" to auto-install.' };
-
-  const n = JSON.stringify(prompt);
-  const code = 'import sys; sys.stdout.reconfigure(encoding="utf-8")\nfrom polaris.chat import _parse,_build_model\nfrom polaris.analyze.structure import analyze\ntry:\n p=_parse(' + n + ');m=_build_model(p);s=analyze(m)\n print("Labels:",[l.name for l in s.labels])\n print("Strategy:",s.strategy.value)\n print("Vars:",s.n_scalar_vars,"Cons:",s.n_constraints)\nexcept Exception as e:\n print("Structure analysis: custom problem (not in templates)")';
-  const { spawnSync: sp } = require('child_process');
-  const env = { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1' };
-  const r = sp(python, ['-c', code], { timeout: 15000, encoding: 'utf8', env, windowsHide: true });
-  return { success: true, result: (r.stdout || r.stderr || '').trim() || 'Analysis complete' };
+  return null;
 }
 
+/* ── Direct solve (engine path) ─────────────────────────── */
+async function directSolve(userMessage, onExec) {
+  const python = resolvePython();
+  if (!python) {
+    if (onExec) onExec({ tool: 'engine', status: 'error', detail: 'Python/polaris-opt 不可用' });
+    return { success: false, error: '引擎未安装', isEngineMissing: true };
+  }
+  return reliableSolve(userMessage, onExec, python);
+}
+
+/* ── Tool executor ──────────────────────────────────────── */
 async function executeTool(name, args, onExec) {
   if (onExec) onExec({ tool: name, status: 'running', detail: JSON.stringify(args).slice(0, 100) });
-  if (name === 'polaris_solve') {
-    const hc = await healthCheckCache();
-    const engineOk = hc.some(r => r.service === 'Polaris Engine' && r.ok);
-    if (!engineOk) {
-      const err = 'Polaris 引擎未安装。请告诉用户：由于本地未安装 Python 或 polaris-opt 引擎，无法执行求解。请用你的数学知识直接分析这个问题，给出理论解或推理过程。提醒用户运行 pip install polaris-opt[highs] 可解锁求解功能。';
+
+  // polaris_solve & polaris_analyze get auto health-check
+  if (name === 'polaris_solve' || name === 'polaris_opt') {
+    const python = resolvePython();
+    if (!python) {
+      const err = '引擎未安装，无法求解。请用你的知识分析这个问题。告知用户可以在设置→沙箱中安装引擎。';
       if (onExec) onExec({ tool: name, status: 'error', detail: '引擎未安装' });
       return { success: false, error: err };
     }
-    const result = await reliableSolve(args.prompt || '', onExec);
+    const result = await reliableSolve(args.prompt || args.text || '', onExec, python);
     if (onExec) onExec({ tool: name, status: result.success ? 'done' : 'error', detail: (result.result || result.error || '').slice(0, 120) });
     return result;
   }
+
   if (name === 'polaris_analyze') {
-    const hc = await healthCheckCache();
-    const engineOk = hc.some(r => r.service === 'Polaris Engine' && r.ok);
-    if (!engineOk) {
-      const err = 'Polaris 引擎未安装。请告诉用户：无法运行结构分析，但你可以根据问题描述推断其代数结构（如是否是 block-angular、time-indexed 等），给出理论分析。提醒用户 pip install polaris-opt[highs]。';
+    const python = resolvePython();
+    if (!python) {
+      const err = '引擎未安装。请告诉用户：无法运行结构分析，但你可以根据问题描述推断其代数结构特征。';
       if (onExec) onExec({ tool: name, status: 'error', detail: '引擎未安装' });
       return { success: false, error: err };
     }
-    const result = await executeAnalyze(args.prompt || '');
-    if (onExec) onExec({ tool: name, status: 'done', detail: (result.result || '').slice(0, 200) });
-    return result;
+    const { spawnSync: sp } = require('child_process');
+    const n = JSON.stringify(args.prompt || '');
+    const code = 'import sys;sys.stdout.reconfigure(encoding="utf-8")\nfrom polaris.chat import _parse,_build_model\nfrom polaris.analyze.structure import analyze\ntry:\n p=_parse(' + n + ');m=_build_model(p);s=analyze(m)\n print("Labels:",[l.name for l in s.labels])\n print("Strategy:",s.strategy.value)\n print("Vars:",s.n_scalar_vars,"Cons:",s.n_constraints)\nexcept Exception as e:\n print("Analysis:",e)';
+    const r = sp(python, ['-c', code], { timeout: 15000, encoding: 'utf8', windowsHide: true });
+    const output = (r.stdout || r.stderr || '').trim() || 'Analysis complete';
+    if (onExec) onExec({ tool: name, status: 'done', detail: output.slice(0, 200) });
+    return { success: true, result: output };
   }
+
   const tool = TOOLS[name];
   if (!tool) {
     if (onExec) onExec({ tool: name, status: 'error', detail: 'Tool not found' });
-    return { success: false, error: `Unknown: ${name}` };
+    return { success: false, error: `未知工具: ${name}` };
   }
   try {
     const result = await tool.execute(args);
@@ -99,10 +127,16 @@ async function executeTool(name, args, onExec) {
   }
 }
 
-function callDeepSeek(messages, tools, apiKey) {
+/* ── LLM API call ───────────────────────────────────────── */
+function callDeepSeek(messages, tools, apiKey, temperature = 0.3, maxTokens = 4096) {
   const key = apiKey || DEFAULT_KEY;
   return new Promise(resolve => {
-    const body = JSON.stringify({ model: 'deepseek-v4-flash', messages, tools, tool_choice: 'auto', max_tokens: 4096, temperature: 0.3 });
+    const body = JSON.stringify({
+      model: 'deepseek-v4-flash', messages,
+      tools: tools.length > 0 ? tools : undefined,
+      tool_choice: tools.length > 0 ? 'auto' : undefined,
+      max_tokens: maxTokens, temperature,
+    });
     const req = https.request({
       hostname: 'api.deepseek.com', path: '/chat/completions', method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key, 'Content-Length': Buffer.byteLength(body) },
@@ -117,114 +151,137 @@ function callDeepSeek(messages, tools, apiKey) {
   });
 }
 
+/* ══════════════════════════════════════════════════════════
+   CORE: runAgentLoop
+   Routes per intent: chat/discuss → direct LLM | solve/analyze/experiment → tool loop
+   ══════════════════════════════════════════════════════════ */
+
 async function runAgentLoop(userMessage, apiKey, onExec, onTodo = null) {
+  const effectivePrompt = await skillManager.getEffectivePrompt(userMessage);
   const activeSkill = skillManager.getActive();
+  const skillName = activeSkill.name;
+  logger.info('Skill active', { skill: skillName, turn: skillManager.conversationTurn });
 
-  // Subagent pipeline for multi-phase skills
-  const pipelineSteps = {
-    '实验模式': ['analyzer', 'experimenter', 'writer'],
-    '分析模式': ['analyzer'],
-  };
-  const steps = pipelineSteps[activeSkill.name];
+  // ── Build env awareness ──
+  const hcResults = await healthCheckCache();
+  const envNote = buildAgentCapabilityNote(hcResults);
+  const fullPrompt = effectivePrompt + envNote;
 
-  if (steps && steps.length > 0) {
-    const onProgress = (evt) => {
-      if (onExec) onExec({ tool: 'subagent:' + evt.agent, status: evt.status, detail: evt.summary || evt.error || '' });
-    };
-    const pipelineResult = await runPipeline(userMessage, steps, onProgress, onTodo, apiKey);
-    if (pipelineResult && pipelineResult.results.length > 0) {
-      const finalOutput = pipelineResult.results.map(r => '### ' + r.name + '\n\n' + r.content + '\n\n').join('');
-      return '**子代理协同** · ' + pipelineResult.results.length + ' 个阶段\n\n' + finalOutput + '\n📁 工作目录：' + pipelineResult.workDir;
-    }
+  // ── Chat / Discuss: direct LLM, no tools, no engine ──
+  if (skillName === '对话模式' || skillName === '讨论模式' || skillName === 'chat' || skillName === 'discuss') {
+    if (onExec) onExec({ tool: skillName, status: 'running', detail: '思考中...' });
+    const resp = await callDeepSeek(
+      [{ role: 'system', content: fullPrompt }, { role: 'user', content: userMessage }],
+      [], apiKey, activeSkill.temperature || 0.5, activeSkill.maxTokens || 4096,
+    );
+    if (onExec) onExec({ tool: skillName, status: 'done', detail: '回答完成' });
+    const content = resp.choices?.[0]?.message?.content || '';
+    return content.trim().length > 10 ? content : '请继续。';
   }
 
-  // Standard LLM loop
-  const toolDecls = buildToolDeclarations();
-  let effectivePrompt = await skillManager.getEffectivePrompt(userMessage);
-  logger.info('Skill active', { skill: skillManager.getActive().name, phase: skillManager.currentPhase });
-
-  // Inject environment capability note into system prompt
-  const hcResults = await healthCheckCache();
-  effectivePrompt += buildAgentCapabilityNote(hcResults);
-
+  // ── Solve / Analyze / Experiment: tool-calling loop ──
+  const tools = buildToolDeclarations(activeSkill.tools);
   const messages = [
-    { role: 'system', content: effectivePrompt },
+    { role: 'system', content: fullPrompt },
     { role: 'user', content: userMessage },
   ];
 
-  for (let round = 0; round < 2; round++) {
-    const resp = await callDeepSeek(messages, toolDecls, apiKey);
+  let bestResponse = '';
+  let toolsUsed = false;
+
+  for (let round = 0; round < 3; round++) {
+    const resp = await callDeepSeek(messages, tools, apiKey, activeSkill.temperature || 0.2);
+
     if (resp.error) break;
     const choice = resp.choices?.[0];
     if (!choice) break;
+
+    // Case 1: LLM returned a text answer (no tool calls needed)
     if (!choice.message?.tool_calls?.length) {
       const content = choice.message?.content || '';
-      if (content.trim().length > 20) return content;
+      if (content.trim().length > 20) {
+        // If we already used tools, append the LLM's final summary
+        if (toolsUsed) return bestResponse + '\n\n---\n\n' + content;
+        return content;
+      }
+      // Very short response — maybe LLM has nothing more to say
+      if (toolsUsed) return bestResponse || '求解完成。';
       break;
     }
+
+    // Case 2: LLM wants to call tools
+    toolsUsed = true;
     const toolCalls = choice.message.tool_calls;
-    messages.push({ role: 'assistant', content: '正在求解...', tool_calls: toolCalls });
+    messages.push({ role: 'assistant', content: choice.message.content || '调用工具...', tool_calls: toolCalls });
+
     for (const tc of toolCalls) {
       let args = {};
       try { args = JSON.parse(tc.function.arguments); } catch { args = { prompt: userMessage }; }
       const result = await executeTool(tc.function.name, args, onExec);
-      const toolResult = result.success ? (result.result || 'Done') : `Error: ${result.error}`;
+      const toolResult = result.success
+        ? (result.result || '已完成')
+        : `工具 ${tc.function.name} 返回：${result.error || '失败'}`;
       messages.push({ role: 'tool', tool_call_id: tc.id, content: String(toolResult).slice(0, 3000) });
+
+      if (result.success && result.result) {
+        bestResponse = (result.result || '').slice(0, 5000);
+      }
     }
   }
 
-  const directResult = await reliableSolve(userMessage, onExec);
-  if (directResult.success) return directResult.result;
-  return directResult.error || 'Polaris 求解引擎未返回结果，请用"帮我诊断环境"检查配置';
+  // ── Fallback: if tools were used but no clear answer, try direct engine ──
+  if (toolsUsed && !bestResponse) {
+    if (onExec) onExec({ tool: 'engine:fallback', status: 'running', detail: '尝试直接求解...' });
+    const dr = await directSolve(userMessage, onExec);
+    if (dr.success && dr.result) return dr.result;
+  }
+
+  // ── Final fallback ──
+  if (bestResponse) return bestResponse;
+  return 'Polaris 引擎已尝试求解。如需更精确的结果，请提供更详细的问题描述和数据。';
 }
+
+/* ══════════════════════════════════════════════════════════
+   CORE: executeQuery — entry point for IPC
+   ══════════════════════════════════════════════════════════ */
 
 async function executeQuery(text, strategy, systemPrompt, images, onStreamChunk, apiKeys = {}) {
   const startTime = Date.now();
-  const apiKey = apiKeys.deepseek || DEFAULT_KEY;
+  const apiKey = apiKeys.deepseek || apiKeys.anthropic || DEFAULT_KEY;
   const tid = logger.newTraceId();
   logger.info('Request received', { tid, text: text.slice(0, 80) });
 
-  if (/^(你好|hi|hello|谢谢|thanks|再见|bye)$/i.test(text.trim())) {
-    return {
-      routing: { strategy: 'direct', top_intent: '对话', selected_models: ['deepseek'], rationale: '简单问候' },
-      responses: [{ model_id: 'deepseek', model_display: 'DeepSeek', content: '你好！我是 Polaris，运筹优化科研助手。直接描述你的优化问题，我来帮你分析求解。' }],
-      total_latency_ms: Date.now() - startTime,
-    };
-  }
-
-  if (/诊断|检查.*环境|检查.*引擎|self.*check|diagnos/i.test(text.trim())) {
-    const { results } = diagnose();
-    const dsResult = await diagnose().dsPromise;
-    for (const r of results) { if (r.check === 'DeepSeek API') r.ok = dsResult; }
-    const content = '🔧 环境诊断\n\n' + results.map(r => (r.ok ? '✅' : '❌') + ' ' + r.check + (r.detail ? ' — ' + r.detail : '')).join('\n');
-    return {
-      routing: { strategy: 'diagnose', top_intent: '诊断', selected_models: [], rationale: '环境自诊断' },
-      responses: [{ model_id: 'diagnose', model_display: 'Self-Diagnosis', content }],
-      total_latency_ms: Date.now() - startTime,
-    };
-  }
+  const onExec = apiKeys.onExec || null;
+  const onTodo = apiKeys.onTodo || null;
 
   try {
-    const onExec = apiKeys.onExec || null;
-    const onTodo = apiKeys.onTodo || null;
+    // Pass user's custom API keys through
     const content = await runAgentLoop(text, apiKey, onExec, onTodo);
     const elapsed = Date.now() - startTime;
     logger.info('Request completed', { tid, ms: elapsed });
+
     return {
-      routing: { strategy: 'function_calling', top_intent: skillManager.getActive().name, selected_models: ['deepseek-v4-flash'], rationale: 'Semantic intent · ' + skillManager.getActive().name, total_ms: elapsed },
-      responses: [{ model_id: 'deepseek-v4-flash', model_display: 'DeepSeek V4 Flash', content }],
+      routing: {
+        strategy: 'semantic',
+        top_intent: skillManager.getActive().name,
+        selected_models: ['deepseek-v4-flash'],
+        rationale: `LLM分类 → ${skillManager.getActive().name}`,
+      },
+      responses: [{
+        model_id: 'deepseek-v4-flash',
+        model_display: 'DeepSeek V4 Flash',
+        content,
+      }],
       total_latency_ms: elapsed,
     };
   } catch (e) {
     logger.error('Request failed', { tid, error: e.message });
     return {
       routing: { strategy: 'error', top_intent: 'error', selected_models: [], rationale: e.message },
-      responses: [{ model_id: 'error', model_display: 'Error', content: `Agent 执行异常：${e.message}` }],
+      responses: [{ model_id: 'error', model_display: 'Error', content: '处理出错：' + e.message }],
       total_latency_ms: Date.now() - startTime,
     };
   }
 }
 
-function classifyOnly(text) { return { top_intent: 'auto', display: 'Auto' }; }
-
-module.exports = { executeQuery, classifyOnly, buildToolDeclarations };
+module.exports = { executeQuery };
