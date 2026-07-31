@@ -13,6 +13,7 @@ const Icons: Record<string, React.ReactNode> = {
   plugins: <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M8 1l2.5 5.5L16 9l-5.5 2.5L8 16l-2.5-4.5L0 9l5.5-2.5z"/></svg>,
   data: <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><ellipse cx="8" cy="3" rx="7" ry="2"/><path d="M1 3v5c0 1.1 3.1 2 7 2s7-.9 7-2V3"/><path d="M1 8v5c0 1.1 3.1 2 7 2s7-.9 7-2V8"/></svg>,
   account: <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="8" cy="5" r="3"/><path d="M2 14c0-3.3 2.7-6 6-6s6 2.7 6 6"/></svg>,
+  sandbox: <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="1" y="5" width="14" height="8" rx="1.5"/><path d="M5 5V3a2 2 0 012-2h2a2 2 0 012 2v2"/><line x1="5" y1="9" x2="11" y2="9"/><line x1="5" y1="11" x2="7" y2="11"/></svg>,
   about: <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="8" cy="8" r="6"/><line x1="8" y1="7.5" x2="8" y2="11.5"/><circle cx="8" cy="5" r="0.5" fill="currentColor"/></svg>,
 };
 
@@ -24,6 +25,7 @@ const TABS = [
   { id: 'plugins', label: '插件', icon: Icons.plugins },
   { id: 'data', label: '数据', icon: Icons.data },
   { id: 'account', label: '账号', icon: Icons.account },
+  { id: 'sandbox', label: '沙箱', icon: Icons.sandbox },
   { id: 'about', label: '关于', icon: Icons.about },
 ];
 
@@ -282,6 +284,9 @@ const SettingsPanel: React.FC = () => {
               </div>
             )}
 
+            {/* ── Sandbox ── */}
+            {tab === 'sandbox' && <SandboxSettings />}
+
             {/* ── About ── */}
             {tab === 'about' && (
               <div className="space-y-6">
@@ -318,5 +323,121 @@ const SettingsPanel: React.FC = () => {
     </div>
   );
 };
+
+/* ── Sandbox Settings Tab ── */
+function SandboxSettings() {
+  const [ready, setReady] = useState(false);
+  const [polarisOk, setPolarisOk] = useState(false);
+  const [pythonVer, setPythonVer] = useState('');
+  const [progress, setProgress] = useState<any>(null);
+  const [installing, setInstalling] = useState(false);
+  const [error, setError] = useState('');
+
+  const refresh = () => {
+    const api = window.electronAPI;
+    if (!api) return;
+    api.sandboxReady().then((r: any) => setReady(r)).catch(() => {});
+    api.sandboxHasPolaris().then((r: any) => setPolarisOk(r)).catch(() => {});
+    api.sandboxHealth().then((h: any) => { if (h?.pythonVersion) setPythonVer(h.pythonVersion); }).catch(() => {});
+  };
+
+  useEffect(() => { refresh(); const t = setInterval(refresh, 5000); return () => clearInterval(t); }, []);
+
+  const doSetup = () => {
+    const api = window.electronAPI;
+    if (!api) return;
+    setInstalling(true); setError('');
+    api.onSandboxProgress((d: any) => {
+      setProgress(d);
+      if (d.phase === 'done') {
+        setInstalling(false);
+        refresh();
+      }
+      if (d.phase === 'error') {
+        setInstalling(false);
+        setError(d.message || '安装失败');
+      }
+    });
+    api.sandboxSetup().then((r: any) => {
+      if (r?.success) refresh();
+      else { setInstalling(false); setError(r?.error || '安装失败'); }
+    }).catch((e: any) => { setInstalling(false); setError(e.message); });
+  };
+
+  const doRepair = () => {
+    setInstalling(true); setError('');
+    const api = window.electronAPI;
+    if (!api) return;
+    api.onSandboxProgress((d: any) => {
+      setProgress(d);
+      if (d.phase === 'done') { setInstalling(false); refresh(); }
+    });
+    api.sandboxRepair().then(() => { setInstalling(false); refresh(); }).catch((e: any) => {
+      setInstalling(false); setError(e.message);
+    });
+  };
+
+  return (
+    <div className="space-y-6">
+      <h3 className="text-base font-semibold text-foreground pb-3 border-b border-border">Python 沙箱</h3>
+      <p className="text-xs text-muted-foreground -mt-4">自动下载并配置便携 Python 环境，无需手动安装。polaris-opt 引擎从本地代码仓库自动链接。</p>
+
+      {/* Status */}
+      <div className="grid grid-cols-2 gap-3">
+        {[
+          { label: 'Python 3.11', ok: ready, detail: pythonVer || (ready ? '已就绪' : '未安装') },
+          { label: 'polaris-opt', ok: polarisOk, detail: polarisOk ? '已安装' : '未安装' },
+        ].map((item, i) => (
+          <div key={i} className="flex items-center gap-3 p-3 rounded-xl border border-border/50 bg-muted/30">
+            <span className={item.ok ? 'text-emerald-500 text-sm' : 'text-muted-foreground/40 text-sm'}>{item.ok ? '✓' : '✗'}</span>
+            <div>
+              <div className="text-xs font-medium text-foreground">{item.label}</div>
+              <div className="text-[10px] text-muted-foreground font-mono">{item.detail}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Actions */}
+      <div className="flex gap-2">
+        {!ready ? (
+          <Button onClick={doSetup} disabled={installing} className="flex-1 h-9">
+            {installing ? '安装中...' : '一键安装沙箱'}
+          </Button>
+        ) : (
+          <Button variant="outline" onClick={doRepair} disabled={installing} className="flex-1 h-9">
+            {installing ? '修复中...' : '修复沙箱'}
+          </Button>
+        )}
+      </div>
+
+      {/* Error */}
+      {error && (
+        <div className="rounded-xl bg-destructive/10 border border-destructive/20 px-4 py-3 text-xs text-destructive">{error}</div>
+      )}
+
+      {/* Progress */}
+      {installing && progress && (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between text-[10px] text-muted-foreground font-mono">
+            <span>{progress.phase || '安装中'}</span>
+            <span>{progress.percent || 0}%</span>
+          </div>
+          <div className="h-2 bg-muted rounded-full overflow-hidden">
+            <div className="h-full bg-primary rounded-full transition-all duration-500" style={{ width: `${progress.percent || 0}%` }} />
+          </div>
+          <p className="text-[10px] text-muted-foreground">{progress.message}</p>
+        </div>
+      )}
+
+      {/* Info */}
+      <div className="rounded-xl bg-muted/30 border border-border/50 p-4 text-xs text-muted-foreground space-y-1">
+        <p>Python 环境安装在 <span className="font-mono text-[10px]">AppData/Roaming/polaris-agent/sandbox/</span></p>
+        <p>polaris-opt 从 <span className="font-mono text-[10px]">Documents/GitHub/polaris/</span> 以 editable 模式安装</p>
+        <p>pip 镜像源已设为阿里云，下载更快</p>
+      </div>
+    </div>
+  );
+}
 
 export default SettingsPanel;

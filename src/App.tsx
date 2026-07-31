@@ -7,7 +7,7 @@ import{saveSessions,loadSessions as ld}from'./store/persist';
 import SettingsPanel from'./components/SettingsPanel';
 import{LoginModal}from'./components/LoginModal';
 import{AuthBanner}from'./components/AuthBanner';
-import{SandboxWizard,SandboxHealthPanel}from'./components/SandboxWizard';
+import{SandboxHealthPanel}from'./components/SandboxWizard';
 import{Button}from'./components/ui/button';
 import{Badge}from'./components/ui/badge';
 import{Separator}from'./components/ui/separator';
@@ -179,7 +179,7 @@ function WorkflowView({plan,planProg,planId,execLog,todoSteps,onConfirmPlan,onRe
 /* ─────────────────────────────────────────────────
    LEFT SIDEBAR — conversations + token
    ───────────────────────────────────────────────── */
-function LeftSidebar({sessions,activeId,pct,onSelect,onNew,onDelete,onOpenSettings,onSetupSandbox,sandboxReady,width}:any){
+function LeftSidebar({sessions,activeId,pct,onSelect,onNew,onDelete,onOpenSettings,width}:any){
   const auth = useAppSelector(s=>s.auth);
   const engine = useAppSelector(s=>s.chat.engineStatus);
   const d = useAppDispatch();
@@ -213,12 +213,6 @@ function LeftSidebar({sessions,activeId,pct,onSelect,onNew,onDelete,onOpenSettin
       </div>
       {/* Settings + Login buttons */}
       <div className="px-2 py-1.5 space-y-1 border-t border-border">
-        {!sandboxReady && (
-          <button onClick={onSetupSandbox} className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs text-amber-600 hover:text-amber-700 hover:bg-amber-500/10 transition-all">
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="2" y="2" width="12" height="12" rx="2"/><line x1="8" y1="6" x2="8" y2="10"/><line x1="6" y1="8" x2="10" y2="8"/></svg>
-            <span>安装沙箱</span>
-          </button>
-        )}
         <button onClick={onOpenSettings} className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs text-muted-foreground hover:text-foreground hover:bg-muted transition-all">
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="8" cy="8" r="2.5"/><path d="M8 1v2m0 10v2M1 8h2m10 0h2"/></svg>
           <span>设置</span>
@@ -279,7 +273,6 @@ const App:React.FC=()=>{
   // Panel widths (px) & visibility
   const[leftW,setLeftW]=useState(220);const[leftOpen,setLeftOpen]=useState(true);
   const[rightW,setRightW]=useState(280);const[rightOpen,setRightOpen]=useState(true);
-  const[sandboxReady,setSandboxReady]=useState(false);const[showSandbox,setShowSandbox]=useState(false);
 
   const dispatchRef=useRef(d);const stop=useRef(false);
   const act=sessions.find(s=>s.id===activeSessionId);
@@ -293,8 +286,6 @@ const App:React.FC=()=>{
   useEffect(()=>{const api=window.electronAPI;if(!api)return;api.monitorStart();api.onIntervention((card:any)=>{card.ts=Date.now();setInterventions(p=>[...p.slice(-4),card])});api.onPlanProgress((data:any)=>setPlanProg(data));api.onExecLog((data:any)=>{addExecLog(data.tool,data.status,data.detail||'')});api.onTodoUpdate((data:any)=>{if(data.steps)setTodoSteps(data.steps)});api.onStreamError((ed:any)=>{showToast('Stream Error: '+(ed?.message||'未知'),'error');dispatchRef.current(setStreaming(false));setThk('')});
   // Health check
   api.healthCheck().then((r:any)=>{if(Array.isArray(r)){const s={python:false,polaris:false,highs:false,deepseek:false};r.forEach((x:any)=>{if(x.service==='Python')s.python=x.ok;if(x.service==='Polaris Engine')s.polaris=x.ok;if(x.service==='HiGHS Solver')s.highs=x.ok;if(x.service==='DeepSeek API')s.deepseek=x.ok;});d(setEngineStatus(s))}}).catch(()=>{});
-  // Sandbox check
-  api.sandboxReady().then((r:boolean)=>setSandboxReady(r)).catch(()=>{});
   let kc=0;const onKb=()=>{kc++;if(kc%30===0)api.monitorUpdate({count:kc,lastPress:Date.now(),window:document.title})};window.addEventListener('keydown',onKb);return()=>window.removeEventListener('keydown',onKb)},[]);
   useEffect(()=>{document.documentElement.classList.toggle('dark',settings.theme==='dark');document.documentElement.style.fontSize=settings.fontSize+'px'},[settings.theme,settings.fontSize]);
 
@@ -349,8 +340,6 @@ const App:React.FC=()=>{
       <LeftSidebar
         width={leftW}
         sessions={sessions} activeId={activeSessionId} pct={pct}
-        sandboxReady={sandboxReady}
-        onSetupSandbox={()=>setShowSandbox(true)}
         onSelect={(id:any)=>d(setActiveSession(id))}
         onNew={()=>d(ns())}
         onDelete={(id)=>d(deleteSession(id))}
@@ -378,28 +367,6 @@ const App:React.FC=()=>{
   var toastEl = toasts.length>0 ? <ToastC toasts={toasts}/> : null;
   var settingsEl = settingsOpen ? <SettingsPanel/> : null;
   var cmdEl = cmd ? <CmdPalette onClose={()=>setCmd(false)}/> : null;
-  // ── Sandbox close handler ──
-  const handleSandboxClose = () => {
-    setShowSandbox(false);
-    var api = window.electronAPI;
-    if (api) {
-      api.sandboxReady().then(function(r:any){setSandboxReady(r)}).catch(function(){});
-      api.healthCheck().then(function(r:any){
-        if (Array.isArray(r)) {
-          var s = {python:false,polaris:false,highs:false,deepseek:false};
-          r.forEach(function(x:any){
-            if (x.service==='Python') s.python = x.ok;
-            if (x.service==='Polaris Engine') s.polaris = x.ok;
-            if (x.service==='HiGHS Solver') s.highs = x.ok;
-            if (x.service==='DeepSeek API') s.deepseek = x.ok;
-          });
-          d(setEngineStatus(s));
-        }
-      }).catch(function(){});
-    }
-  };
-
-  var sandboxEl = showSandbox ? <SandboxWizard onClose={handleSandboxClose}/> : null;
 
   // Precompute messages
   var msgList = null;
@@ -483,7 +450,6 @@ const App:React.FC=()=>{
     {settingsEl}
     {cmdEl}
     <LoginModal/>
-    {sandboxEl}
   </div>;
 };
 
