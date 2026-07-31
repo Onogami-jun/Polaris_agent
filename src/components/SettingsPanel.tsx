@@ -240,7 +240,7 @@ const SettingsPanel: React.FC = () => {
               <div className="space-y-6">
                 <h3 className="text-base font-semibold text-foreground pb-3 border-b border-border">BitWool 账号</h3>
                 {auth.user ? (
-                  <>
+                  <div className="contents">
                     <div className="flex items-center gap-4 p-4 rounded-xl bg-muted/30 border border-border/50">
                       <div className="w-12 h-12 rounded-full flex items-center justify-center text-base font-bold text-white" style={{ background: auth.user.avatar }}>
                         {auth.user.displayName.slice(0, 1).toUpperCase()}
@@ -257,7 +257,7 @@ const SettingsPanel: React.FC = () => {
                     <div className="pt-2">
                       <Button variant="outline" className="w-full" onClick={() => dispatch(logoutUser())}>退出登录</Button>
                     </div>
-                  </>
+                  </div>
                 ) : (
                   <div className="text-center py-8 space-y-4">
                     <div className="w-16 h-16 rounded-full bg-muted mx-auto flex items-center justify-center">
