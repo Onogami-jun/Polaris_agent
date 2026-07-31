@@ -365,7 +365,7 @@ const App:React.FC=()=>{
       {/* ── Body: Left | Chat | Right ── */}
       <div className="flex flex-1 overflow-hidden">
         {/* ── Left Sidebar ── */}
-        {leftOpen && <>
+        {leftOpen ? <div key="left" className="contents">
           <LeftSidebar
             width={leftW}
             sessions={sessions} activeId={activeSessionId} pct={pct}
@@ -376,10 +376,8 @@ const App:React.FC=()=>{
             onDelete={(id)=>d(deleteSession(id))}
             onOpenSettings={()=>d(toggleSettings())}
           />
-          <div onMouseDown={resizeLeft}
-            className="w-1 shrink-0 cursor-ew-resize bg-transparent hover:bg-primary/30 active:bg-primary/50 transition-colors relative z-10"
-          />
-        </>}
+          <div onMouseDown={resizeLeft} className="w-1 shrink-0 cursor-ew-resize bg-transparent hover:bg-primary/30 active:bg-primary/50 transition-colors relative z-10"/>
+        </div> : null}
 
         {/* ── Chat ── */}
         <div className="flex-1 flex flex-col overflow-hidden min-w-0 relative">
@@ -444,10 +442,8 @@ const App:React.FC=()=>{
         </div>
 
         {/* ── Right Sidebar ── */}
-        {rightOpen && <>
-          <div onMouseDown={resizeRight}
-            className="w-1 shrink-0 cursor-ew-resize bg-transparent hover:bg-primary/30 active:bg-primary/50 transition-colors relative z-10"
-          />
+        {rightOpen ? <div key="right" className="contents">
+          <div onMouseDown={resizeRight} className="w-1 shrink-0 cursor-ew-resize bg-transparent hover:bg-primary/30 active:bg-primary/50 transition-colors relative z-10"/>
           <RightSidebar
             width={rightW}
             execLog={execLog} todoSteps={todoSteps}
@@ -456,7 +452,7 @@ const App:React.FC=()=>{
             onRejectPlan={rejectPlan}
             onStopPlan={()=>{stop.current=true;d(setStreaming(false));setThk('');rejectPlan()}}
           />
-        </>}
+        </div> : null}
       </div>
     </div>
     {settingsOpen&&<SettingsPanel/>}
