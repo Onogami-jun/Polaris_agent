@@ -100,16 +100,15 @@ function WorkflowView({plan,planProg,planId,execLog,todoSteps,onConfirmPlan,onRe
           })}
 
           {/* ── Exec Log (tool calls) ── */}
-          {execLog&&execLog.length>0&&(
-            <>
+          {execLog&&execLog.length>0&&
+            <div className="contents">
               <div className="pt-3 pb-1">
                 <span className="text-[9px] font-semibold text-muted-foreground uppercase tracking-wider font-mono px-2">工具调用</span>
               </div>
               {execLog.slice(-20).reverse().map((e:any)=>{
                 const icon={running:'●',done:'✓',error:'✗'}[e.status]||'○';
                 const clr={running:'text-primary',done:'text-emerald-500',error:'text-destructive'}[e.status]||'text-muted-foreground';
-                return(
-                  <div key={e.id} className="flex items-start gap-2 px-2.5 py-1.5 rounded-md hover:bg-muted/50 transition-colors">
+                return <div key={e.id} className="flex items-start gap-2 px-2.5 py-1.5 rounded-md hover:bg-muted/50 transition-colors">
                     <span className={'font-mono text-[10px] w-3 text-center shrink-0 '+clr}>{icon}</span>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5">
@@ -119,29 +118,26 @@ function WorkflowView({plan,planProg,planId,execLog,todoSteps,onConfirmPlan,onRe
                       {e.detail&&<div className="text-[9px] text-muted-foreground truncate mt-0.5">{e.detail}</div>}
                     </div>
                   </div>
-                );
               })}
-            </>
-          )}
+            </div>
+          }
 
           {/* ── Todo Steps ── */}
-          {todoSteps&&todoSteps.length>0&&(
-            <>
+          {todoSteps&&todoSteps.length>0&&
+            <div className="contents">
               <div className="pt-3 pb-1">
                 <span className="text-[9px] font-semibold text-muted-foreground uppercase tracking-wider font-mono px-2">任务</span>
               </div>
               {todoSteps.map((t:any)=>{
                 const icon={running:'●',done:'✓',pending:'○'}[t.status]||'○';
                 const clr={running:'text-primary',done:'text-emerald-500',pending:'text-muted-foreground/40'}[t.status]||'text-muted-foreground';
-                return(
-                  <div key={t.id} className="flex items-center gap-2 px-2.5 py-1.5">
+                return <div key={t.id} className="flex items-center gap-2 px-2.5 py-1.5">
                     <span className={'font-mono text-[10px] '+clr}>{icon}</span>
                     <span className={t.status==='running'?'text-[10px] font-medium text-foreground':'text-[10px] text-muted-foreground'}>{t.label}</span>
                   </div>
-                );
               })}
-            </>
-          )}
+            </div>
+          }
 
           {/* ── Idle state ── */}
           {!hasPlan&&(!execLog||execLog.length===0)&&(!todoSteps||todoSteps.length===0)&&(
@@ -411,7 +407,7 @@ const App:React.FC=()=>{
                       {(()=>{const dlRegex=/```(python|py|code)\n([\s\S]*?)```/g;const dlBlocks=[];let dm;while((dm=dlRegex.exec(m.content))!==null)dlBlocks.push({lang:dm[1],code:dm[2].trim()});return dlBlocks.length>0?<div className="flex gap-1 mt-3">{dlBlocks.map((b:any,j:number)=><DownloadButton key={j}onClick={()=>{const blob=new Blob([b.code],{type:'text/plain'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=b.lang==='py'?'polaris_model.py':'model.py';a.click()}}/>)}</div>:null})()}
                       <div className="mt-3 pt-2 border-t border-border/30 flex items-center justify-end gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
                         <CopyButton onClick={()=>cp(m.content)} copied={cid===m.content.slice(0,20)}/>
-                        {i===act.messages.length-1&&<><RetryButton onClick={rg}/><BranchButton onClick={br}/></>}
+                        {i===act.messages.length-1?<div className="contents"><RetryButton onClick={rg}/><BranchButton onClick={br}/></div>:null}
                       </div>
                     </Message>
                   )

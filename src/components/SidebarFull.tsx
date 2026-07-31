@@ -93,14 +93,16 @@ const SidebarFull: React.FC<{ onClose: () => void; onUseTemplate?: (prompt: stri
       </div>
 
       {/* Chats */}
-      {tab === 'chats' && (<>
-        <div className="side-srch"><input placeholder="搜索…" value={q} onChange={e => setQ(e.target.value)} /></div>
-        {workspaces.length > 1 && (<div className="side-ws">{workspaces.map(w => <button key={w} className={'side-wb' + (ws===w?' on':'')} onClick={() => setWs(w)}>{w==='all'?'全部':w}</button>)}</div>)}
-        <div className="side-list">
-          {list.map(s => (<div key={s.id} className={'side-it' + (s.id===activeSessionId?' on':'')} onClick={() => d(setActiveSession(s.id))}><span className="side-dot"/><span className="side-nm">{s.name}</span><span className="side-dt">{fmt(s.createdAt)}</span><button className="side-del" onClick={e => { e.stopPropagation(); if (s.id!=='default') { d(deleteSession(s.id)); deleteSessionStorage(s.id); } }}>×</button></div>))}
-          {list.length===0 && <div className="side-empty">没有匹配的对话</div>}
+      {tab === 'chats' &&
+        <div className="contents">
+          <div className="side-srch"><input placeholder="搜索…" value={q} onChange={e => setQ(e.target.value)} /></div>
+          {workspaces.length > 1 && <div className="side-ws">{workspaces.map(w => <button key={w} className={'side-wb' + (ws===w?' on':'')} onClick={() => setWs(w)}>{w==='all'?'全部':w}</button>)}</div>}
+          <div className="side-list">
+            {list.map(s => <div key={s.id} className={'side-it' + (s.id===activeSessionId?' on':'')} onClick={() => d(setActiveSession(s.id))}><span className="side-dot"/><span className="side-nm">{s.name}</span><span className="side-dt">{fmt(s.createdAt)}</span><button className="side-del" onClick={e => { e.stopPropagation(); if (s.id!=='default') { d(deleteSession(s.id)); deleteSessionStorage(s.id); } }}>×</button></div>)}
+            {list.length===0 && <div className="side-empty">没有匹配的对话</div>}
+          </div>
         </div>
-      </>)}
+      }
 
       {/* Templates */}
       {tab === 'templates' && (<div className="side-tools">

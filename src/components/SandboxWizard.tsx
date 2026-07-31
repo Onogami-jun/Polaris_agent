@@ -94,8 +94,8 @@ export const SandboxWizard: React.FC<{ onClose: () => void }> = ({ onClose }) =>
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-6 space-y-4">
           {/* Progress */}
-          {!done && !error && progress && (
-            <>
+          {!done && !error && progress &&
+            <div className="contents">
               <div className="flex items-center gap-3 p-3 rounded-xl bg-muted/50">
                 <span className="text-lg">{info.icon}</span>
                 <div className="flex-1 min-w-0">
@@ -104,19 +104,17 @@ export const SandboxWizard: React.FC<{ onClose: () => void }> = ({ onClose }) =>
                 </div>
                 <span className="text-sm font-mono text-primary font-bold">{progress.percent}%</span>
               </div>
-
               <div className="h-2 bg-muted rounded-full overflow-hidden">
                 <div className="h-full bg-primary rounded-full transition-all duration-500" style={{ width: `${progress.percent}%` }}/>
               </div>
-
-              {(progress.speed || progress.size) && (
+              {(progress.speed || progress.size) &&
                 <div className="flex gap-4 text-[10px] text-muted-foreground font-mono">
                   {progress.size && <span>大小: {progress.size}</span>}
                   {progress.speed && <span>速度: {progress.speed}</span>}
                 </div>
-              )}
-            </>
-          )}
+              }
+            </div>
+          }
 
           {/* Done: health dashboard */}
           {done && health && (
