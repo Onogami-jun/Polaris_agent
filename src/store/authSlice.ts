@@ -50,17 +50,20 @@ export const registerUser = createAsyncThunk('auth/register', async ({ email, pa
     options: { data: { display_name: displayName } },
   });
   if (error) return rejectWithValue(error.message);
-  // 新建 profile
-  if (data.user) {
-    await supabase.from('profiles').upsert({
-      id: data.user.id,
-      display_name: displayName,
-      avatar_color: '#6366f1',
-      plan: 'free',
-      updated_at: new Date().toISOString(),
-    }, { onConflict: 'id' });
-  }
-  // 注册完自动登录态成立
+  // profiles 表可能不存在 — 插入失败不影响注册成功
+  try {
+    if (data.user) {
+      await supabase.from('profiles').upsert({
+        id: data.user.id,
+        display_name: displayName,
+        avatar_color: '#6366f1',
+        plan: 'free',
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'id' }).then(function(r: any) {
+        if (r.error) console.warn('[Auth] profiles upsert:', r.error.message);
+      });
+    }
+  } catch {}
   return getCurrentUser();
 });
 
@@ -110,7 +113,11 @@ const authSlice = createSlice({
     // Register
     builder.addCase(registerUser.pending, (s) => { s.loginError = null; });
     builder.addCase(registerUser.fulfilled, (s, a: PayloadAction<PolarUser | null>) => {
-      s.user = a.payload; s.showLoginModal = false; s.tokenLimitReached = false;
+      if (a.payload) {
+        s.user = a.payload; s.showLoginModal = false; s.tokenLimitReached = false;
+      } else {
+        s.loginError = '注册成功，但无法自动登录。如果收不到验证邮件，请在 Supabase Dashboard → Authentication → Settings 中关闭"Confirm email"。';
+      }
     });
     builder.addCase(registerUser.rejected, (s, a) => { s.loginError = a.payload as string; });
     // Logout

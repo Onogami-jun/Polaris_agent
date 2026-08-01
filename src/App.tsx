@@ -1,7 +1,7 @@
 // @ts-nocheck
 import React,{useState,useCallback,useRef,useEffect}from'react';
 import{useAppSelector,useAppDispatch}from'./store';
-import{addMessage,editMessage,loadSessions as lr,newSession as ns,setActiveSession,setStreaming,setStrategy,toggleSettings,setTheme,deleteSession,branchSession,setEngineStatus}from'./store/chatSlice';
+import{addMessage,updateLastAssistant,editMessage,loadSessions as lr,newSession as ns,setActiveSession,setStreaming,setStrategy,toggleSettings,setTheme,deleteSession,branchSession,setEngineStatus}from'./store/chatSlice';
 import{restoreAuth,incrementUsage,openLoginModal,logoutUser}from'./store/authSlice';
 import{saveSessions,loadSessions as ld}from'./store/persist';
 import SettingsPanel from'./components/SettingsPanel';
@@ -70,40 +70,50 @@ const ToastC:React.FC<{toasts:any[]}>=({toasts})=>(
 
 /* ── Markdown ── */
 function md(t:string):string{
-// Step 1: extract and replace code blocks so they don't get escaped
-var blocks=[];
-var h=t.replace(/```(\w*)\n([\s\S]*?)```/g,function(_,lang,code){
-  blocks.push({lang:lang||'plaintext',code:code.trim()});
-  return '\x00BLOCK'+(blocks.length-1)+'\x00';
-});
-// Step 2: extract inline code
-h=h.replace(/`([^`]+)`/g,function(_,code){
-  blocks.push({lang:'inline',code:code});
-  return '\x00INLINE'+(blocks.length-1)+'\x00';
-});
-// Step 3: escape the remaining text
-h=h.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-// Step 4: restore code blocks — with copy button & language header
-h=h.replace(/\x00BLOCK(\d+)\x00/g,function(_,idx){
-  var b=blocks[parseInt(idx)];
-  var escaped=b.code.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-  return '<div class=\"code-block my-3 rounded-lg border border-border overflow-hidden\"><div class=\"flex items-center justify-between px-3 py-1.5 bg-muted border-b border-border\"><span class=\"text-[10px] font-mono text-muted-foreground\">'+b.lang+'</span><button onclick=\"copyCode(this)\" class=\"text-[10px] text-muted-foreground hover:text-foreground font-mono transition-colors\">复制</button></div><pre class=\"p-4 overflow-x-auto text-xs font-mono leading-relaxed\"><code>'+hl(escaped,b.lang)+'</code></pre></div>';
-});
-// Step 5: restore inline code
-h=h.replace(/\x00INLINE(\d+)\x00/g,function(_,idx){
-  var b=blocks[parseInt(idx)];
-  return '<code class=\"bg-muted px-1.5 py-0.5 rounded text-xs font-mono text-primary\">'+b.code.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')+'</code>';
-});
-// Step 6: markdown formatting
-h=h.replace(/\*\*(.+?)\*\*/g,'<strong class=\"font-semibold\">$1</strong>');
-h=h.replace(/\*(.+?)\*/g,'<em class=\"text-muted-foreground\">$1</em>');
-h=h.replace(/^### (.+)/gm,'<h3 class=\"text-sm font-semibold mt-4 mb-2\">$1</h3>');
-h=h.replace(/^## (.+)/gm,'<h2 class=\"text-base font-semibold mt-5 mb-3\">$1</h2>');
-h=h.replace(/^# (.+)/gm,'<h1 class=\"text-lg font-bold mt-5 mb-3 pb-2 border-b border-border\">$1</h1>');
-h=h.replace(/^[-*] (.+)/gm,'<li class=\"ml-4 text-sm\">$1</li>');
-h=h.replace(/\n\n/g,'<br/><br/>');h=h.replace(/\n/g,'<br/>');
-return'<p>'+h+'</p>';}
-function hl(c:string,l:string):string{const kw:Record<string,string[]>={js:['const','let','var','function','return','if','else','for','while','class','export','import','async','await'],py:['def','return','if','elif','else','for','while','class','import','from','async','await','try','except']};const w=kw[l]||[];let o=c;w.forEach(x=>{o=o.replace(new RegExp('\\b'+x+'\\b','g'),'<span className="text-primary font-medium">'+x+'</span>')});o=o.replace(/(\".*?\")/g,'<span className="text-amber-500">$1</span>');o=o.replace(/(\d+)/g,'<span className="text-violet-500">$1</span>');return o;}
+var parts=[];var lastIdx=0;
+// Split by code blocks: ```lang
+code```
+var codeBlockRe=/```(\w*)
+([\s\S]*?)```/g;var match;
+while((match=codeBlockRe.exec(t))!==null){
+  // Text before code block — escape and format
+  var before=t.slice(lastIdx,match.index);
+  parts.push(escapeAndFormat(before));
+  // Code block with label + copy button
+  var lang=match[1]||'plaintext';var rawCode=match[2]||'';
+  var escapedCode=rawCode.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  parts.push('<div class="code-block my-3 rounded-lg border border-border overflow-hidden"><div class="flex items-center justify-between px-3 py-1.5 bg-muted border-b border-border"><span class="text-[10px] font-mono text-muted-foreground">'+lang+'</span><button onclick="copyCode(this)" class="text-[10px] text-muted-foreground hover:text-foreground font-mono transition-colors">复制</button></div><pre class="p-4 overflow-x-auto text-xs font-mono leading-relaxed"><code>'+hl(escapedCode,lang)+'</code></pre></div>');
+  lastIdx=match.index+match[0].length;
+}
+// Remaining text
+parts.push(escapeAndFormat(t.slice(lastIdx)));
+return'<p>'+parts.join('')+'</p>';}
+
+function escapeAndFormat(s:string):string{
+// Escape HTML
+var h=s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+// Inline code (after escape!)
+h=h.replace(/`([^`]+)`/g,'<code class="bg-muted px-1.5 py-0.5 rounded text-xs font-mono text-primary">$1</code>');
+// Bold/italic
+h=h.replace(/\*\*(.+?)\*\*/g,'<strong class="font-semibold">$1</strong>');
+h=h.replace(/\*(.+?)\*/g,'<em class="text-muted-foreground">$1</em>');
+// Headings
+h=h.replace(/^### (.+)/gm,'<h3 class="text-sm font-semibold mt-4 mb-2">$1</h3>');
+h=h.replace(/^## (.+)/gm,'<h2 class="text-base font-semibold mt-5 mb-3">$1</h2>');
+h=h.replace(/^# (.+)/gm,'<h1 class="text-lg font-bold mt-5 mb-3 pb-2 border-b border-border">$1</h1>');
+// Lists
+h=h.replace(/^[-*] (.+)/gm,'<li class="ml-4 text-sm">$1</li>');
+// Line breaks
+h=h.replace(/
+
+/g,'<br/><br/>');h=h.replace(/
+/g,'<br/>');
+return h;}
+function hl(c:string,l:string):string{
+var kw={js:'const let var function return if else for while class export import async await'.split(' '),py:'def return if elif else for while class import from async await try except'.split(' ')};
+var words=kw[l]||[];var o=c;
+words.forEach(function(x){o=o.replace(new RegExp('\\b'+x+'\\b','g'),'<span style="color:hsl(var(--primary))">'+x+'</span>')});
+return o;}
 
 /* ─────────────────────────────────────────────────
    WORKFLOW VIEW — real-time sidebar panel
@@ -365,39 +375,49 @@ const App:React.FC=()=>{
     const sid=activeSessionId||'default';setInp('');setFs([]);
     if(!rgn){d(addMessage({sessionId:sid,message:{id:'u'+Date.now(),role:'user',content:t,timestamp:Date.now()}}))}
     d(setStreaming(true));setThinking('');
+    var msgId='a'+Date.now();var modelName='';
+    // Create placeholder message immediately — will update as streaming progresses
+    d(addMessage({sessionId:sid,message:{id:msgId,role:'assistant',content:'',timestamp:Date.now()}}));
     if(/优化|求解|排产|调度|指派|实验|对比|build|model|solve|benchmark|Benders|分解/.test(t)&&t.length>15){try{var pApi=window.electronAPI;if(pApi){var pp=await pApi.plannerGenerate(t);setPlan(pp);setPlanId(pp.id);addExecLog('planner','running','分析任务并生成计划...')}}catch{}}
     try{
       var ctx=t;
       if(web){try{var{webSearch}=await import('./utils/search');var sr=await webSearch(t,settings.apiKeys.serper);if(sr.length>0&&!sr[0].title.includes('not configured'))ctx+='\n[Web]\n'+sr.map(function(x){return'- '+x.title+': '+x.snippet}).join('\n')}catch(e){}}
       var streamApi=window.electronAPI;if(!streamApi)throw new Error('Electron API not ready');
-
-      // True streaming: subscribe to chunk events, then call queryStream
-      var fullContent='';var routingInfo=null;var hasAdded=false;var msgId='a'+Date.now();
-      function addMsg(){
-        if(hasAdded)return;hasAdded=true;
-        if(!fullContent||fullContent.trim().length===0){fullContent='*[空回复]*';showToast('服务器返回空回复','warn');}
-        d(addMessage({sessionId:sid,message:{id:msgId,role:'assistant',content:fullContent,timestamp:Date.now(),model:routingInfo?.selected_models?.join(', ')||'',routing:{intent:routingInfo?.top_intent,models:routingInfo?.selected_models||[],rationale:routingInfo?.rationale||''}}}));
-        d(incrementUsage());d(setStreaming(false));setThinking('');setThk('');
-      }
+      var fullContent='';var routingInfo=null;
+      // True streaming: update Redux on every chunk
       streamApi.onStreamChunk(function(chunk){
         if(stop.current)return;
         if(chunk.type==='thinking'){setThinking(chunk.text||'');}
-        else if(chunk.type==='content'){fullContent=chunk.full||fullContent;setThk('');}
+        else if(chunk.type==='content'){
+          fullContent=chunk.full||fullContent;setThk('');
+          // Incremental render — React re-renders the message with new content
+          d(updateLastAssistant({sessionId:sid,content:fullContent}));
+        }
         else if(chunk.type==='tool_call'){setThinking('调用工具...');}
       });
       streamApi.onStreamEnd(function(res){
         if(stop.current)return;
-        routingInfo=res?.routing;
-        if((!fullContent||fullContent.trim().length===0)&&res?.responses){fullContent=(res.responses||[]).map(function(r){return r?.content||''}).join('\n\n')||'';}
-        addMsg();streamApi.removeStreamListeners();
+        routingInfo=res?.routing;modelName=res?.routing?.selected_models?.join(', ')||'';
+        if((!fullContent||fullContent.trim().length===0)&&res?.responses){
+          fullContent=(res.responses||[]).map(function(r){return r?.content||''}).join('\n\n')||'';
+          d(updateLastAssistant({sessionId:sid,content:fullContent,model:modelName,routing:{intent:res?.routing?.top_intent,models:res?.routing?.selected_models||[],rationale:res?.routing?.rationale||''}}));
+        }else{
+          d(updateLastAssistant({sessionId:sid,content:fullContent,model:modelName,routing:{intent:res?.routing?.top_intent,models:res?.routing?.selected_models||[],rationale:res?.routing?.rationale||''}}));
+        }
+        if(!fullContent||fullContent.trim().length===0){showToast('服务器返回空回复','warn');}
+        d(incrementUsage());d(setStreaming(false));setThinking('');setThk('');
+        streamApi.removeStreamListeners();
       });
-      // Safety timeout: 30s max
-      var safetyTimer=setTimeout(function(){addMsg();streamApi.removeStreamListeners();},30000);
+      // Safety: 30s timeout
+      var safetyTimer=setTimeout(function(){
+        if(!fullContent){fullContent='*响应超时*';d(updateLastAssistant({sessionId:sid,content:fullContent}));}
+        d(incrementUsage());d(setStreaming(false));setThinking('');setThk('');
+        streamApi.removeStreamListeners();
+      },30000);
       await streamApi.queryStream({text:ctx,strategy,apiKeys:settings.apiKeys});
       clearTimeout(safetyTimer);
-      if(!hasAdded)addMsg();
-      streamApi.removeStreamListeners();
-    }catch(e){showToast('连接失败: '+(e.message||'未知错误'),'error');d(addMessage({sessionId:sid,message:{id:'e'+Date.now(),role:'assistant',content:'Error: '+(e.message||'Connection failed'),timestamp:Date.now()}}));d(setStreaming(false));setThinking('');setThk('');}
+    }catch(e){showToast('连接失败: '+(e.message||'未知错误'),'error');d(setStreaming(false));setThinking('');setThk('');}
+
   },[streaming,strategy,activeSessionId,d,fs,web,settings]);
 
   // ── Actions ──

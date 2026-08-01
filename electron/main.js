@@ -179,6 +179,26 @@ ipcMain.handle('sandbox:runCode', (_e, { code }) => {
   return sandbox.runCode(code, sandboxDataPath());
 });
 
+// IPC: Email verification (SMTP via bitwool@163.com)
+const { sendVerificationCode, sendWelcomeEmail, generateCode } = require('./services/email');
+ipcMain.handle('email:sendCode', async (_e, { email }) => {
+  try {
+    const code = generateCode();
+    await sendVerificationCode(email, code);
+    return { success: true, code };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+});
+ipcMain.handle('email:sendWelcome', async (_e, { email, displayName }) => {
+  try {
+    await sendWelcomeEmail(email, displayName);
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+});
+
 // ── Auto-setup sandbox on first launch ──
 ipcMain.handle('sandbox:autoSetup', async () => {
   if (sandbox.isReady(sandboxDataPath())) {
