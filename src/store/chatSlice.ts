@@ -9,7 +9,7 @@ export interface PluginInfo { id: string; name: string; description: string; ena
 export interface PromptTemplate { id: string; name: string; content: string; category: string; }
 
 interface SettingsState {
-  apiKeys: { deepseek: string; anthropic: string; openai: string; serper: string };
+  apiKeys: { deepseek: string; anthropic: string; openai: string; serper: string; resend: string };
   theme: Theme; language: Language; fontSize: number;
   mobileLink: { enabled: boolean; qrCode: string; deviceName: string };
   thirdParty: { apiEnabled: boolean; apiPort: number; webhookUrl: string };
@@ -33,7 +33,7 @@ const initialState: ChatState = {
   activeSessionId: 'default', streaming: false, strategy: 'best_quality', sidebarOpen: true, settingsOpen: false,
   contextTokens: { used: 0, total: 128000 },
   settings: {
-    apiKeys: { deepseek: '', anthropic: '', openai: '', serper: '' }, theme: 'light', language: 'zh-CN', fontSize: 15,
+    apiKeys: { deepseek: '', anthropic: '', openai: '', serper: '', resend: '' }, theme: 'light', language: 'zh-CN', fontSize: 15,
     mobileLink: { enabled: false, qrCode: '', deviceName: '' }, thirdParty: { apiEnabled: false, apiPort: 8720, webhookUrl: '' },
     proxy: { enabled: false, host: '', port: '', auth: '' }, agent: defaultAgent,
     plugins: [{ id:'filesystem',name:'文件系统',description:'读写和管理本地文件',enabled:true,type:'tool' },{ id:'browser',name:'网页浏览器',description:'打开和控制浏览器标签页',enabled:false,type:'tool' },{ id:'terminal',name:'终端',description:'执行 Shell 命令',enabled:true,type:'tool' },{ id:'calendar',name:'日历',description:'管理日历事件',enabled:false,type:'skill' },{ id:'email',name:'邮件',description:'发送和阅读邮件',enabled:false,type:'tool' }],
@@ -45,6 +45,7 @@ const initialState: ChatState = {
 
 const chatSlice = createSlice({ name: 'chat', initialState, reducers: {
   addMessage: (s, a: PayloadAction<{ sessionId: string; message: ChatMessage }>) => { const sesh = s.sessions.find(x => x.id === a.payload.sessionId); if (sesh) { sesh.messages.push(a.payload.message); if (sesh.messages.length === 1) sesh.name = a.payload.message.content.slice(0, 30) || '新对话'; const all = sesh.messages.map(m => m.content).join(' '); s.contextTokens.used = Math.round(all.length * 0.6); } },
+  updateLastAssistant: (s, a: PayloadAction<{ sessionId: string; content: string; model?: string; routing?: ChatMessage['routing'] }>) => { const sesh = s.sessions.find(x => x.id === a.payload.sessionId); if (sesh) { const last = sesh.messages.length > 0 ? sesh.messages[sesh.messages.length - 1] : null; if (last && last.role === 'assistant') { last.content = a.payload.content; if (a.payload.model) last.model = a.payload.model; if (a.payload.routing) last.routing = a.payload.routing; } } },
   editMessage: (s, a: PayloadAction<{ sessionId: string; messageId: string; content: string }>) => { const sesh = s.sessions.find(x => x.id === a.payload.sessionId); if (sesh) { const msg = sesh.messages.find(x => x.id === a.payload.messageId); if (msg) { msg.content = a.payload.content; msg.edited = true; } } },
   newSession: (s) => { const ns: ChatSession = { id: 's_' + Date.now(), name: '新对话', messages: [], createdAt: Date.now() }; s.sessions.unshift(ns); s.activeSessionId = ns.id; s.contextTokens = { used: 0, total: 128000 }; },
   branchSession: (s, a: PayloadAction<{ sourceSessionId: string; upToMessageId: string }>) => { const src = s.sessions.find(x => x.id === a.payload.sourceSessionId); if (!src) return; const idx = src.messages.findIndex(x => x.id === a.payload.upToMessageId); const msgs = idx >= 0 ? src.messages.slice(0, idx + 1).map(m => ({...m, id: m.id + '_b'})) : []; const ns: ChatSession = { id: 'b_' + Date.now(), name: src.name + ' (分支)', messages: msgs, createdAt: Date.now(), parentId: src.id }; s.sessions.unshift(ns); s.activeSessionId = ns.id; },
@@ -69,5 +70,5 @@ const chatSlice = createSlice({ name: 'chat', initialState, reducers: {
   removePromptTemplate: (s, a: PayloadAction<string>) => { s.settings.promptTemplates = s.settings.promptTemplates.filter(x => x.id !== a.payload); },
 }});
 
-export const { addMessage, editMessage, loadSessions, newSession, branchSession, deleteSession, setActiveSession, setStreaming, setStrategy, toggleSidebar, toggleSettings, setApiKey, setTheme, setLanguage, setFontSize, updateAgentConfig, updateThirdParty, updateMobileLink, updateProxy, togglePlugin, addPlugin, removePlugin, addMemory, addPromptTemplate, removePromptTemplate, setEngineStatus } = chatSlice.actions;
+export const { addMessage, updateLastAssistant, editMessage, loadSessions, newSession, branchSession, deleteSession, setActiveSession, setStreaming, setStrategy, toggleSidebar, toggleSettings, setApiKey, setTheme, setLanguage, setFontSize, updateAgentConfig, updateThirdParty, updateMobileLink, updateProxy, togglePlugin, addPlugin, removePlugin, addMemory, addPromptTemplate, removePromptTemplate, setEngineStatus } = chatSlice.actions;
 export default chatSlice.reducer;

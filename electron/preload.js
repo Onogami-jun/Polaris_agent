@@ -44,4 +44,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   sandboxRunCode: (code) => ipcRenderer.invoke('sandbox:runCode', { code }),
   sandboxCheckSafety: (code) => ipcRenderer.invoke('sandbox:safety', { code }),
   onSandboxProgress: (cb) => { ipcRenderer.on('sandbox:progress', (_, d) => cb(d)); },
+  emailSendCode: (email) => ipcRenderer.invoke('email:sendCode', { email }),
+  emailSendWelcome: (email, displayName) => ipcRenderer.invoke('email:sendWelcome', { email, displayName }),
 });
