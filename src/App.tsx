@@ -70,44 +70,32 @@ const ToastC:React.FC<{toasts:any[]}>=({toasts})=>(
 
 /* ── Markdown ── */
 function md(t:string):string{
-var parts=[];var lastIdx=0;
-// Split by code blocks: ```lang
-code```
-var codeBlockRe=/```(\w*)
-([\s\S]*?)```/g;var match;
+// Use JSON string to avoid literal newline in regex (babel-safe)
+var NL='\\n';
+var codeBlockRe=new RegExp('```(\\w*)'+NL+'([\\s\\S]*?)```','g');
+var parts=[];var lastIdx=0;var match;
 while((match=codeBlockRe.exec(t))!==null){
-  // Text before code block — escape and format
   var before=t.slice(lastIdx,match.index);
   parts.push(escapeAndFormat(before));
-  // Code block with label + copy button
   var lang=match[1]||'plaintext';var rawCode=match[2]||'';
   var escapedCode=rawCode.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   parts.push('<div class="code-block my-3 rounded-lg border border-border overflow-hidden"><div class="flex items-center justify-between px-3 py-1.5 bg-muted border-b border-border"><span class="text-[10px] font-mono text-muted-foreground">'+lang+'</span><button onclick="copyCode(this)" class="text-[10px] text-muted-foreground hover:text-foreground font-mono transition-colors">复制</button></div><pre class="p-4 overflow-x-auto text-xs font-mono leading-relaxed"><code>'+hl(escapedCode,lang)+'</code></pre></div>');
   lastIdx=match.index+match[0].length;
 }
-// Remaining text
 parts.push(escapeAndFormat(t.slice(lastIdx)));
 return'<p>'+parts.join('')+'</p>';}
 
 function escapeAndFormat(s:string):string{
-// Escape HTML
 var h=s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-// Inline code (after escape!)
 h=h.replace(/`([^`]+)`/g,'<code class="bg-muted px-1.5 py-0.5 rounded text-xs font-mono text-primary">$1</code>');
-// Bold/italic
 h=h.replace(/\*\*(.+?)\*\*/g,'<strong class="font-semibold">$1</strong>');
 h=h.replace(/\*(.+?)\*/g,'<em class="text-muted-foreground">$1</em>');
-// Headings
 h=h.replace(/^### (.+)/gm,'<h3 class="text-sm font-semibold mt-4 mb-2">$1</h3>');
 h=h.replace(/^## (.+)/gm,'<h2 class="text-base font-semibold mt-5 mb-3">$1</h2>');
 h=h.replace(/^# (.+)/gm,'<h1 class="text-lg font-bold mt-5 mb-3 pb-2 border-b border-border">$1</h1>');
-// Lists
 h=h.replace(/^[-*] (.+)/gm,'<li class="ml-4 text-sm">$1</li>');
-// Line breaks
-h=h.replace(/
-
-/g,'<br/><br/>');h=h.replace(/
-/g,'<br/>');
+var rr2=new RegExp('\\n\\n');h=h.replace(rr2,'<br/><br/>');
+var rr1=new RegExp('\\n');h=h.replace(rr1,'<br/>');
 return h;}
 function hl(c:string,l:string):string{
 var kw={js:'const let var function return if else for while class export import async await'.split(' '),py:'def return if elif else for while class import from async await try except'.split(' ')};
