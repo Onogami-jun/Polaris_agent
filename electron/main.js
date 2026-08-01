@@ -59,9 +59,16 @@ ipcMain.handle('polaris:query', async (_e, { text, strategy, systemPrompt, image
   }
 });
 ipcMain.handle('polaris:queryStream', async (event, { text, strategy, systemPrompt, images, apiKeys }) => {
+  // Stream chunks: { type: 'thinking'|'content'|'tool_call', text?, full?, toolCalls? }
   const oc = (data) => { if (win && !win.isDestroyed()) win.webContents.send('polaris:stream-chunk', data); };
-  try { const r = await executeQuery(text, strategy, systemPrompt, images, oc, apiKeys || {}); if (win && !win.isDestroyed()) win.webContents.send('polaris:stream-end', r); return r; }
-  catch (e) { if (win && !win.isDestroyed()) win.webContents.send('polaris:stream-error', { message: e.message }); throw e; }
+  try {
+    const r = await executeQuery(text, strategy, systemPrompt, images, oc, apiKeys || {});
+    if (win && !win.isDestroyed()) win.webContents.send('polaris:stream-end', r);
+    return r;
+  } catch (e) {
+    if (win && !win.isDestroyed()) win.webContents.send('polaris:stream-error', { message: e.message });
+    throw e;
+  }
 });
 
 // IPC: Window
