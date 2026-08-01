@@ -23,7 +23,7 @@ import{
   SuggestionsList
 }from'./components/ai';
 
-if(typeof window!=='undefined')(window as any).copyCode=function(btn:any){var pre=btn.closest('.code-block')?.querySelector('pre code');var text=pre?.textContent||'';navigator.clipboard.writeText(text).then(function(){btn.textContent='已复制';setTimeout(function(){btn.textContent='复制'},1500)}).catch(function(){})};
+if(typeof window!=='undefined')(window).copyCode=function(btn){var pre=btn.closest('.code-block')?.querySelector('pre code');var text=pre?.textContent||'';navigator.clipboard.writeText(text).then(function(){btn.textContent='已复制';setTimeout(function(){btn.textContent='复制'},1500)}).catch(function(){})};
 
 const SUGGESTIONS=['背包容量50，3件物品价值60 100 120，重量10 20 30','排产5个任务，处理时间2 3 1 4 2','指派4个工人，成本10 2 8 7  5 12 3 6','车辆路径，5个客户，需求量1 2 1 3 2，车辆容量5'];
 
@@ -69,24 +69,40 @@ const ToastC:React.FC<{toasts:any[]}>=({toasts})=>(
   </div>);
 
 /* ── Markdown ── */
-function md(t:string):string{var h=t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-// Code blocks with language label + copy button (Claude-style)
-h=h.replace(/```(\w*)\n([\s\S]*?)```/g,function(_,l,c){var lang=l||'code';var escaped=c.trim().replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');return'<div class=\"code-block my-3 rounded-lg border border-border overflow-hidden\"><div class=\"flex items-center justify-between px-3 py-1.5 bg-muted border-b border-border\"><span class=\"text-[10px] font-mono text-muted-foreground\">'+lang+'</span><button onclick=\"copyCode(this)\" class=\"text-[10px] text-muted-foreground hover:text-foreground font-mono transition-colors\">复制</button></div><pre class=\"p-4 overflow-x-auto text-xs font-mono leading-relaxed\"><code>'+hl(escaped,l)+'</code></pre></div>'});
-// Inline code
-h=h.replace(/`([^`]+)`/g,'<code class=\"bg-muted px-1.5 py-0.5 rounded text-xs font-mono text-primary\">$1</code>');
-// Bold/italic
+function md(t:string):string{
+// Step 1: extract and replace code blocks so they don't get escaped
+var blocks=[];
+var h=t.replace(/```(\w*)\n([\s\S]*?)```/g,function(_,lang,code){
+  blocks.push({lang:lang||'plaintext',code:code.trim()});
+  return '\x00BLOCK'+(blocks.length-1)+'\x00';
+});
+// Step 2: extract inline code
+h=h.replace(/`([^`]+)`/g,function(_,code){
+  blocks.push({lang:'inline',code:code});
+  return '\x00INLINE'+(blocks.length-1)+'\x00';
+});
+// Step 3: escape the remaining text
+h=h.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+// Step 4: restore code blocks — with copy button & language header
+h=h.replace(/\x00BLOCK(\d+)\x00/g,function(_,idx){
+  var b=blocks[parseInt(idx)];
+  var escaped=b.code.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  return '<div class=\"code-block my-3 rounded-lg border border-border overflow-hidden\"><div class=\"flex items-center justify-between px-3 py-1.5 bg-muted border-b border-border\"><span class=\"text-[10px] font-mono text-muted-foreground\">'+b.lang+'</span><button onclick=\"copyCode(this)\" class=\"text-[10px] text-muted-foreground hover:text-foreground font-mono transition-colors\">复制</button></div><pre class=\"p-4 overflow-x-auto text-xs font-mono leading-relaxed\"><code>'+hl(escaped,b.lang)+'</code></pre></div>';
+});
+// Step 5: restore inline code
+h=h.replace(/\x00INLINE(\d+)\x00/g,function(_,idx){
+  var b=blocks[parseInt(idx)];
+  return '<code class=\"bg-muted px-1.5 py-0.5 rounded text-xs font-mono text-primary\">'+b.code.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')+'</code>';
+});
+// Step 6: markdown formatting
 h=h.replace(/\*\*(.+?)\*\*/g,'<strong class=\"font-semibold\">$1</strong>');
 h=h.replace(/\*(.+?)\*/g,'<em class=\"text-muted-foreground\">$1</em>');
-// Headings
 h=h.replace(/^### (.+)/gm,'<h3 class=\"text-sm font-semibold mt-4 mb-2\">$1</h3>');
 h=h.replace(/^## (.+)/gm,'<h2 class=\"text-base font-semibold mt-5 mb-3\">$1</h2>');
 h=h.replace(/^# (.+)/gm,'<h1 class=\"text-lg font-bold mt-5 mb-3 pb-2 border-b border-border\">$1</h1>');
-// Lists
 h=h.replace(/^[-*] (.+)/gm,'<li class=\"ml-4 text-sm\">$1</li>');
-// Line breaks
 h=h.replace(/\n\n/g,'<br/><br/>');h=h.replace(/\n/g,'<br/>');
 return'<p>'+h+'</p>';}
-
 function hl(c:string,l:string):string{const kw:Record<string,string[]>={js:['const','let','var','function','return','if','else','for','while','class','export','import','async','await'],py:['def','return','if','elif','else','for','while','class','import','from','async','await','try','except']};const w=kw[l]||[];let o=c;w.forEach(x=>{o=o.replace(new RegExp('\\b'+x+'\\b','g'),'<span className="text-primary font-medium">'+x+'</span>')});o=o.replace(/(\".*?\")/g,'<span className="text-amber-500">$1</span>');o=o.replace(/(\d+)/g,'<span className="text-violet-500">$1</span>');return o;}
 
 /* ─────────────────────────────────────────────────
