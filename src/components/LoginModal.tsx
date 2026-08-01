@@ -212,6 +212,10 @@ export const LoginModal: React.FC = () => {
             </div>
           )}
 
+          {codeError && tab === 'register' && (
+            <div className="rounded-lg bg-destructive/10 border border-destructive/20 px-3 py-2 text-xs text-destructive">{codeError}</div>
+          )}
+
           {tab === 'register' && (
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-muted-foreground">显示名称</label>
