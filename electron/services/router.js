@@ -1,5 +1,5 @@
 /**
- * Polaris Router v6 — LLM-native routing with skill-aware tool calling
+ * Polaris Router v7 — Streaming + Persona + LLM routing
  */
 const https = require('https');
 const { TOOLS } = require('./tools');
@@ -8,6 +8,7 @@ const { reliableSolve, diagnose } = require('./reliability');
 const { SkillManager } = require('./skills');
 const { runPipeline } = require('./subagents');
 const { buildAgentCapabilityNote } = require('./health_check');
+const { POLARIS_PERSONA } = require('./persona');
 
 const DEFAULT_KEY = 'sk-665f376d7c0f4b91b4c3029bf82e670a';
 const skillManager = new SkillManager();
@@ -25,23 +26,20 @@ async function healthCheckCache() {
   return _hcCache;
 }
 
-/* ── Tool declarations — built per-skill ───────────────── */
+/* ── Tool declarations ─────────────────────────────────── */
 function buildToolDeclarations(skillTools) {
-  const all = [];
-  const requested = skillTools || skillManager.getActiveTools() || [];
-
   const map = {
-    polaris_opt:       { name: 'polaris_opt',       description: '求解优化问题。将用户描述的问题原文传给 prompt 参数。返回最优解。适用：提供了具体数值数据的场景。', parameters: { type: 'object', properties: { prompt: { type: 'string' } }, required: ['prompt'] } },
-    polaris_analyze:   { name: 'polaris_analyze',   description: '分析优化问题的代数结构。检测 block-angular、time-indexed 等特征，推荐求解策略。', parameters: { type: 'object', properties: { prompt: { type: 'string' } }, required: ['prompt'] } },
-    polaris_research:  { name: 'polaris_research',  description: '跑批量实验。参数：problem, sizes, solvers, seed。输出 Markdown/LaTeX 论文表格。', parameters: { type: 'object', properties: { problem: { type: 'string' }, sizes: { type: 'string' }, solvers: { type: 'string' }, seed: { type: 'number' } } } },
-    polaris_remember:  { name: 'polaris_remember',  description: '记录或查询历史实验。action: record/last/list。', parameters: { type: 'object', properties: { action: { type: 'string' }, meta: { type: 'object' }, problem: { type: 'string' } } } },
+    polaris_opt:       { name: 'polaris_opt',       description: '求解优化问题。将用户描述的问题原文传给 prompt 参数。', parameters: { type: 'object', properties: { prompt: { type: 'string' } }, required: ['prompt'] } },
+    polaris_analyze:   { name: 'polaris_analyze',   description: '分析优化问题的代数结构。检测 block-angular、time-indexed 等特征。', parameters: { type: 'object', properties: { prompt: { type: 'string' } }, required: ['prompt'] } },
+    polaris_research:  { name: 'polaris_research',  description: '批量实验。参数: problem, sizes, solvers, seed。输出 Markdown/LaTeX 表格。', parameters: { type: 'object', properties: { problem: { type: 'string' }, sizes: { type: 'string' }, solvers: { type: 'string' }, seed: { type: 'number' } } } },
+    polaris_remember:  { name: 'polaris_remember',  description: '记录/查询历史实验。action: record/last/list。', parameters: { type: 'object', properties: { action: { type: 'string' } } } },
     polaris_paper:     { name: 'polaris_paper',     description: '根据实验数据生成论文段落草稿。', parameters: { type: 'object', properties: { data: { type: 'string' }, context: { type: 'string' } } } },
-    polaris_model:     { name: 'polaris_model',     description: '自动识别并求解非标准/自定义优化问题。', parameters: { type: 'object', properties: { prompt: { type: 'string' } }, required: ['prompt'] } },
-    polaris_literature:{ name: 'polaris_literature',description: '搜索运筹优化相关文献。', parameters: { type: 'object', properties: { query: { type: 'string' } } } },
-    search_web:        { name: 'search_web',        description: '搜索互联网获取最新信息。', parameters: { type: 'object', properties: { query: { type: 'string' } } } },
+    polaris_model:     { name: 'polaris_model',     description: '自动识别并求解非标准优化问题。', parameters: { type: 'object', properties: { prompt: { type: 'string' } }, required: ['prompt'] } },
+    polaris_literature:{ name: 'polaris_literature', description: '搜索运筹优化相关文献。', parameters: { type: 'object', properties: { query: { type: 'string' } } } },
+    search_web:        { name: 'search_web',        description: '搜索互联网。', parameters: { type: 'object', properties: { query: { type: 'string' } } } },
   };
-
-  for (const toolName of requested) {
+  const all = [];
+  for (const toolName of (skillTools || [])) {
     const def = map[toolName];
     if (def) all.push({ type: 'function', function: def });
   }
@@ -69,13 +67,10 @@ function resolvePython() {
   return null;
 }
 
-/* ── Direct solve (engine path) ─────────────────────────── */
+/* ── Direct solve ──────────────────────────────────────── */
 async function directSolve(userMessage, onExec) {
   const python = resolvePython();
-  if (!python) {
-    if (onExec) onExec({ tool: 'engine', status: 'error', detail: 'Python/polaris-opt 不可用' });
-    return { success: false, error: '引擎未安装', isEngineMissing: true };
-  }
+  if (!python) return { success: false, error: '引擎未安装', isEngineMissing: true };
   return reliableSolve(userMessage, onExec, python);
 }
 
@@ -83,13 +78,11 @@ async function directSolve(userMessage, onExec) {
 async function executeTool(name, args, onExec) {
   if (onExec) onExec({ tool: name, status: 'running', detail: JSON.stringify(args).slice(0, 100) });
 
-  // polaris_solve & polaris_analyze get auto health-check
   if (name === 'polaris_solve' || name === 'polaris_opt') {
     const python = resolvePython();
     if (!python) {
-      const err = '引擎未安装，无法求解。请用你的知识分析这个问题。告知用户可以在设置→沙箱中安装引擎。';
       if (onExec) onExec({ tool: name, status: 'error', detail: '引擎未安装' });
-      return { success: false, error: err };
+      return { success: false, error: '引擎未安装。可在设置→沙箱中一键部署。' };
     }
     const result = await reliableSolve(args.prompt || args.text || '', onExec, python);
     if (onExec) onExec({ tool: name, status: result.success ? 'done' : 'error', detail: (result.result || result.error || '').slice(0, 120) });
@@ -99,13 +92,12 @@ async function executeTool(name, args, onExec) {
   if (name === 'polaris_analyze') {
     const python = resolvePython();
     if (!python) {
-      const err = '引擎未安装。请告诉用户：无法运行结构分析，但你可以根据问题描述推断其代数结构特征。';
       if (onExec) onExec({ tool: name, status: 'error', detail: '引擎未安装' });
-      return { success: false, error: err };
+      return { success: false, error: '引擎未安装。' };
     }
     const { spawnSync: sp } = require('child_process');
     const n = JSON.stringify(args.prompt || '');
-    const code = 'import sys;sys.stdout.reconfigure(encoding="utf-8")\nfrom polaris.chat import _parse,_build_model\nfrom polaris.analyze.structure import analyze\ntry:\n p=_parse(' + n + ');m=_build_model(p);s=analyze(m)\n print("Labels:",[l.name for l in s.labels])\n print("Strategy:",s.strategy.value)\n print("Vars:",s.n_scalar_vars,"Cons:",s.n_constraints)\nexcept Exception as e:\n print("Analysis:",e)';
+    const code = 'import sys;sys.stdout.reconfigure(encoding="utf-8")\ntry:\n from polaris.chat import _parse,_build_model;from polaris.analyze.structure import analyze\n p=_parse(' + n + ');m=_build_model(p);s=analyze(m)\n print("Labels:",[l.name for l in s.labels]);print("Strategy:",s.strategy.value);print("Vars:",s.n_scalar_vars,"Cons:",s.n_constraints)\nexcept Exception as e:\n print("Analysis:",e)';
     const r = sp(python, ['-c', code], { timeout: 15000, encoding: 'utf8', windowsHide: true });
     const output = (r.stdout || r.stderr || '').trim() || 'Analysis complete';
     if (onExec) onExec({ tool: name, status: 'done', detail: output.slice(0, 200) });
@@ -127,16 +119,102 @@ async function executeTool(name, args, onExec) {
   }
 }
 
-/* ── LLM API call ───────────────────────────────────────── */
-function callDeepSeek(messages, tools, apiKey, temperature = 0.3, maxTokens = 4096) {
+/* ══════════════════════════════════════════════════════════
+   STREAMING LLM — real SSE, emits chunks to renderer
+   ══════════════════════════════════════════════════════════ */
+
+/**
+ * Call DeepSeek with true SSE streaming.
+ * Emits each content chunk to `onChunk` as it arrives.
+ * Returns the full message (content + optional tool_calls).
+ */
+function callDeepSeekStream(messages, tools, apiKey, temperature, maxTokens, onChunk) {
+  const key = apiKey || DEFAULT_KEY;
+  const payload = {
+    model: 'deepseek-v4-flash', messages,
+    stream: true,
+    max_tokens: maxTokens || 4096,
+    temperature: temperature || 0.3,
+  };
+  if (tools && tools.length > 0) {
+    payload.tools = tools;
+    payload.tool_choice = 'auto';
+  }
+  const body = JSON.stringify(payload);
+
+  return new Promise(resolve => {
+    const req = https.request({
+      hostname: 'api.deepseek.com', path: '/chat/completions', method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + key,
+        'Content-Length': Buffer.byteLength(body),
+        'Accept': 'text/event-stream',
+      },
+      timeout: 60000,
+    }, resp => {
+      let buffer = '';
+      let fullContent = '';
+      let toolCalls = null;
+
+      resp.on('data', chunk => {
+        buffer += chunk.toString();
+        // Process complete SSE lines
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || ''; // keep incomplete line
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          const data = line.slice(6).trim();
+          if (data === '[DONE]') continue;
+
+          try {
+            const json = JSON.parse(data);
+            const delta = json.choices?.[0]?.delta;
+
+            if (delta?.content) {
+              fullContent += delta.content;
+              if (onChunk) onChunk({ type: 'content', text: delta.content, full: fullContent });
+            }
+            if (delta?.tool_calls) {
+              if (!toolCalls) toolCalls = [];
+              for (const tc of delta.tool_calls) {
+                const idx = tc.index || 0;
+                if (!toolCalls[idx]) toolCalls[idx] = { id: tc.id || '', function: { name: '', arguments: '' } };
+                if (tc.id) toolCalls[idx].id = tc.id;
+                if (tc.function?.name) toolCalls[idx].function.name += tc.function.name;
+                if (tc.function?.arguments) toolCalls[idx].function.arguments += tc.function.arguments;
+              }
+              if (onChunk) onChunk({ type: 'tool_call', toolCalls });
+            }
+          } catch {}
+        }
+      });
+
+      resp.on('end', () => {
+        const result = { choices: [{ message: { content: fullContent } }] };
+        if (toolCalls) result.choices[0].message.tool_calls = toolCalls;
+        resolve(result);
+      });
+
+      resp.on('error', () => resolve({ choices: [{ message: { content: fullContent || '' } }] }));
+    });
+
+    req.on('error', e => resolve({ error: e.message }));
+    req.on('timeout', () => { req.destroy(); resolve({ error: 'Timeout' }); });
+    req.write(body); req.end();
+  });
+}
+
+/**
+ * Non-streaming fallback
+ */
+function callDeepSeek(messages, tools, apiKey, temperature, maxTokens) {
   const key = apiKey || DEFAULT_KEY;
   return new Promise(resolve => {
-    const body = JSON.stringify({
-      model: 'deepseek-v4-flash', messages,
-      tools: tools.length > 0 ? tools : undefined,
-      tool_choice: tools.length > 0 ? 'auto' : undefined,
-      max_tokens: maxTokens, temperature,
-    });
+    const payload = { model: 'deepseek-v4-flash', messages, max_tokens: maxTokens || 4096, temperature: temperature || 0.3 };
+    if (tools && tools.length > 0) { payload.tools = tools; payload.tool_choice = 'auto'; }
+    const body = JSON.stringify(payload);
     const req = https.request({
       hostname: 'api.deepseek.com', path: '/chat/completions', method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key, 'Content-Length': Buffer.byteLength(body) },
@@ -152,34 +230,36 @@ function callDeepSeek(messages, tools, apiKey, temperature = 0.3, maxTokens = 40
 }
 
 /* ══════════════════════════════════════════════════════════
-   CORE: runAgentLoop
-   Routes per intent: chat/discuss → direct LLM | solve/analyze/experiment → tool loop
+   CORE: runAgentLoop (streaming version)
    ══════════════════════════════════════════════════════════ */
 
-async function runAgentLoop(userMessage, apiKey, onExec, onTodo = null) {
+async function runAgentLoop(userMessage, apiKey, onExec, onTodo, onStreamChunk) {
   const effectivePrompt = await skillManager.getEffectivePrompt(userMessage);
   const activeSkill = skillManager.getActive();
   const skillName = activeSkill.name;
-  logger.info('Skill active', { skill: skillName, turn: skillManager.conversationTurn });
+  logger.info('Skill active', { skill: skillName });
 
-  // ── Build env awareness ──
   const hcResults = await healthCheckCache();
   const envNote = buildAgentCapabilityNote(hcResults);
-  const fullPrompt = effectivePrompt + envNote;
 
-  // ── Chat / Discuss: direct LLM, no tools, no engine ──
+  // ── Inject Polaris persona ──
+  const fullPrompt = POLARIS_PERSONA + '\n\n' + effectivePrompt + '\n\n' + envNote;
+
+  // ── Chat / Discuss: true streaming LLM ──
   if (skillName === '对话模式' || skillName === '讨论模式' || skillName === 'chat' || skillName === 'discuss') {
-    if (onExec) onExec({ tool: skillName, status: 'running', detail: '思考中...' });
-    const resp = await callDeepSeek(
+    if (onExec) onExec({ tool: skillName, status: 'running', detail: '正在思考...' });
+    if (onStreamChunk) onStreamChunk({ type: 'thinking', text: '正在分析你的问题...' });
+    const resp = await callDeepSeekStream(
       [{ role: 'system', content: fullPrompt }, { role: 'user', content: userMessage }],
       [], apiKey, activeSkill.temperature || 0.5, activeSkill.maxTokens || 4096,
+      onStreamChunk,
     );
     if (onExec) onExec({ tool: skillName, status: 'done', detail: '回答完成' });
     const content = resp.choices?.[0]?.message?.content || '';
-    return content.trim().length > 10 ? content : '请继续。';
+    return content.trim().length > 10 ? content : '嗯，让我再想想... 你想聊什么方向？';
   }
 
-  // ── Solve / Analyze / Experiment: tool-calling loop ──
+  // ── Solve / Analyze / Experiment: tool loop ──
   const tools = buildToolDeclarations(activeSkill.tools);
   const messages = [
     { role: 'system', content: fullPrompt },
@@ -190,26 +270,26 @@ async function runAgentLoop(userMessage, apiKey, onExec, onTodo = null) {
   let toolsUsed = false;
 
   for (let round = 0; round < 3; round++) {
+    if (onStreamChunk) onStreamChunk({ type: 'thinking', text: round === 0 ? '分析问题...' : round === 1 ? '执行求解...' : '整理结果...' });
     const resp = await callDeepSeek(messages, tools, apiKey, activeSkill.temperature || 0.2);
 
     if (resp.error) break;
     const choice = resp.choices?.[0];
     if (!choice) break;
 
-    // Case 1: LLM returned a text answer (no tool calls needed)
     if (!choice.message?.tool_calls?.length) {
       const content = choice.message?.content || '';
       if (content.trim().length > 20) {
-        // If we already used tools, append the LLM's final summary
-        if (toolsUsed) return bestResponse + '\n\n---\n\n' + content;
+        if (toolsUsed) {
+          if (onStreamChunk) onStreamChunk({ type: 'thinking', text: '正在生成回答...' });
+          return bestResponse + '\n\n---\n\n' + content;
+        }
         return content;
       }
-      // Very short response — maybe LLM has nothing more to say
       if (toolsUsed) return bestResponse || '求解完成。';
       break;
     }
 
-    // Case 2: LLM wants to call tools
     toolsUsed = true;
     const toolCalls = choice.message.tool_calls;
     messages.push({ role: 'assistant', content: choice.message.content || '调用工具...', tool_calls: toolCalls });
@@ -217,32 +297,26 @@ async function runAgentLoop(userMessage, apiKey, onExec, onTodo = null) {
     for (const tc of toolCalls) {
       let args = {};
       try { args = JSON.parse(tc.function.arguments); } catch { args = { prompt: userMessage }; }
+      if (onStreamChunk) onStreamChunk({ type: 'thinking', text: `调用 ${tc.function.name}...` });
       const result = await executeTool(tc.function.name, args, onExec);
       const toolResult = result.success
         ? (result.result || '已完成')
         : `工具 ${tc.function.name} 返回：${result.error || '失败'}`;
       messages.push({ role: 'tool', tool_call_id: tc.id, content: String(toolResult).slice(0, 3000) });
-
-      if (result.success && result.result) {
-        bestResponse = (result.result || '').slice(0, 5000);
-      }
+      if (result.success && result.result) bestResponse = (result.result || '').slice(0, 5000);
     }
   }
 
-  // ── Fallback: if tools were used but no clear answer, try direct engine ──
   if (toolsUsed && !bestResponse) {
-    if (onExec) onExec({ tool: 'engine:fallback', status: 'running', detail: '尝试直接求解...' });
     const dr = await directSolve(userMessage, onExec);
     if (dr.success && dr.result) return dr.result;
   }
-
-  // ── Final fallback ──
   if (bestResponse) return bestResponse;
-  return 'Polaris 引擎已尝试求解。如需更精确的结果，请提供更详细的问题描述和数据。';
+  return 'Polaris 引擎已尝试求解，但未能得出结果。请提供更详细的问题数据。';
 }
 
 /* ══════════════════════════════════════════════════════════
-   CORE: executeQuery — entry point for IPC
+   CORE: executeQuery
    ══════════════════════════════════════════════════════════ */
 
 async function executeQuery(text, strategy, systemPrompt, images, onStreamChunk, apiKeys = {}) {
@@ -255,8 +329,7 @@ async function executeQuery(text, strategy, systemPrompt, images, onStreamChunk,
   const onTodo = apiKeys.onTodo || null;
 
   try {
-    // Pass user's custom API keys through
-    const content = await runAgentLoop(text, apiKey, onExec, onTodo);
+    const content = await runAgentLoop(text, apiKey, onExec, onTodo, onStreamChunk);
     const elapsed = Date.now() - startTime;
     logger.info('Request completed', { tid, ms: elapsed });
 
