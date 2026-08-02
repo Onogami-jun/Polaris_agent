@@ -26,6 +26,8 @@ interface MessageInputProps {
   toolbarRight?: React.ReactNode;
   /** Status text shown below */
   statusText?: string;
+  /** Custom footer (replaces status text) */
+  footer?: React.ReactNode;
   /** Whether to show a stop button instead of send */
   isStreaming?: boolean;
   /** Stop callback */
@@ -52,6 +54,7 @@ export function MessageInput({
   toolbarLeft,
   toolbarRight,
   statusText,
+  footer,
   isStreaming = false,
   onStop,
   suggestions,
@@ -176,10 +179,10 @@ export function MessageInput({
           </div>
         </div>
 
-        {/* Status bar */}
-        {statusText && (
+        {/* Footer / Status bar */}
+        {(footer || statusText) && (
           <div className="flex items-center justify-between border-t border-border/50 px-4 py-1.5">
-            <span className="text-[10px] font-mono text-muted-foreground">{statusText}</span>
+            {footer || <span className="text-[10px] font-mono text-muted-foreground">{statusText}</span>}
             <span className="text-[10px] font-mono text-muted-foreground/50">
               Enter 发送 · Shift+Enter 换行
             </span>

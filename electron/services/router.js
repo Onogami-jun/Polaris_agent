@@ -236,7 +236,9 @@ function callDeepSeek(messages, tools, apiKey, temperature, maxTokens) {
    CORE: runAgentLoop (streaming version)
    ══════════════════════════════════════════════════════════ */
 
-async function runAgentLoop(userMessage, apiKey, onExec, onTodo, onStreamChunk) {
+async function runAgentLoop(userMessage, apiKey, onExec, onTodo, onStreamChunk, strategyConfig) {
+  var maxTok = (strategyConfig && strategyConfig.maxTokens) || 4096;
+  var temp = (strategyConfig && strategyConfig.temperature != null) ? strategyConfig.temperature : 0.3;
   const effectivePrompt = await skillManager.getEffectivePrompt(userMessage);
   const activeSkill = skillManager.getActive();
   const skillName = activeSkill.name;
@@ -257,7 +259,7 @@ async function runAgentLoop(userMessage, apiKey, onExec, onTodo, onStreamChunk) 
     try {
       var resp = await callDeepSeekStream(
         [{ role: 'system', content: fullPrompt }, { role: 'user', content: userMessage }],
-        [], apiKey, activeSkill.temperature || 0.5, activeSkill.maxTokens || 4096,
+        [], apiKey, activeSkill.temperature || temp, maxTok,
         onStreamChunk,
       );
       content = resp.choices?.[0]?.message?.content || '';
@@ -270,7 +272,7 @@ async function runAgentLoop(userMessage, apiKey, onExec, onTodo, onStreamChunk) 
       if (onStreamChunk) onStreamChunk({ type: 'thinking', text: '正在生成回复...' });
       var fallback = await callDeepSeek(
         [{ role: 'system', content: fullPrompt }, { role: 'user', content: userMessage }],
-        [], apiKey, activeSkill.temperature || 0.5, activeSkill.maxTokens || 4096,
+        [], apiKey, activeSkill.temperature || temp, maxTok,
       );
       content = fallback.choices?.[0]?.message?.content || '';
       if (content && onStreamChunk) {
@@ -294,7 +296,7 @@ async function runAgentLoop(userMessage, apiKey, onExec, onTodo, onStreamChunk) 
 
   for (let round = 0; round < 3; round++) {
     if (onStreamChunk) onStreamChunk({ type: 'thinking', text: round === 0 ? '分析问题...' : round === 1 ? '执行求解...' : '整理结果...' });
-    const resp = await callDeepSeek(messages, tools, apiKey, activeSkill.temperature || 0.2);
+    const resp = await callDeepSeek(messages, tools, apiKey, activeSkill.temperature || temp, maxTok);
 
     if (resp.error) break;
     const choice = resp.choices?.[0];
@@ -352,7 +354,10 @@ async function executeQuery(text, strategy, systemPrompt, images, onStreamChunk,
   const onTodo = apiKeys.onTodo || null;
 
   try {
-    const content = await runAgentLoop(text, apiKey, onExec, onTodo, onStreamChunk);
+    // Strategy → token/temperature mapping
+    var strategyConfig = { best_quality: { maxTokens: 4096, temperature: 0.3 }, cost_optimized: { maxTokens: 1024, temperature: 0.2 }, ensemble: { maxTokens: 8192, temperature: 0.5 } };
+    var stratCfg = strategyConfig[strategy] || strategyConfig.best_quality;
+    const content = await runAgentLoop(text, apiKey, onExec, onTodo, onStreamChunk, stratCfg);
     const elapsed = Date.now() - startTime;
     logger.info('Request completed', { tid, ms: elapsed });
 

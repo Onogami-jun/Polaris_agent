@@ -464,9 +464,6 @@ const App:React.FC=()=>{
   const confirmPlan=async()=>{if(!planId)return;const api=window.electronAPI;if(!api)return;setThk('执行中...');d(setStreaming(true));try{await api.plannerExecute(planId);setPlan(null);setPlanId('');setPlanProg(null);addExecLog('planner','done','计划执行完成');d(addMessage({sessionId:activeSessionId!,message:{id:'p'+Date.now(),role:'assistant',content:'计划已执行完成。',timestamp:Date.now(),model:'Planner'}}))}catch(e:any){addExecLog('planner','error',e.message);d(addMessage({sessionId:activeSessionId!,message:{id:'e'+Date.now(),role:'assistant',content:'执行失败: '+e.message,timestamp:Date.now()}}))}d(setStreaming(false));setThk('')};
   const rejectPlan=async()=>{const api=window.electronAPI;if(!api)return;await api.plannerReject(planId);setPlan(null);setPlanId('');setPlanProg(null);setExecLog(p=>p.filter(e=>e.tool!=='planner'))};
 
-  const activeModel=sc.settings.apiKeys.anthropic?'Claude Sonnet':sc.settings.apiKeys.openai?'GPT-4o':'DeepSeek';
-  const stratLabel=strategy==='best_quality'?'优质模式':strategy==='cost_optimized'?'极速模式':'协同验证';
-
   if(splash)return <Splash fade={splashFade} setupProgress={sandboxProg} setupError={sandboxErr}/>;
 
   // ── Onboarding (once) ──
@@ -576,8 +573,8 @@ const App:React.FC=()=>{
                 disabled={streaming} isStreaming={streaming}
                 onStop={()=>{stop.current=true;d(setStreaming(false));setThk('')}}
                 onCommand={()=>setCmd(true)}
-                statusText={stratLabel+' · '+activeModel+' · '+(web?'联网搜索':'本地引擎')}
                 toolbarRight={<WebSearchButton active={web}onClick={()=>setWeb(!web)}/>}
+                footer={<StrategySelector/>}
               />
             </div>
           </div>
@@ -591,13 +588,40 @@ const App:React.FC=()=>{
   </div>;
 };
 
+/* ── Strategy Selector ── */
+function StrategySelector(){
+  var d=useAppDispatch();var st=useAppSelector(function(s){return s.chat.strategy});
+  var modes=[
+    {id:'cost_optimized',label:'快速',icon:'⚡',hint:'轻量回复 · 低 token'},
+    {id:'best_quality',label:'优质',icon:'✦',hint:'标准回复 · 中 token'},
+    {id:'ensemble',label:'专家',icon:'◈',hint:'深度推理 · 高 token'},
+  ];
+  return React.createElement('div',{className:'flex items-center gap-1.5'},
+    React.createElement('span',{className:'text-[9px] text-muted-foreground/40 font-mono shrink-0'},'模式'),
+    modes.map(function(m,i){
+      var isActive=st===m.id;
+      return React.createElement('button',{
+        key:m.id,
+        onClick:function(){d(setStrategy(m.id));},
+        style:{border:'1px solid '+(isActive?'hsl(var(--primary)/.3)':'transparent'),background:isActive?'hsl(var(--primary)/.06)':'',borderRadius:'5px',padding:'2px 8px',cursor:'pointer',display:'flex',alignItems:'center',gap:'4px',transition:'all .15s',outline:'none'},
+        className:isActive?'':'hover:bg-muted/50',
+        title:m.hint,
+      },
+        React.createElement('span',{className:'text-[10px] opacity-50'},m.icon),
+        React.createElement('span',{className:'text-[10px] font-medium',style:{color:isActive?'hsl(var(--primary))':'hsl(var(--muted-foreground))'}},m.label),
+        isActive?React.createElement('span',{className:'text-[8px] font-mono',style:{color:'hsl(var(--primary)/.5)'}},m.hint.split('·')[1]?.trim()||''):null
+      );
+    })
+  );
+}
+
 /* ── Command Palette ── */
 function CmdPalette({onClose}:any){
   const d=useAppDispatch();const[q,setQ]=useState('');
   const cmds=[
     {id:'quality',l:'优质模式',a:()=>{d(setStrategy('best_quality'));onClose()}},
-    {id:'cost',l:'极速模式',a:()=>{d(setStrategy('cost_optimized'));onClose()}},
-    {id:'ensemble',l:'协同验证',a:()=>{d(setStrategy('ensemble'));onClose()}},
+    {id:'cost',l:'快速模式',a:()=>{d(setStrategy('cost_optimized'));onClose()}},
+    {id:'ensemble',l:'专家模式',a:()=>{d(setStrategy('ensemble'));onClose()}},
     {id:'new',l:'新建会话',a:()=>{d(ns());onClose()}},
     {id:'settings',l:'打开设置',a:()=>{d(toggleSettings());onClose()}},
   ].filter(x=>!q||x.l.toLowerCase().includes(q.toLowerCase()));
