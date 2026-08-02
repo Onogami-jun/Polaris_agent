@@ -67,6 +67,8 @@ const ToastC:React.FC<{toasts:any[]}>=({toasts})=>(
 
 /* ── Markdown ── */
 function md(t:string):string{
+// Pass through pre-formatted HTML (locked messages, inline buttons etc.)
+if(t.substr(0,4)==='<div'||t.substr(0,5)==='<span'||t.substr(0,3)==='<p>')return t;
 var BL="%%BLOCK%%";var BE="%%BEND%%";
 var blocks=[];var out="";var inB=false;var lang="";var bc="";
 for(var i=0;i<t.length;i++){
@@ -76,7 +78,13 @@ for(var i=0;i<t.length;i++){
   continue;}
  if(inB){bc+=t[i];}else{out+=t[i];}
 }
+// Step 1: Protect known HTML tags (inline buttons, locked messages)
+var htmlTags=[];
+out=out.replace(/(<\/?(?:div|button|b|p|span|strong|em|h[1-6]|li|ul|ol|br|hr|table|thead|tbody|tr|th|td|pre|code|a|img|input|label|form|select|option|textarea|svg|path|circle|line|polygon|polyline|rect|g|defs|use|clipPath|mask|filter)(?:\s[^>]*)?\/?>)/gi,function(m){htmlTags.push(m);return"<!--HTAG"+(htmlTags.length-1)+"-->";});
+// Step 2: Escape remaining text
 out=out.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+// Step 3: Restore protected HTML tags
+out=out.replace(/<!--HTAG(\d+)-->/g,function(_,idx){return htmlTags[parseInt(idx)];});
 out=out.replace(new RegExp(BL+"(\\d+)"+BE,"g"),function(_,idx){
  var b=blocks[parseInt(idx)];
  var ec=b.c.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
