@@ -367,7 +367,16 @@ const App:React.FC=()=>{
     var msgId='a'+Date.now();var modelName='';
     // Create placeholder message immediately — will update as streaming progresses
     d(addMessage({sessionId:sid,message:{id:msgId,role:'assistant',content:'',timestamp:Date.now()}}));
-    if(/优化|求解|排产|调度|指派|实验|对比|build|model|solve|benchmark|Benders|分解/.test(t)&&t.length>15){try{var pApi=window.electronAPI;if(pApi){var pp=await pApi.plannerGenerate(t);setPlan(pp);setPlanId(pp.id);addExecLog('planner','running','分析任务并生成计划...')}}catch{}}
+    if(/优化|求解|排产|调度|指派|实验|对比|build|model|solve|benchmark|Benders|分解/.test(t)&&t.length>15){try{var pApi=window.electronAPI;if(pApi){var pp=await pApi.plannerGenerate(t);setPlan(pp);setPlanId(pp.id);addExecLog('planner','running','分析任务并生成计划...');
+  // Auto-execute the plan immediately
+  var pid=pp.id;
+  setTimeout(async function(){
+    try{addExecLog('planner','running','自动执行研究计划...');
+    await pApi.plannerExecute(pid);setPlan(null);setPlanId('');setPlanProg(null);
+    addExecLog('planner','done','计划执行完成');
+    }catch(e2){addExecLog('planner','error',e2.message);}
+  },200);
+}}catch{}}
     try{
       var ctx=t;
       if(web){try{var{webSearch}=await import('./utils/search');var sr=await webSearch(t,settings.apiKeys.serper);if(sr.length>0&&!sr[0].title.includes('not configured'))ctx+='\n[Web]\n'+sr.map(function(x){return'- '+x.title+': '+x.snippet}).join('\n')}catch(e){}}

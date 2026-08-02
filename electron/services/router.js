@@ -245,17 +245,37 @@ async function runAgentLoop(userMessage, apiKey, onExec, onTodo, onStreamChunk) 
   // ── Inject Polaris persona ──
   const fullPrompt = POLARIS_PERSONA + '\n\n' + effectivePrompt + '\n\n' + envNote;
 
-  // ── Chat / Discuss: true streaming LLM ──
+  // ── Chat / Discuss: streaming first, fallback to non-streaming ──
   if (skillName === '对话模式' || skillName === '讨论模式' || skillName === 'chat' || skillName === 'discuss') {
     if (onExec) onExec({ tool: skillName, status: 'running', detail: '正在思考...' });
     if (onStreamChunk) onStreamChunk({ type: 'thinking', text: '正在分析你的问题...' });
-    const resp = await callDeepSeekStream(
-      [{ role: 'system', content: fullPrompt }, { role: 'user', content: userMessage }],
-      [], apiKey, activeSkill.temperature || 0.5, activeSkill.maxTokens || 4096,
-      onStreamChunk,
-    );
+
+    var content = '';
+    try {
+      var resp = await callDeepSeekStream(
+        [{ role: 'system', content: fullPrompt }, { role: 'user', content: userMessage }],
+        [], apiKey, activeSkill.temperature || 0.5, activeSkill.maxTokens || 4096,
+        onStreamChunk,
+      );
+      content = resp.choices?.[0]?.message?.content || '';
+    } catch(e) {
+      logger.warn('Streaming failed, falling back to non-streaming', { error: e.message });
+    }
+
+    // If streaming produced nothing, fall back to non-streaming
+    if (!content || content.trim().length < 5) {
+      if (onStreamChunk) onStreamChunk({ type: 'thinking', text: '正在生成回复...' });
+      var fallback = await callDeepSeek(
+        [{ role: 'system', content: fullPrompt }, { role: 'user', content: userMessage }],
+        [], apiKey, activeSkill.temperature || 0.5, activeSkill.maxTokens || 4096,
+      );
+      content = fallback.choices?.[0]?.message?.content || '';
+      if (content && onStreamChunk) {
+        onStreamChunk({ type: 'content', text: content, full: content });
+      }
+    }
+
     if (onExec) onExec({ tool: skillName, status: 'done', detail: '回答完成' });
-    const content = resp.choices?.[0]?.message?.content || '';
     return content.trim().length > 10 ? content : '嗯，让我再想想... 你想聊什么方向？';
   }
 

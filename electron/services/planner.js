@@ -151,21 +151,40 @@ class Planner {
 
         switch (step.action) {
 
-          case 'experiment':
-            // Run research pipeline via Python
+          case 'experiment': {
+            // Resolve Python (sandbox first, then system)
+            let python = null;
+            const sandboxPy = path.join(os.homedir(), 'AppData', 'Roaming', 'polaris-agent', 'sandbox', 'python.exe');
+            if (fs.existsSync(sandboxPy)) {
+              const r = spawnSync(sandboxPy, ['-c', 'print("OK")'], { timeout: 5000, encoding: 'utf8', windowsHide: true });
+              if (r.status === 0 && r.stdout.includes('OK')) python = sandboxPy;
+            }
+            if (!python) {
+              for (const cmd of ['python', 'python3']) {
+                const r = spawnSync(cmd, ['-c', 'print("OK")'], { timeout: 5000, encoding: 'utf8', windowsHide: true });
+                if (r.status === 0 && r.stdout.includes('OK')) { python = cmd; break; }
+              }
+            }
+            if (!python) {
+              result = { success: false, error: 'Python 未安装。请在设置 → 沙箱中一键部署 Python 环境。', action: 'experiment' };
+              if (onProgress) onProgress({ type: 'step_error', step: step.id, error: 'Python not found' });
+              break;
+            }
+
+            // Run research pipeline
             const sizes = '10,20,50';
             const solvers = 'highs,naive';
             const code = `from polaris.research import pipeline\nr = pipeline("knapsack", [${sizes}], "${solvers}".split(","), seed=42)\nprint(r.markdown_table())\nprint("===LATEX===")\nprint(r.latex_table())`;
-            const expResult = spawnSync('python', ['-c', code], { timeout: 300000, encoding: 'utf8' });
-            if (expResult.error) {
-              const expResult2 = spawnSync('python3', ['-c', code], { timeout: 300000, encoding: 'utf8' });
-              result = { success: true, output: expResult2.stdout?.trim() || expResult2.stderr?.trim() || 'No output', action: 'experiment' };
+            const expResult = spawnSync(python, ['-c', code], { timeout: 300000, encoding: 'utf8', windowsHide: true });
+            if (expResult.status === 0 || (expResult.stdout && expResult.stdout.trim())) {
+              result = { success: true, output: expResult.stdout?.trim() || expResult.stderr?.trim() || 'Experiment completed', action: 'experiment' };
             } else {
-              result = { success: true, output: expResult.stdout?.trim() || expResult.stderr?.trim() || 'No output', action: 'experiment' };
+              result = { success: false, error: (expResult.stderr || expResult.stdout || 'Experiment failed').slice(0, 500), action: 'experiment' };
+              if (onProgress) onProgress({ type: 'step_error', step: step.id, error: result.error });
             }
-            // Store for later steps
             this._lastExperimentOutput = result.output;
             break;
+          }
 
           case 'generate':
             // Generate tables from experiment data
