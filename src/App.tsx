@@ -70,33 +70,42 @@ const ToastC:React.FC<{toasts:any[]}>=({toasts})=>(
 
 /* ── Markdown ── */
 function md(t:string):string{
-// Use JSON string to avoid literal newline in regex (babel-safe)
-var NL='\\n';
-var codeBlockRe=new RegExp('```(\\w*)'+NL+'([\\s\\S]*?)```','g');
-var parts=[];var lastIdx=0;var match;
-while((match=codeBlockRe.exec(t))!==null){
-  var before=t.slice(lastIdx,match.index);
-  parts.push(escapeAndFormat(before));
-  var lang=match[1]||'plaintext';var rawCode=match[2]||'';
-  var escapedCode=rawCode.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-  parts.push('<div class="code-block my-3 rounded-lg border border-border overflow-hidden"><div class="flex items-center justify-between px-3 py-1.5 bg-muted border-b border-border"><span class="text-[10px] font-mono text-muted-foreground">'+lang+'</span><button onclick="copyCode(this)" class="text-[10px] text-muted-foreground hover:text-foreground font-mono transition-colors">复制</button></div><pre class="p-4 overflow-x-auto text-xs font-mono leading-relaxed"><code>'+hl(escapedCode,lang)+'</code></pre></div>');
-  lastIdx=match.index+match[0].length;
+var BL="%%BLOCK%%";var BE="%%BEND%%";
+var blocks=[];var out="";var inB=false;var lang="";var bc="";
+for(var i=0;i<t.length;i++){
+ if(t.substr(i,3)==="```"){
+  if(inB){blocks.push({l:lang,c:bc.trim()});out+=BL+(blocks.length-1)+BE;bc="";lang="";inB=false;i+=2;}
+  else{inB=true;i+=2;while(i+1<t.length&&t[i+1]!=="\n"[0]&&t[i+1]!=="\r"[0]){lang+=t[i+1];i++;}if(t[i+1]==="\r"[0])i++;i++;}
+  continue;}
+ if(inB){bc+=t[i];}else{out+=t[i];}
 }
-parts.push(escapeAndFormat(t.slice(lastIdx)));
-return'<p>'+parts.join('')+'</p>';}
+out=out.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+out=out.replace(new RegExp(BL+"(\\d+)"+BE,"g"),function(_,idx){
+ var b=blocks[parseInt(idx)];
+ var ec=b.c.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+ return "<div class=\"code-block my-3 rounded-lg border border-border overflow-hidden\"><div class=\"flex items-center justify-between px-3 py-1.5 bg-muted border-b border-border\"><span class=\"text-[10px] font-mono text-muted-foreground\">"+(b.l||"plaintext")+"</span><button onclick=\"copyCode(this)\" class=\"text-[10px] text-muted-foreground hover:text-foreground font-mono transition-colors\">复制</button></div><pre class=\"p-4 overflow-x-auto text-xs font-mono leading-relaxed\"><code>"+hl(ec,b.l)+"</code></pre></div>";
+	// -- Markdown Tables -> HTML --
+	var tableRe=new RegExp('(\\|.+\\|\\n)+(\\|[-:\\s]+\\|\\n)+(\\|.+\\|\\n?)+','g');
+	out=out.replace(tableRe,function(tb){
+	 var rows=tb.trim().split(/\n/);if(rows.length<3)return tb;
+	 var thead='<thead><tr>'+rows[0].replace(/^\|/,'').replace(/\|$/,'').split('|').map(function(c){return'<th class="px-3 py-2 text-left text-xs font-semibold border-b border-border">'+c.trim()+'</th>'}).join('')+'</tr></thead>';
+	 var tbody='<tbody>';
+	 for(var ri=2;ri<rows.length;ri++){tbody+='<tr>'+rows[ri].replace(/^\|/,'').replace(/\|$/,'').split('|').map(function(c){return'<td class="px-3 py-2 text-xs border-b border-border/50">'+c.trim()+'</td>'}).join('')+'</tr>';}
+	 tbody+='</tbody>';
+	 return'<div class="my-3 overflow-x-auto rounded-lg border border-border"><table class="w-full">'+thead+tbody+'</table></div>';
+	});
+});
+out=out.replace(/`([^`]+)`/g,'<code class="bg-muted px-1.5 py-0.5 rounded text-xs font-mono text-primary">$1</code>');
+out=out.replace(/\*\*(.+?)\*\*/g,'<strong class="font-semibold">$1</strong>');
+out=out.replace(/\*(.+?)\*/g,'<em class="text-muted-foreground">$1</em>');
+out=out.replace(/^### (.+)/gm,'<h3 class="text-sm font-semibold mt-4 mb-2">$1</h3>');
+out=out.replace(/^## (.+)/gm,'<h2 class="text-base font-semibold mt-5 mb-3">$1</h2>');
+out=out.replace(/^# (.+)/gm,'<h1 class="text-lg font-bold mt-5 mb-3 pb-2 border-b border-border">$1</h1>');
+out=out.replace(/^[-*] (.+)/gm,'<li class="ml-4 text-sm">$1</li>');
+var br2=new RegExp('\\n\\n','g');out=out.replace(br2,'<br/><br/>');
+var br1=new RegExp('\\n','g');out=out.replace(br1,'<br/>');
+return'<p>'+out+'</p>';}
 
-function escapeAndFormat(s:string):string{
-var h=s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-h=h.replace(/`([^`]+)`/g,'<code class="bg-muted px-1.5 py-0.5 rounded text-xs font-mono text-primary">$1</code>');
-h=h.replace(/\*\*(.+?)\*\*/g,'<strong class="font-semibold">$1</strong>');
-h=h.replace(/\*(.+?)\*/g,'<em class="text-muted-foreground">$1</em>');
-h=h.replace(/^### (.+)/gm,'<h3 class="text-sm font-semibold mt-4 mb-2">$1</h3>');
-h=h.replace(/^## (.+)/gm,'<h2 class="text-base font-semibold mt-5 mb-3">$1</h2>');
-h=h.replace(/^# (.+)/gm,'<h1 class="text-lg font-bold mt-5 mb-3 pb-2 border-b border-border">$1</h1>');
-h=h.replace(/^[-*] (.+)/gm,'<li class="ml-4 text-sm">$1</li>');
-var rr2=new RegExp('\\n\\n');h=h.replace(rr2,'<br/><br/>');
-var rr1=new RegExp('\\n');h=h.replace(rr1,'<br/>');
-return h;}
 function hl(c:string,l:string):string{
 var kw={js:'const let var function return if else for while class export import async await'.split(' '),py:'def return if elif else for while class import from async await try except'.split(' ')};
 var words=kw[l]||[];var o=c;
@@ -364,11 +373,8 @@ const App:React.FC=()=>{
     const sid=activeSessionId||'default';setInp('');setFs([]);
     if(!rgn){d(addMessage({sessionId:sid,message:{id:'u'+Date.now(),role:'user',content:t,timestamp:Date.now()}}))}
     d(setStreaming(true));setThinking('');
-    var msgId='a'+Date.now();var modelName='';
-    // Create placeholder message immediately — will update as streaming progresses
-    d(addMessage({sessionId:sid,message:{id:msgId,role:'assistant',content:'',timestamp:Date.now()}}));
+    var msgId='a'+Date.now();var modelName='';var hasAdded=false;
     if(/优化|求解|排产|调度|指派|实验|对比|build|model|solve|benchmark|Benders|分解/.test(t)&&t.length>15){try{var pApi=window.electronAPI;if(pApi){var pp=await pApi.plannerGenerate(t);setPlan(pp);setPlanId(pp.id);addExecLog('planner','running','分析任务并生成计划...');
-  // Auto-execute the plan immediately
   var pid=pp.id;
   setTimeout(async function(){
     try{addExecLog('planner','running','自动执行研究计划...');
@@ -382,33 +388,32 @@ const App:React.FC=()=>{
       if(web){try{var{webSearch}=await import('./utils/search');var sr=await webSearch(t,settings.apiKeys.serper);if(sr.length>0&&!sr[0].title.includes('not configured'))ctx+='\n[Web]\n'+sr.map(function(x){return'- '+x.title+': '+x.snippet}).join('\n')}catch(e){}}
       var streamApi=window.electronAPI;if(!streamApi)throw new Error('Electron API not ready');
       var fullContent='';var routingInfo=null;
-      // True streaming: update Redux on every chunk
+      // True streaming: add message on first content, then update incrementally
       streamApi.onStreamChunk(function(chunk){
         if(stop.current)return;
         if(chunk.type==='thinking'){setThinking(chunk.text||'');}
         else if(chunk.type==='content'){
           fullContent=chunk.full||fullContent;setThk('');
-          // Incremental render — React re-renders the message with new content
-          d(updateLastAssistant({sessionId:sid,content:fullContent}));
+          if(!hasAdded){hasAdded=true;d(addMessage({sessionId:sid,message:{id:msgId,role:'assistant',content:fullContent,timestamp:Date.now()}}));}
+          else{d(updateLastAssistant({sessionId:sid,content:fullContent}));}
         }
         else if(chunk.type==='tool_call'){setThinking('调用工具...');}
       });
       streamApi.onStreamEnd(function(res){
         if(stop.current)return;
         routingInfo=res?.routing;modelName=res?.routing?.selected_models?.join(', ')||'';
-        if((!fullContent||fullContent.trim().length===0)&&res?.responses){
-          fullContent=(res.responses||[]).map(function(r){return r?.content||''}).join('\n\n')||'';
-          d(updateLastAssistant({sessionId:sid,content:fullContent,model:modelName,routing:{intent:res?.routing?.top_intent,models:res?.routing?.selected_models||[],rationale:res?.routing?.rationale||''}}));
-        }else{
-          d(updateLastAssistant({sessionId:sid,content:fullContent,model:modelName,routing:{intent:res?.routing?.top_intent,models:res?.routing?.selected_models||[],rationale:res?.routing?.rationale||''}}));
+        if(hasAdded){d(updateLastAssistant({sessionId:sid,content:fullContent,model:modelName,routing:{intent:res?.routing?.top_intent,models:res?.routing?.selected_models||[],rationale:res?.routing?.rationale||''}}));}
+        else{
+          if(!fullContent||fullContent.trim().length===0){if(res?.responses){fullContent=(res.responses||[]).map(function(r){return r?.content||''}).join('\n\n')||'';}}
+          if(!fullContent||fullContent.trim().length===0){showToast('服务器返回空回复','warn');fullContent='*[空回复]*';}
+          d(addMessage({sessionId:sid,message:{id:msgId,role:'assistant',content:fullContent,timestamp:Date.now(),model:modelName||'',routing:{intent:res?.routing?.top_intent,models:res?.routing?.selected_models||[],rationale:res?.routing?.rationale||''}}}));
         }
-        if(!fullContent||fullContent.trim().length===0){showToast('服务器返回空回复','warn');}
         d(incrementUsage());d(setStreaming(false));setThinking('');setThk('');
         streamApi.removeStreamListeners();
       });
       // Safety: 30s timeout
       var safetyTimer=setTimeout(function(){
-        if(!fullContent){fullContent='*响应超时*';d(updateLastAssistant({sessionId:sid,content:fullContent}));}
+        if(!hasAdded){fullContent=fullContent||'*响应超时*';d(addMessage({sessionId:sid,message:{id:msgId,role:'assistant',content:fullContent,timestamp:Date.now()}}));}
         d(incrementUsage());d(setStreaming(false));setThinking('');setThk('');
         streamApi.removeStreamListeners();
       },30000);

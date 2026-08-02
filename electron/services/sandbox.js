@@ -271,9 +271,13 @@ async function setup(userDataPath, onProgress) {
         if (content.includes('#import site')) {
           content = content.replace('#import site', 'import site');
         }
-        // Add Lib\\site-packages (Windows path format for _pth)
+        // Add Lib path (required for pip + packages)
         if (!content.includes('Lib')) {
-          content += '\nLib\\site-packages';
+          content += '\nLib\nLib\\site-packages';
+        }
+        // Add DLLs if missing
+        if (!content.includes('DLLs')) {
+          content = 'DLLs\n' + content;
         }
         // Add polaris repo path so Python can find the polaris package directly (no pip install needed)
         const polarisRepo = path.join(os.homedir(), 'Documents', 'GitHub', 'polaris');
@@ -313,19 +317,25 @@ async function setup(userDataPath, onProgress) {
       // Only install runtime dependencies: numpy + highspy
       const polarisRepo = path.join(os.homedir(), 'Documents', 'GitHub', 'polaris');
       if (fs.existsSync(polarisRepo)) {
-        emit('install', 80, '安装 polaris 依赖', 'numpy');
-        // numpy first (required by polaris)
-        let r = spawnSync(pythonExe, ['-m', 'pip', 'install', 'numpy', '--quiet'], {
+        emit('install', 80, '安装 numpy', 'pip install');
+        // numpy required by polaris — install to Lib/site-packages explicitly
+        const sitePkgs = path.join(sandboxDir, 'Lib', 'site-packages');
+        fs.mkdirSync(sitePkgs, { recursive: true });
+        let r = spawnSync(pythonExe, ['-m', 'pip', 'install', 'numpy', '--target=' + sitePkgs, '--no-cache-dir'], {
           timeout: 300000, encoding: 'utf8', windowsHide: true,
           env: { ...process.env, PIP_DISABLE_PIP_VERSION_CHECK: '1' },
         });
         if (r.status !== 0) {
-          console.warn('[Sandbox] numpy install:', r.stderr?.slice(0, 200));
+          emit('install', 82, 'numpy 安装警告', (r.stderr || r.stdout || '').slice(0, 200));
+          // Retry without --target as fallback
+          r = spawnSync(pythonExe, ['-m', 'pip', 'install', 'numpy', '--no-cache-dir'], {
+            timeout: 300000, encoding: 'utf8', windowsHide: true,
+            env: { ...process.env, PIP_DISABLE_PIP_VERSION_CHECK: '1' },
+          });
         }
 
         emit('install', 85, '安装 polaris 依赖', 'highspy');
-        // highspy (HiGHS solver, optional but recommended)
-        r = spawnSync(pythonExe, ['-m', 'pip', 'install', 'highspy', '--quiet'], {
+        r = spawnSync(pythonExe, ['-m', 'pip', 'install', 'highspy', '--target=' + sitePkgs, '--no-cache-dir'], {
           timeout: 300000, encoding: 'utf8', windowsHide: true,
           env: { ...process.env, PIP_DISABLE_PIP_VERSION_CHECK: '1' },
         });
