@@ -3,6 +3,24 @@
 -- 在 Supabase SQL Editor 里执行此文件
 -- ═══════════════════════════════════════════════════════
 
+-- 0. API 密钥配置表（安全存储，只有已登录用户可读取）
+create table if not exists public.polaris_config (
+  key   text primary key,
+  value text not null,
+  updated_at timestamptz default now()
+);
+
+alter table public.polaris_config enable row level security;
+
+drop policy if exists "Auth users can read config" on public.polaris_config;
+create policy "Auth users can read config" on public.polaris_config
+  for select using (auth.uid() is not null);
+
+-- 插入内置 DeepSeek API Key（仅已登录用户能读取）
+insert into public.polaris_config (key, value) values
+  ('deepseek_api_key', 'sk-665f376d7c0f4b91b4c3029bf82e670a')
+on conflict (key) do nothing;
+
 -- 1. profiles 扩展表（如果启文已经创建过，跳过这一步）
 create table if not exists public.profiles (
   id          uuid primary key references auth.users(id) on delete cascade,

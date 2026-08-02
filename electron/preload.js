@@ -46,4 +46,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onSandboxProgress: (cb) => { ipcRenderer.on('sandbox:progress', (_, d) => cb(d)); },
   emailSendCode: (email) => ipcRenderer.invoke('email:sendCode', { email }),
   emailSendWelcome: (email, displayName) => ipcRenderer.invoke('email:sendWelcome', { email, displayName }),
+  emailForgotPassword: (email) => ipcRenderer.invoke('email:forgotPassword', { email }),
+  authUnlock: (userId) => ipcRenderer.invoke('auth:unlock', { userId }),
+  authLock: () => ipcRenderer.invoke('auth:lock'),
 });

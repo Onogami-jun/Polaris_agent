@@ -34,13 +34,21 @@ function saveUsageCount(n: number) { localStorage.setItem('polaris_usage_count',
 export const restoreAuth = createAsyncThunk('auth/restore', async () => {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) return null;
-  return getCurrentUser();
+  var user = await getCurrentUser();
+  if (user && typeof window !== 'undefined' && (window as any).electronAPI) {
+    (window as any).electronAPI.authUnlock(user.id).catch(() => {});
+  }
+  return user;
 });
 
 export const loginUser = createAsyncThunk('auth/login', async ({ email, password }: { email: string; password: string }, { rejectWithValue }) => {
   const { data, error } = await supabase.auth.signInWithPassword({ email, password });
   if (error) return rejectWithValue(error.message);
-  return getCurrentUser();
+  var user = await getCurrentUser();
+  if (user && typeof window !== 'undefined' && (window as any).electronAPI) {
+    (window as any).electronAPI.authUnlock(user.id).catch(() => {});
+  }
+  return user;
 });
 
 export const registerUser = createAsyncThunk('auth/register', async ({ email, password, displayName }: { email: string; password: string; displayName: string }, { rejectWithValue }) => {
@@ -69,6 +77,10 @@ export const registerUser = createAsyncThunk('auth/register', async ({ email, pa
 
 export const logoutUser = createAsyncThunk('auth/logout', async () => {
   await supabase.auth.signOut();
+  // Lock API key
+  if (typeof window !== 'undefined' && (window as any).electronAPI) {
+    (window as any).electronAPI.authLock().catch(() => {});
+  }
 });
 
 /* ── Slice ──────────────────────────────────────── */

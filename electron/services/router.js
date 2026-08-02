@@ -4,13 +4,16 @@
 const https = require('https');
 const { TOOLS } = require('./tools');
 const logger = require('./logger');
-const { reliableSolve, diagnose } = require('./reliability');
+const { reliableSolve, diagnose, setReliabilityKey } = require('./reliability');
 const { SkillManager } = require('./skills');
 const { runPipeline } = require('./subagents');
 const { buildAgentCapabilityNote } = require('./health_check');
 const { POLARIS_PERSONA } = require('./persona');
 
-const DEFAULT_KEY = 'sk-665f376d7c0f4b91b4c3029bf82e670a';
+// API key supplied by main process after successful auth (never hardcoded)
+let _envKey = null;
+function setApiKey(k) { _envKey = k; setReliabilityKey(k); }
+function getApiKey() { return _envKey; }
 const skillManager = new SkillManager();
 
 /* ── Health cache ──────────────────────────────────────── */
@@ -129,7 +132,7 @@ async function executeTool(name, args, onExec) {
  * Returns the full message (content + optional tool_calls).
  */
 function callDeepSeekStream(messages, tools, apiKey, temperature, maxTokens, onChunk) {
-  const key = apiKey || DEFAULT_KEY;
+  const key = apiKey || getApiKey();
   const payload = {
     model: 'deepseek-v4-flash', messages,
     stream: true,
@@ -210,7 +213,7 @@ function callDeepSeekStream(messages, tools, apiKey, temperature, maxTokens, onC
  * Non-streaming fallback
  */
 function callDeepSeek(messages, tools, apiKey, temperature, maxTokens) {
-  const key = apiKey || DEFAULT_KEY;
+  const key = apiKey || getApiKey();
   return new Promise(resolve => {
     const payload = { model: 'deepseek-v4-flash', messages, max_tokens: maxTokens || 4096, temperature: temperature || 0.3 };
     if (tools && tools.length > 0) { payload.tools = tools; payload.tool_choice = 'auto'; }
@@ -341,7 +344,7 @@ async function runAgentLoop(userMessage, apiKey, onExec, onTodo, onStreamChunk) 
 
 async function executeQuery(text, strategy, systemPrompt, images, onStreamChunk, apiKeys = {}) {
   const startTime = Date.now();
-  const apiKey = apiKeys.deepseek || apiKeys.anthropic || DEFAULT_KEY;
+  const apiKey = apiKeys.deepseek || apiKeys.anthropic || getApiKey();
   const tid = logger.newTraceId();
   logger.info('Request received', { tid, text: text.slice(0, 80) });
 
@@ -377,4 +380,4 @@ async function executeQuery(text, strategy, systemPrompt, images, onStreamChunk,
   }
 }
 
-module.exports = { executeQuery };
+module.exports = { executeQuery, setApiKey, getApiKey };

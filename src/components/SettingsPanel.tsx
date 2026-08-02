@@ -97,6 +97,7 @@ const SettingsPanel: React.FC = () => {
             {TABS.map(tb => (
               <button
                 key={tb.id}
+                data-tab={tb.id}
                 onClick={() => setTab(tb.id)}
                 className={'w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all ' + (tab === tb.id ? 'bg-primary/10 text-primary font-medium' : 'text-muted-foreground hover:text-foreground hover:bg-muted')}
               >
@@ -140,6 +141,12 @@ const SettingsPanel: React.FC = () => {
                 </Row>
                 <Row label="上下文记忆" hint="跨对话记住用户偏好">
                   <Toggle on={s.memory.enabled} onClick={() => dispatch(updateAgentConfig({ webSearch: !s.agent.webSearch }))} />
+                </Row>
+                <Row label="显示引导页" hint="重新显示首次启动引导">
+                  <Button variant="outline" size="sm" className="h-7 text-[10px]" onClick={() => {
+                    localStorage.removeItem('polaris_onboarding_done');
+                    window.location.reload();
+                  }}>重新引导</Button>
                 </Row>
 
                 <div className="pt-4 border-t border-border mt-4">

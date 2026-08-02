@@ -1,11 +1,12 @@
 // @ts-nocheck
 import React,{useState,useCallback,useRef,useEffect}from'react';
 import{useAppSelector,useAppDispatch}from'./store';
-import{addMessage,updateLastAssistant,editMessage,loadSessions as lr,newSession as ns,setActiveSession,setStreaming,setStrategy,toggleSettings,setTheme,deleteSession,branchSession,setEngineStatus}from'./store/chatSlice';
+import{addMessage,updateLastAssistant,editMessage,loadSessions as lr,newSession as ns,setActiveSession,setStreaming,setStrategy,toggleSettings,setTheme,setLanguage,setFontSize,setApiKey,updateAgentConfig,setMascotSettings,updateThirdParty,updateProxy,deleteSession,branchSession,setEngineStatus}from'./store/chatSlice';
 import{restoreAuth,incrementUsage,openLoginModal,logoutUser}from'./store/authSlice';
-import{saveSessions,loadSessions as ld}from'./store/persist';
+import{saveSessions,loadSettings as loadSet,saveSettings as saveSet,loadSessions as ld}from'./store/persist';
 import SettingsPanel from'./components/SettingsPanel';
 import{LoginModal}from'./components/LoginModal';
+import{Onboarding,ONBOARDING_KEY}from'./components/Onboarding';
 import{AuthBanner}from'./components/AuthBanner';
 import{Mascot}from'./components/Mascot';
 import{Button}from'./components/ui/button';
@@ -18,13 +19,10 @@ import{
   Message,
   MessageInput,WebSearchButton,
   MessageActions,CopyButton,RetryButton,EditButton,BranchButton,DownloadButton,
-  Thinking,Reasoning,
-  SuggestionsList
+  Thinking,Reasoning
 }from'./components/ai';
 
 if(typeof window!=='undefined')(window).copyCode=function(btn){var pre=btn.closest('.code-block')?.querySelector('pre code');var text=pre?.textContent||'';navigator.clipboard.writeText(text).then(function(){btn.textContent='已复制';setTimeout(function(){btn.textContent='复制'},1500)}).catch(function(){})};
-
-const SUGGESTIONS=['背包容量50，3件物品价值60 100 120，重量10 20 30','排产5个任务，处理时间2 3 1 4 2','指派4个工人，成本10 2 8 7  5 12 3 6','车辆路径，5个客户，需求量1 2 1 3 2，车辆容量5'];
 
 /* ── Splash (auto-sandbox) ── */
 const Splash=({fade,setupProgress,setupError}:{fade:boolean;setupProgress:any;setupError:string})=>{
@@ -242,11 +240,15 @@ function LeftSidebar({sessions,activeId,pct,onSelect,onNew,onDelete,onOpenSettin
       <div className="flex items-center gap-2 px-3 py-2 text-[9px] text-muted-foreground font-mono">
         <div className="flex-1 h-1 bg-muted rounded-full overflow-hidden"><div className="h-full bg-primary rounded-full transition-all duration-500"style={{width:pct+'%'}}/></div>
       </div>
-      {/* Settings + Login buttons */}
+      {/* Settings + Lab + Login buttons */}
       <div className="px-2 py-1.5 space-y-1 border-t border-border">
         <button onClick={onOpenSettings} className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs text-muted-foreground hover:text-foreground hover:bg-muted transition-all">
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="8" cy="8" r="2.5"/><path d="M8 1v2m0 10v2M1 8h2m10 0h2"/></svg>
           <span>设置</span>
+        </button>
+        <button onClick={() => { onOpenSettings(); setTimeout(() => { var el = document.querySelector('[data-tab="lab"]'); if (el) (el as HTMLElement).click(); }, 100); }} className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs text-muted-foreground hover:text-foreground hover:bg-muted transition-all">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M5 2v6l-3 4h12l-3-4V2"/><line x1="8" y1="11" x2="8" y2="14"/><line x1="3" y1="12" x2="13" y2="12"/></svg>
+          <span>实验 Lab</span>
         </button>
         {auth.user ? (
           <button onClick={() => d(logoutUser())} className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs text-muted-foreground hover:text-foreground hover:bg-muted transition-all">
@@ -291,6 +293,7 @@ const App:React.FC=()=>{
   const[cid,setCid]=useState('');const[web,setWeb]=useState(false);
   const[cmd,setCmd]=useState(false);
   const[splash,setSplash]=useState(true);const[splashFade,setSplashFade]=useState(false);
+  const[showOnboarding,setShowOnboarding]=useState(false);
   const mascotCfg = useAppSelector(s => s.chat.settings.mascot);
   const splashRef=useRef(true);
   const[sandboxProg,setSandboxProg]=useState<any>(null);const[sandboxErr,setSandboxErr]=useState('');
@@ -326,6 +329,10 @@ const App:React.FC=()=>{
   },[]);
   useEffect(()=>{document.documentElement.classList.toggle('dark',settings.theme==='dark');document.documentElement.style.fontSize=settings.fontSize+'px';d(restoreAuth());const s=ld();if(s.length>0)d(lr(s))},[]);
   useEffect(()=>{if(sessions.length>0){const t=setTimeout(()=>saveSessions(sessions),500);return()=>clearTimeout(t)}},[sessions]);
+  // Persist settings to localStorage on every change
+  useEffect(()=>{const t=setTimeout(()=>saveSet(settings),300);return()=>clearTimeout(t)},[settings]);
+  // Load persisted settings on startup
+  useEffect(()=>{var saved=loadSet();if(saved&&Object.keys(saved).length>0){if(saved.theme)d(setTheme(saved.theme));if(saved.language)d(setLanguage(saved.language));if(saved.fontSize)d(setFontSize(saved.fontSize));if(saved.apiKeys){Object.keys(saved.apiKeys).forEach(function(k){d(setApiKey({provider:k,key:saved.apiKeys[k]||''}));})}if(saved.agent)d(updateAgentConfig(saved.agent));if(saved.mascot)d(setMascotSettings(saved.mascot||{}));if(saved.thirdParty)d(updateThirdParty(saved.thirdParty));if(saved.proxy)d(updateProxy(saved.proxy));}},[]);
   useEffect(()=>{const h=(e:KeyboardEvent)=>{if((e.ctrlKey||e.metaKey)&&e.key==='p'){e.preventDefault();setCmd(true)}if(e.key==='Escape'){stop.current=true;d(setStreaming(false));setThk('');setCmd(false)}if((e.ctrlKey||e.metaKey)&&e.key==='n'){e.preventDefault();d(ns())}if((e.ctrlKey||e.metaKey)&&e.key===','){e.preventDefault();d(toggleSettings())}};window.addEventListener('keydown',h);return()=>window.removeEventListener('keydown',h)},[d]);
   useEffect(()=>{const api=window.electronAPI;if(!api)return;api.monitorStart();api.onIntervention((card:any)=>{card.ts=Date.now();setInterventions(p=>[...p.slice(-4),card])});api.onPlanProgress((data:any)=>setPlanProg(data));api.onExecLog((data:any)=>{addExecLog(data.tool,data.status,data.detail||'')});api.onTodoUpdate((data:any)=>{if(data.steps)setTodoSteps(data.steps)});api.onStreamError((ed:any)=>{showToast('Stream Error: '+(ed?.message||'未知'),'error');dispatchRef.current(setStreaming(false));setThk('')});
   // Health check
@@ -412,6 +419,10 @@ const App:React.FC=()=>{
 
   if(splash)return <Splash fade={splashFade} setupProgress={sandboxProg} setupError={sandboxErr}/>;
 
+  // ── Onboarding (once) ──
+  if(!localStorage.getItem(ONBOARDING_KEY)&&!showOnboarding){setShowOnboarding(true);}
+  if(showOnboarding)return <Onboarding onDone={()=>setShowOnboarding(false)}/>;
+
   // Precompute conditional panels to avoid Babel TSX parse issues
   var leftPanel = null;
   if (leftOpen) {
@@ -453,10 +464,7 @@ const App:React.FC=()=>{
     msgList = <ConversationEmpty
       icon={<span>✦</span>}
       title="描述你的优化问题"
-      description="用自然语言描述优化问题——背包、排产、指派、调度——Polaris 自动建模并求解"
-    >
-      <SuggestionsList suggestions={SUGGESTIONS} onSelect={(s)=>{setInp(s);setTimeout(()=>{var el=document.querySelector('textarea');if(el)el.focus()},50)}} showIcons/>
-    </ConversationEmpty>;
+    />;
   } else {
     msgList = act.messages.map((m:any,i:number)=>{
       if (m.role==='user') return <Message key={m.id} from="user" index={i}>{m.content}</Message>;

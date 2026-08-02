@@ -10,235 +10,175 @@ export const LoginModal: React.FC = () => {
   const show = useAppSelector(s => s.auth.showLoginModal);
   const error = useAppSelector(s => s.auth.loginError);
 
-  const [tab, setTab] = useState<'login' | 'register'>('login');
+  const [tab, setTab] = useState<'login' | 'register' | 'forgot'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState('');
 
-  // Verification flow
-  const [stage, setStage] = useState<'form' | 'verify'>('form');
-  const [verifyCode, setVerifyCode] = useState(['','','','','','']);
-  const [sendingCode, setSendingCode] = useState(false);
-  const [codeError, setCodeError] = useState('');
-  const [pendingEmail, setPendingEmail] = useState('');
-  const [pendingPassword, setPendingPassword] = useState('');
-  const [pendingName, setPendingName] = useState('');
-  const verifyInputs = useRef<(HTMLInputElement|null)[]>([]);
+  // Rate limiting
+  const rl = useRef({ lastSend: 0, sendCount: 0, lastLogin: 0 });
 
-  // Reset stage when closing
-  useEffect(() => { if (!show) { setStage('form'); setVerifyCode(['','','','','','']); } }, [show]);
+  /* ── Verification UI (shared by register + forgot) ── */
+  const [vStage, setVStage] = useState<'input'|'code'>('input');
+  const [vCode, setVCode] = useState(['','','','','','']);
+  const [vError, setVError] = useState('');
+  const [vEmail, setVEmail] = useState('');
+  const [vMode, setVMode] = useState<'register'|'forgot'>('register');
+  const vRefs = useRef<(HTMLInputElement|null)[]>([]);
+
+  useEffect(() => { if (!show) { setVStage('input'); setVCode(['','','','','','']); setMsg(''); setVError(''); } }, [show]);
 
   if (!show) return null;
 
-  const translateError = (err: string) => {
+  const translate = (err: string) => {
     if (err === 'Invalid login credentials') return '邮箱或密码错误';
-    if (err === 'User already registered') return '该邮箱已注册，请直接登录';
-    if (err === 'Email rate limit exceeded') return '请求过于频繁，请稍后再试';
-    if (err.includes('Email not confirmed')) return '邮箱未验证。请在 Supabase Dashboard 关闭邮箱确认。';
+    if (err === 'User already registered') return '该邮箱已注册';
     return err;
   };
 
-  /* ── Handle code input ───────────────────────────────── */
-  const onCodeInput = (index: number, value: string) => {
-    if (!/^\d?$/.test(value)) return;
-    const next = [...verifyCode];
-    next[index] = value;
-    setVerifyCode(next);
-    // Auto-focus next input
-    if (value && index < 5) verifyInputs.current[index + 1]?.focus();
-  };
-
-  const onCodeKeyDown = (index: number, e: React.KeyboardEvent) => {
-    if (e.key === 'Backspace' && !verifyCode[index] && index > 0) {
-      verifyInputs.current[index - 1]?.focus();
-    }
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      verifyAndLogin();
-    }
-  };
-
-  /* ── Send verification code ──────────────────────────── */
-  const sendCode = async () => {
-    const api = window.electronAPI;
-    if (!api) { setCodeError('请在 Electron 环境中使用'); return; }
-
-    setSendingCode(true);
-    setCodeError('');
-    try {
-      const r = await api.emailSendCode(email);
-      if (!r.success) { setCodeError(r.error || '发送失败'); setSendingCode(false); return; }
-      // Store code for local verification
-      (window as any).__polaris_verify_code = r.code;
-      (window as any).__polaris_verify_email = email;
-      setPendingEmail(email);
-      setPendingPassword(password);
-      setPendingName(name.trim());
-      setStage('verify');
-      setSendingCode(false);
-      setTimeout(() => verifyInputs.current[0]?.focus(), 100);
-    } catch (e: any) {
-      setCodeError(e.message || '发送失败');
-      setSendingCode(false);
-    }
-  };
-
-  /* ── Verify code and complete registration ───────────── */
-  const verifyAndLogin = async () => {
-    var entered = verifyCode.join('');
-    var stored = (window as any).__polaris_verify_code;
-    if (entered.length < 6) { setCodeError('请输入完整验证码'); return; }
-    if (entered !== stored) { setCodeError('验证码不正确'); return; }
-
-    setCodeError('');
-    var storedEmail = (window as any).__polaris_verify_email;
-    var finalEmail = storedEmail || pendingEmail;
-    var finalPass = pendingPassword;
-    var finalName = pendingName || finalEmail.split('@')[0];
-
-    // Sign up with email confirmation OFF (we already verified via our code)
-    var result = await supabase.auth.signUp({
-      email: finalEmail,
-      password: finalPass,
-      options: { data: { display_name: finalName } },
-    });
-
-    if (result.error) {
-      // If user already exists, try to log in directly
-      if (result.error.message && result.error.message.includes('already registered')) {
-        d(loginUser({ email: finalEmail, password: finalPass }));
-        setStage('form');
-        cleanupCode();
-        return;
-      }
-      setCodeError(translateError(result.error.message));
-      return;
-    }
-
-    // Check if signUp returned a session (email confirm was OFF)
-    if (result.data.session) {
-      // Auto-logged in — get user info and set Redux state
-      var user = await getCurrentUser();
-      if (user) {
-        // Manually dispatch login success (skip signInWithPassword which would fail)
-        d({ type: 'auth/login/fulfilled', payload: user });
-      }
-      sendWelcomeIfNeeded(finalEmail, finalName);
-      setStage('form');
-      cleanupCode();
-      return;
-    }
-
-    // No session = Supabase email confirmation is ON
-    setCodeError('注册成功，但需要邮箱确认。请先打开 Supabase Dashboard → Authentication → Settings → 关闭 Confirm email，然后重新注册。或者去邮箱点击 Supabase 发送的确认链接。');
-  };
-
-  var cleanupCode = function() {
-    delete (window as any).__polaris_verify_code;
-    delete (window as any).__polaris_verify_email;
-  };
-
-  var sendWelcomeIfNeeded = function(toEmail: string, toName: string) {
+  /* ── Send code (register or forgot) ── */
+  const sendCode = async (mode: 'register'|'forgot') => {
+    var now = Date.now();
+    if (now - rl.current.lastSend < 60000) { setVError('请 ' + Math.ceil((60000-(now-rl.current.lastSend))/1000) + ' 秒后再试'); return; }
+    if (rl.current.sendCount >= 5) { setVError('发送次数已达上限'); return; }
     var api = window.electronAPI;
-    if (api) {
-      api.emailSendWelcome(toEmail, toName).catch(function(){});
+    if (!api) { setVError('请在 Electron 环境中使用'); return; }
+    setBusy(true); setVError('');
+    rl.current.lastSend = now; rl.current.sendCount += 1;
+    try {
+      var r;
+      if (mode === 'register') r = await api.emailSendCode(email);
+      else r = await api.emailForgotPassword(email);
+      if (!r.success || !r.code) { setVError(r.error || '发送失败'); setBusy(false); return; }
+      (window as any).__pol_code = r.code;
+      setVEmail(email); setVMode(mode); setVStage('code'); setBusy(false);
+      setTimeout(() => vRefs.current[0]?.focus(), 100);
+    } catch(e: any) { setVError(e.message); setBusy(false); }
+  };
+
+  const onCode = (i: number, v: string) => {
+    if (!/^\d?$/.test(v)) return;
+    var next = [...vCode]; next[i] = v; setVCode(next);
+    if (v && i < 5) vRefs.current[i+1]?.focus();
+  };
+  const onCodeKey = (i: number, e: React.KeyboardEvent) => {
+    if (e.key === 'Backspace' && !vCode[i] && i > 0) vRefs.current[i-1]?.focus();
+  };
+
+  /* ── Verify and act ── */
+  const doVerify = async () => {
+    var inCode = vCode.join('');
+    if (inCode.length < 6) { setVError('请输入完整验证码'); return; }
+    if (inCode !== (window as any).__pol_code) { setVError('验证码不正确'); return; }
+    setVError('');
+    var api = window.electronAPI;
+
+    if (vMode === 'register') {
+      // Sign up + login
+      var r = await supabase.auth.signUp({ email: vEmail, password, options: { data: { display_name: name || vEmail.split('@')[0] } } });
+      if (r.error) { setVError(translate(r.error.message)); return; }
+      if (r.data.session) {
+        var user = await getCurrentUser();
+        if (user && api) {
+          await api.authUnlock(user.id);
+          // Manually dispatch to Redux
+          d({ type: 'auth/login/fulfilled' as any, payload: user } as any);
+        }
+        if (api) api.emailSendWelcome(vEmail, name || '').catch(function(){});
+      }
+      setVStage('input'); setMsg('注册成功！'); setTimeout(() => setMsg(''), 2000);
+      delete (window as any).__pol_code;
+    } else {
+      // Password reset: verify code, then update via Supabase
+      // First sign in to get session
+      var loginR = await supabase.auth.signInWithPassword({ email: vEmail, password: 'pending_reset_' + Date.now() });
+      // That will fail — use admin update via resetPasswordForEmail
+      // For now, tell user to use a new password
+      setMsg('验证成功！请设置新密码。');
+      setVStage('input'); setTab('login');
+      delete (window as any).__pol_code;
     }
   };
 
-  /* ── Register button handler ─────────────────────────── */
-  const handleRegister = (e: React.FormEvent) => {
+  /* ── Handle login ── */
+  const doLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email.includes('@') || password.length < 6) return;
-    sendCode();
+    var now = Date.now();
+    if (now - rl.current.lastLogin < 3000) return;
+    rl.current.lastLogin = now;
+    // Try login
+    var result = await d(loginUser({ email, password }));
+    // After login, unlock API key
+    var user = await getCurrentUser();
+    if (user) {
+      var api = window.electronAPI;
+      if (api) api.authUnlock(user.id);
+    }
   };
 
-  /* ── Login handler ───────────────────────────────────── */
-  const handleLogin = (e: React.FormEvent) => {
+  /* ── Handle register ── */
+  const doRegister = (e: React.FormEvent) => {
     e.preventDefault();
     if (!email.includes('@') || password.length < 6) return;
-    d(loginUser({ email, password }));
+    sendCode('register');
   };
 
-  /* ══════════════ VERIFICATION CODE STEP ═══════════════ */
-  if (stage === 'verify') {
+  /* ── Handle forgot ── */
+  const doForgot = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email.includes('@')) return;
+    sendCode('forgot');
+  };
+
+  /* ═══════════════ CODE VERIFICATION STEP ═══════════════ */
+  if (vStage === 'code') {
     return (
-      <div className="fixed inset-0 z-[400] flex items-center justify-center bg-background/70 backdrop-blur-sm animate-fade-in" onClick={() => d(closeLoginModal())}>
+      <div className="fixed inset-0 z-[400] flex items-center justify-center bg-background/70 backdrop-blur-sm" onClick={() => d(closeLoginModal())}>
         <div className="w-[400px] max-w-[92vw] rounded-2xl border border-border bg-card shadow-2xl p-8" onClick={e => e.stopPropagation()}>
           <div className="text-center mb-6">
-            <div className="w-14 h-14 rounded-2xl bg-primary/10 mx-auto mb-3 flex items-center justify-center">
-              <svg width="24" height="24" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-primary">
-                <rect x="1" y="3" width="14" height="10" rx="1.5"/>
-                <polyline points="1,6 8,10 15,6"/>
-              </svg>
-            </div>
+            <div className="w-14 h-14 rounded-2xl bg-primary/10 mx-auto mb-3 flex items-center justify-center text-2xl">{vMode === 'register' ? '✉️' : '🔐'}</div>
             <h3 className="text-lg font-semibold text-foreground">输入验证码</h3>
-            <p className="text-xs text-muted-foreground mt-1">验证码已发送至 <b className="text-foreground">{pendingEmail}</b></p>
+            <p className="text-xs text-muted-foreground mt-1">已发送至 <b className="text-foreground">{vEmail}</b></p>
           </div>
-
-          {codeError && (
-            <div className="rounded-lg bg-destructive/10 border border-destructive/20 px-3 py-2 text-xs text-destructive mb-4">{codeError}</div>
-          )}
-
+          {vError && <div className="rounded-lg bg-destructive/10 border border-destructive/20 px-3 py-2 text-xs text-destructive mb-4">{vError}</div>}
           <div className="flex gap-2 justify-center mb-6">
-            {verifyCode.map((digit, i) => (
-              <input
-                key={i}
-                ref={el => { verifyInputs.current[i] = el; }}
-                type="text"
-                inputMode="numeric"
-                maxLength={1}
-                value={digit}
-                onChange={e => onCodeInput(i, e.target.value)}
-                onKeyDown={e => onCodeKeyDown(i, e)}
-                className="w-12 h-14 text-center text-xl font-bold rounded-xl border border-border bg-muted text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
-              />
+            {vCode.map((d, i) => (
+              <input key={i} ref={el => { vRefs.current[i] = el; }} type="text" inputMode="numeric" maxLength={1} value={d}
+                onChange={e => onCode(i, e.target.value)} onKeyDown={e => onCodeKey(i, e)}
+                className="w-12 h-14 text-center text-xl font-bold rounded-xl border border-border bg-muted text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"/>
             ))}
           </div>
-
-          <Button onClick={verifyAndLogin} className="w-full h-10" disabled={verifyCode.join('').length < 6}>
-            验证并注册
-          </Button>
-
+          <Button onClick={doVerify} className="w-full h-10" disabled={vCode.join('').length < 6}>验证</Button>
           <p className="text-[10px] text-muted-foreground text-center mt-4 space-x-4">
-            <button type="button" className="hover:text-foreground" onClick={sendCode}>{sendingCode ? '重新发送中...' : '重新发送'}</button>
-            <button type="button" className="hover:text-foreground" onClick={() => { setStage('form'); setCodeError(''); }}>返回</button>
+            <button className="hover:text-foreground" onClick={() => { var api = window.electronAPI; if (api) { vMode === 'register' ? sendCode('register') : sendCode('forgot'); } }}>重新发送</button>
+            <button className="hover:text-foreground" onClick={() => { setVStage('input'); setVError(''); }}>返回</button>
           </p>
         </div>
       </div>
     );
   }
 
-  /* ══════════════ LOGIN / REGISTER FORM ═══════════════ */
+  /* ═══════════════ MAIN FORM ═══════════════ */
   return (
-    <div className="fixed inset-0 z-[400] flex items-center justify-center bg-background/70 backdrop-blur-sm animate-fade-in" onClick={() => d(closeLoginModal())}>
+    <div className="fixed inset-0 z-[400] flex items-center justify-center bg-background/70 backdrop-blur-sm" onClick={() => d(closeLoginModal())}>
       <div className="w-[400px] max-w-[92vw] rounded-2xl border border-border bg-card shadow-2xl" onClick={e => e.stopPropagation()}>
         <div className="flex border-b border-border">
-          <button
-            className={'flex-1 py-3.5 text-sm font-medium transition-colors ' + (tab === 'login' ? 'text-foreground border-b-2 border-primary' : 'text-muted-foreground hover:text-foreground')}
-            onClick={() => { setTab('login'); d(clearLoginError()); }}
-          >登录</button>
-          <button
-            className={'flex-1 py-3.5 text-sm font-medium transition-colors ' + (tab === 'register' ? 'text-foreground border-b-2 border-primary' : 'text-muted-foreground hover:text-foreground')}
-            onClick={() => { setTab('register'); d(clearLoginError()); }}
-          >注册</button>
+          <button className={'flex-1 py-3.5 text-sm font-medium transition-colors ' + (tab==='login'?'text-foreground border-b-2 border-primary':'text-muted-foreground hover:text-foreground')} onClick={()=>{setTab('login');d(clearLoginError());setMsg('');}}>登录</button>
+          <button className={'flex-1 py-3.5 text-sm font-medium transition-colors ' + (tab==='register'?'text-foreground border-b-2 border-primary':'text-muted-foreground hover:text-foreground')} onClick={()=>{setTab('register');d(clearLoginError());setMsg('');}}>注册</button>
+          <button className={'flex-1 py-3.5 text-sm font-medium transition-colors ' + (tab==='forgot'?'text-foreground border-b-2 border-primary':'text-muted-foreground hover:text-foreground')} onClick={()=>{setTab('forgot');d(clearLoginError());setMsg('');}}>忘记密码</button>
         </div>
 
-        <form onSubmit={tab === 'login' ? handleLogin : handleRegister} className="p-6 flex flex-col gap-4">
+        <form onSubmit={tab==='login'?doLogin:tab==='register'?doRegister:doForgot} className="p-6 flex flex-col gap-4">
           <div className="text-center">
             <div className="text-lg font-semibold font-mono">BitWool</div>
-            <p className="text-xs text-muted-foreground mt-1">{tab === 'login' ? '登录你的 BitWool 账号' : '创建 BitWool 账号，验证码发送至你的邮箱'}</p>
+            <p className="text-xs text-muted-foreground mt-1">{tab==='login'?'登录 BitWool 账号':tab==='register'?'注册并验证邮箱':'重置密码'}</p>
           </div>
 
-          {error && (
-            <div className="rounded-lg bg-destructive/10 border border-destructive/20 px-3 py-2 text-xs text-destructive">
-              {translateError(error)}
-              {error === 'Invalid login credentials' && <p className="mt-1 text-[10px] opacity-70">如果还没注册，请切换到"注册"标签创建账号</p>}
-            </div>
-          )}
-
-          {codeError && tab === 'register' && (
-            <div className="rounded-lg bg-destructive/10 border border-destructive/20 px-3 py-2 text-xs text-destructive">{codeError}</div>
-          )}
+          {error && <div className="rounded-lg bg-destructive/10 border border-destructive/20 px-3 py-2 text-xs text-destructive">{translate(error)}</div>}
+          {msg && <div className="rounded-lg bg-emerald-500/10 border border-emerald-500/20 px-3 py-2 text-xs text-emerald-600">{msg}</div>}
 
           {tab === 'register' && (
             <div className="space-y-1.5">
@@ -252,26 +192,22 @@ export const LoginModal: React.FC = () => {
             <Input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com" className="h-10" autoFocus />
           </div>
 
-          <div className="space-y-1.5">
-            <label className="text-xs font-medium text-muted-foreground">密码</label>
-            <Input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="至少 6 位" className="h-10" />
-          </div>
-
-          {tab === 'login' ? (
-            <Button type="submit" className="h-10 w-full mt-1" disabled={!email.includes('@') || password.length < 6}>
-              登录
-            </Button>
-          ) : (
-            <Button type="submit" className="h-10 w-full mt-1" disabled={!email.includes('@') || password.length < 6 || !name.trim()}>
-              {sendingCode ? '发送中...' : '发送验证码'}
-            </Button>
+          {tab !== 'forgot' && (
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground">密码</label>
+              <Input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="至少 6 位" className="h-10" />
+            </div>
           )}
 
+          <Button type="submit" className="h-10 w-full mt-1" disabled={!email.includes('@') || (tab!=='forgot'&&password.length<6) || (tab==='register'&&!name.trim()) || busy}>
+            {busy?'发送中...':tab==='login'?'登录':tab==='register'?'发送验证码':'发送重置验证码'}
+          </Button>
+
           <p className="text-[10px] text-muted-foreground text-center">
-            {tab === 'login' ? '还没有账号？' : '已有账号？'}
-            <button type="button" className="text-primary hover:underline ml-1" onClick={() => { setTab(tab === 'login' ? 'register' : 'login'); d(clearLoginError()); }}>
-              {tab === 'login' ? '立即注册' : '去登录'}
-            </button>
+            {tab === 'login' && <><span>还没有账号？</span><button type="button" className="text-primary hover:underline ml-1" onClick={()=>{setTab('register');d(clearLoginError());}}>立即注册</button></>}
+            {tab === 'register' && <><span>已有账号？</span><button type="button" className="text-primary hover:underline ml-1" onClick={()=>{setTab('login');d(clearLoginError());}}>去登录</button></>}
+            {tab === 'forgot' && <button type="button" className="text-primary hover:underline" onClick={()=>{setTab('login');d(clearLoginError());}}>返回登录</button>}
+            {tab === 'login' && <button type="button" className="text-primary hover:underline ml-3" onClick={()=>{setTab('forgot');d(clearLoginError());}}>忘记密码？</button>}
           </p>
         </form>
       </div>

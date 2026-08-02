@@ -42,33 +42,68 @@ function createTray() {
   tray.on('double-click', () => { win.show(); win.focus(); });
 }
 
-// IPC: AI
+// ── API Key management ──
+let _apiKey = null;
+let _authUserId = null;
+const { setApiKey } = require('./services/router');
+
+async function refreshApiKey(userId) {
+  // Fetch the key from Supabase config table
+  try {
+    const { createClient } = require('@supabase/supabase-js');
+    const sb = createClient('https://spwishxhydvgqbfchjgj.supabase.co', 'sb_publishable_hY1a3BqHfPvUNPQwkV6AEg_Nz-b2bgY');
+    const { data } = await sb.from('polaris_config').select('value').eq('key', 'deepseek_api_key').single();
+    if (data && data.value) {
+      _apiKey = data.value;
+      _authUserId = userId;
+      setApiKey(_apiKey);
+      console.log('[API Key] Loaded for user:', userId);
+    }
+  } catch(e) {
+    console.warn('[API Key] Fetch failed:', e.message);
+  }
+}
+
+// IPC: AI (auth-gated)
 ipcMain.handle('polaris:query', async (_e, { text, strategy, systemPrompt, images, apiKeys }) => {
+  if (!_apiKey) {
+    return { routing:{strategy:'locked',top_intent:'locked',selected_models:[],rationale:'auth required'}, responses:[{model_id:'locked',model_display:'Locked',content:'请先登录 BitWool 账号以使用 Polaris。点击左侧栏底部"登录 BitWool"按钮。'}], total_latency_ms:0 };
+  }
   console.log('[polaris:query] text:', (text||'').slice(0,80));
   const onExec = (evt) => { if (win && !win.isDestroyed()) win.webContents.send('polaris:exec-log', evt); };
   const onTodo = (evt) => { if (win && !win.isDestroyed()) win.webContents.send('polaris:todo-update', evt); };
   try {
-    const result = await executeQuery(text, strategy, systemPrompt, images, undefined, { ...(apiKeys||{}), onExec, onTodo });
-    const responseContent = result?.responses?.[0]?.content || '';
-    console.log('[polaris:query] response:', responseContent.slice(0,80));
-    if (!responseContent) console.error('[polaris:query] WARNING: empty response!');
+    const result = await executeQuery(text, strategy, systemPrompt, images, undefined, { ...(apiKeys||{}), onExec, onTodo, deepseek: _apiKey });
     return result;
   } catch(e) {
-    console.error('[polaris:query] ERROR:', e.message);
     return { routing:{strategy:'error',top_intent:'error',selected_models:[],rationale:e.message}, responses:[{model_id:'error',model_display:'Error',content:'处理出错：'+e.message}], total_latency_ms:0 };
   }
 });
 ipcMain.handle('polaris:queryStream', async (event, { text, strategy, systemPrompt, images, apiKeys }) => {
-  // Stream chunks: { type: 'thinking'|'content'|'tool_call', text?, full?, toolCalls? }
+  if (!_apiKey) {
+    const locked = { routing:{strategy:'locked',top_intent:'locked',selected_models:[],rationale:'auth required'}, responses:[{model_id:'locked',model_display:'Locked',content:'请先登录 BitWool 账号以使用 Polaris。'}], total_latency_ms:0 };
+    if (win && !win.isDestroyed()) win.webContents.send('polaris:stream-end', locked);
+    return locked;
+  }
   const oc = (data) => { if (win && !win.isDestroyed()) win.webContents.send('polaris:stream-chunk', data); };
   try {
-    const r = await executeQuery(text, strategy, systemPrompt, images, oc, apiKeys || {});
+    const r = await executeQuery(text, strategy, systemPrompt, images, oc, { ...(apiKeys||{}), deepseek: _apiKey });
     if (win && !win.isDestroyed()) win.webContents.send('polaris:stream-end', r);
     return r;
   } catch (e) {
     if (win && !win.isDestroyed()) win.webContents.send('polaris:stream-error', { message: e.message });
     throw e;
   }
+});
+
+// IPC: Auth state — called after login to unlock API
+ipcMain.handle('auth:unlock', async (_e, { userId }) => {
+  await refreshApiKey(userId);
+  return { success: !!_apiKey };
+});
+ipcMain.handle('auth:lock', () => {
+  _apiKey = null; _authUserId = null; setApiKey(null);
+  return { success: true };
 });
 
 // IPC: Window
@@ -201,6 +236,20 @@ ipcMain.handle('email:sendWelcome', async (_e, { email, displayName }) => {
     return { success: true };
   } catch (e) {
     console.error('[email] sendWelcome failed:', e.message, e.stack);
+    return { success: false, error: e.message };
+  }
+});
+
+// IPC: Forgot password email
+const { sendPasswordResetCode } = require('./services/email');
+ipcMain.handle('email:forgotPassword', async (_e, { email }) => {
+  try {
+    const code = generateCode();
+    console.log('[email] Sending password reset code to:', email);
+    await sendPasswordResetCode(email, code);
+    return { success: true, code };
+  } catch (e) {
+    console.error('[email] forgotPassword failed:', e.message);
     return { success: false, error: e.message };
   }
 });

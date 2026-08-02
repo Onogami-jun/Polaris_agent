@@ -101,6 +101,19 @@ async function sendWelcomeEmail(toEmail, displayName) {
   return { success: true, messageId: info.messageId };
 }
 
+/** 发送密码重置验证码 */
+async function sendPasswordResetCode(toEmail, code) {
+  const transporter = getTransporter();
+  const html = '<!DOCTYPE html><html><head><meta charset="utf-8"></head><body style="font-family:-apple-system,BlinkMacSystemFont,sans-serif;max-width:480px;margin:0 auto;padding:40px 20px"><div style="text-align:center;margin-bottom:32px"><div style="width:48px;height:48px;background:linear-gradient(135deg,#6366f1,#8b5cf6);border-radius:12px;display:inline-flex;align-items:center;justify-content:center;font-size:20px;color:#fff;font-weight:bold">🔐</div><h1 style="margin:16px 0 4px;font-size:22px;color:#1a1a1a">BitWool 密码重置</h1><p style="color:#666;margin:0">你申请了重置 Polaris 账号密码</p></div><div style="text-align:center;font-size:36px;font-weight:bold;letter-spacing:12px;color:#6366f1;padding:20px;background:#f5f3ff;border-radius:12px;margin-bottom:24px">' + code + '</div><p style="color:#999;font-size:13px;text-align:center">验证码 10 分钟内有效。如非本人操作，请忽略。</p><hr style="border:none;border-top:1px solid #eee;margin:24px 0"><p style="color:#ccc;font-size:11px;text-align:center">BitWool Studio · bitwool.cn</p></body></html>';
+  const info = await transporter.sendMail({
+    from: '"BitWool Studio" <bitwool@163.com>',
+    to: toEmail,
+    subject: 'BitWool 密码重置: ' + code,
+    html,
+  });
+  return { success: true, messageId: info.messageId };
+}
+
 /**
  * 生成 6 位随机验证码
  */
@@ -108,4 +121,4 @@ function generateCode() {
   return String(Math.floor(100000 + Math.random() * 900000));
 }
 
-module.exports = { sendVerificationCode, sendWelcomeEmail, generateCode };
+module.exports = { sendVerificationCode, sendWelcomeEmail, sendPasswordResetCode, generateCode };
