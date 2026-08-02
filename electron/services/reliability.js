@@ -13,8 +13,7 @@
  *   3. Self-Diagnosis — check environment before execution
  */
 
-var _reliabilityKey = null;
-function setReliabilityKey(k) { _reliabilityKey = k; }
+const { getKey } = require('./keymanager');
 
 // ── Layer 1: Circuit Breaker ────────────────────────────────────────────────
 
@@ -116,7 +115,7 @@ function diagnose() {
   const dsOk = new Promise(resolve => {
     const req = https.request({
       hostname: 'api.deepseek.com', path: '/chat/completions', method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer '+_reliabilityKey, 'Content-Length': Buffer.byteLength(JSON.stringify({ model: 'deepseek-v4-flash', messages: [{ role: 'user', content: 'hi' }], max_tokens: 5 })) },
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer '+getKey(), 'Content-Length': Buffer.byteLength(JSON.stringify({ model: 'deepseek-v4-flash', messages: [{ role: 'user', content: 'hi' }], max_tokens: 5 })) },
       timeout: 8000,
     }, resp => { let d = ''; resp.on('data', c => d += c.toString()); resp.on('end', () => { try { JSON.parse(d); resolve(true); } catch { resolve(false); } }); });
     req.on('error', () => resolve(false)); req.on('timeout', () => { req.destroy(); resolve(false); });
@@ -194,7 +193,7 @@ else:
         });
         const req = https.request({
           hostname: 'api.deepseek.com', path: '/chat/completions', method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer '+_reliabilityKey, 'Content-Length': Buffer.byteLength(body) },
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer '+getKey(), 'Content-Length': Buffer.byteLength(body) },
           timeout: 20000,
         }, resp => {
           let d = ''; resp.on('data', c => d += c.toString());
@@ -238,4 +237,4 @@ else:
   ]);
 }
 
-module.exports = { CircuitBreaker, withFallback, diagnose, reliableSolve, setReliabilityKey };
+module.exports = { CircuitBreaker, withFallback, diagnose, reliableSolve };

@@ -4,7 +4,7 @@
  * "Benders 在 n=50 的时候 gap 突然炸了——原因是 feasibility cut 太弱"
  */
 const https = require('https');
-const DEFAULT_KEY = 'sk-665f376d7c0f4b91b4c3029bf82e670a';
+const { getKey } = require('./keymanager');
 
 const ANALYSIS_PROMPT = `你是运筹学实验结果分析专家。我给你一组实验对比表格，你帮我分析：
 1. 不同求解器的性能趋势（哪个在什么规模开始吃力）
@@ -15,7 +15,7 @@ const ANALYSIS_PROMPT = `你是运筹学实验结果分析专家。我给你一�
 用中文，结构化输出：趋势 → 异常 → 原因 → 建议。简洁、直接。`;
 
 function callAnalyzer(messages, apiKey) {
-  const key = apiKey || DEFAULT_KEY;
+  const key = apiKey || require('./keymanager').getKey();
   return new Promise((res, rej) => {
     const body = JSON.stringify({
       model: 'deepseek-v4-flash', messages, max_tokens: 2048, temperature: 0.2,

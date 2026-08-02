@@ -13,7 +13,7 @@
  */
 
 const https = require('https');
-const DEFAULT_KEY = 'sk-665f376d7c0f4b91b4c3029bf82e670a';
+const { getKey } = require('./keymanager');
 
 const CLASSIFY_PROMPT = `你是一个极简路由器。读完用户消息后，只输出一个英文单词。
 输出必须是以下之一，不得带标点符号、括号或额外文字：

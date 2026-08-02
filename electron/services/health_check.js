@@ -6,7 +6,7 @@ const https = require('https');
 const path = require('path');
 const os = require('os');
 const fs = require('fs');
-const DEFAULT_KEY = 'sk-665f376d7c0f4b91b4c3029bf82e670a';
+const { getKey } = require('./keymanager');
 
 // Try sandbox Python first, then system Python
 function getBestPython() {
@@ -38,7 +38,7 @@ function checkHiGHS(pythonCmd) {
 }
 
 function checkDeepSeek(apiKey) {
-  const key = apiKey || DEFAULT_KEY;
+  const key = apiKey || getKey();
   return new Promise((res) => {
     const body = JSON.stringify({ model: 'deepseek-v4-flash', messages: [{ role: 'user', content: 'hi' }], max_tokens: 10 });
     const req = https.request({

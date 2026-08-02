@@ -145,6 +145,7 @@ const SettingsPanel: React.FC = () => {
                 <Row label="显示引导页" hint="重新显示首次启动引导">
                   <Button variant="outline" size="sm" className="h-7 text-[10px]" onClick={() => {
                     localStorage.removeItem('polaris_onboarding_done');
+                    try{localStorage.setItem('ps_set',JSON.stringify(s));}catch(e){}
                     window.location.reload();
                   }}>重新引导</Button>
                 </Row>

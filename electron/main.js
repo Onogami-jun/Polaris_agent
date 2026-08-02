@@ -43,20 +43,17 @@ function createTray() {
 }
 
 // ── API Key management ──
-let _apiKey = null;
+const { setKey, getKey } = require('./services/keymanager');
 let _authUserId = null;
-const { setApiKey } = require('./services/router');
 
 async function refreshApiKey(userId) {
-  // Fetch the key from Supabase config table
   try {
     const { createClient } = require('@supabase/supabase-js');
     const sb = createClient('https://spwishxhydvgqbfchjgj.supabase.co', 'sb_publishable_hY1a3BqHfPvUNPQwkV6AEg_Nz-b2bgY');
     const { data } = await sb.from('polaris_config').select('value').eq('key', 'deepseek_api_key').single();
     if (data && data.value) {
-      _apiKey = data.value;
       _authUserId = userId;
-      setApiKey(_apiKey);
+      setKey(data.value);
       console.log('[API Key] Loaded for user:', userId);
     }
   } catch(e) {
@@ -66,28 +63,30 @@ async function refreshApiKey(userId) {
 
 // IPC: AI (auth-gated)
 ipcMain.handle('polaris:query', async (_e, { text, strategy, systemPrompt, images, apiKeys }) => {
-  if (!_apiKey) {
-    return { routing:{strategy:'locked',top_intent:'locked',selected_models:[],rationale:'auth required'}, responses:[{model_id:'locked',model_display:'Locked',content:'请先登录 BitWool 账号以使用 Polaris。点击左侧栏底部"登录 BitWool"按钮。'}], total_latency_ms:0 };
+  var key = getKey();
+  if (!key) {
+    return { routing:{strategy:'locked',top_intent:'locked',selected_models:[],rationale:'auth required'}, responses:[{model_id:'locked',model_display:'Locked',content:'<div style="text-align:center;padding:20px"><div style="font-size:48px;margin-bottom:12px">🔐</div><p style="font-size:14px;color:hsl(var(--foreground));margin-bottom:8px">Polaris 需要登录才能使用</p><p style="font-size:12px;color:hsl(var(--muted-foreground));margin-bottom:16px">登录 BitWool 账号后解锁全部 AI 功能</p><button onclick="document.querySelector(\\'.polaris-login-trigger\\')?.click()" style="background:hsl(var(--primary));color:hsl(var(--primary-foreground));border:none;border-radius:8px;padding:8px 24px;font-size:13px;font-weight:500;cursor:pointer;font-family:inherit">登录 BitWool</button></div>'}], total_latency_ms:0 };
   }
   console.log('[polaris:query] text:', (text||'').slice(0,80));
-  const onExec = (evt) => { if (win && !win.isDestroyed()) win.webContents.send('polaris:exec-log', evt); };
-  const onTodo = (evt) => { if (win && !win.isDestroyed()) win.webContents.send('polaris:todo-update', evt); };
+  var onExec = function(evt) { if (win && !win.isDestroyed()) win.webContents.send('polaris:exec-log', evt); };
+  var onTodo = function(evt) { if (win && !win.isDestroyed()) win.webContents.send('polaris:todo-update', evt); };
   try {
-    const result = await executeQuery(text, strategy, systemPrompt, images, undefined, { ...(apiKeys||{}), onExec, onTodo, deepseek: _apiKey });
+    var result = await executeQuery(text, strategy, systemPrompt, images, undefined, { onExec:onExec, onTodo:onTodo, deepseek:key });
     return result;
   } catch(e) {
     return { routing:{strategy:'error',top_intent:'error',selected_models:[],rationale:e.message}, responses:[{model_id:'error',model_display:'Error',content:'处理出错：'+e.message}], total_latency_ms:0 };
   }
 });
 ipcMain.handle('polaris:queryStream', async (event, { text, strategy, systemPrompt, images, apiKeys }) => {
-  if (!_apiKey) {
-    const locked = { routing:{strategy:'locked',top_intent:'locked',selected_models:[],rationale:'auth required'}, responses:[{model_id:'locked',model_display:'Locked',content:'请先登录 BitWool 账号以使用 Polaris。'}], total_latency_ms:0 };
+  var key = getKey();
+  if (!key) {
+    var locked = { routing:{strategy:'locked',top_intent:'locked',selected_models:[],rationale:'auth required'}, responses:[{model_id:'locked',model_display:'Locked',content:'<div style="text-align:center;padding:20px"><div style="font-size:48px;margin-bottom:12px">🔐</div><p style="font-size:14px;color:hsl(var(--foreground));margin-bottom:8px">Polaris 需要登录才能使用</p><p style="font-size:12px;color:hsl(var(--muted-foreground));margin-bottom:16px">登录 BitWool 账号后解锁全部 AI 功能</p><button onclick="document.querySelector(\\'.polaris-login-trigger\\')?.click()" style="background:hsl(var(--primary));color:hsl(var(--primary-foreground));border:none;border-radius:8px;padding:8px 24px;font-size:13px;font-weight:500;cursor:pointer;font-family:inherit">登录 BitWool</button></div>'}], total_latency_ms:0 };
     if (win && !win.isDestroyed()) win.webContents.send('polaris:stream-end', locked);
     return locked;
   }
-  const oc = (data) => { if (win && !win.isDestroyed()) win.webContents.send('polaris:stream-chunk', data); };
+  var oc = function(data) { if (win && !win.isDestroyed()) win.webContents.send('polaris:stream-chunk', data); };
   try {
-    const r = await executeQuery(text, strategy, systemPrompt, images, oc, { ...(apiKeys||{}), deepseek: _apiKey });
+    var r = await executeQuery(text, strategy, systemPrompt, images, oc, { deepseek:key });
     if (win && !win.isDestroyed()) win.webContents.send('polaris:stream-end', r);
     return r;
   } catch (e) {
@@ -96,13 +95,13 @@ ipcMain.handle('polaris:queryStream', async (event, { text, strategy, systemProm
   }
 });
 
-// IPC: Auth state — called after login to unlock API
+// IPC: Auth — unlock/lock API key
 ipcMain.handle('auth:unlock', async (_e, { userId }) => {
   await refreshApiKey(userId);
-  return { success: !!_apiKey };
+  return { success: !!getKey() };
 });
 ipcMain.handle('auth:lock', () => {
-  _apiKey = null; _authUserId = null; setApiKey(null);
+  _authUserId = null; setKey(null);
   return { success: true };
 });
 

@@ -78,3 +78,28 @@
     }
   }
 }
+
+/* ── Inline interactive buttons (AI-generated) ── */
+.polaris-inline-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 16px; margin: 8px 4px 4px 0;
+  border-radius: 8px; border: 1px solid hsl(var(--primary)/.3);
+  background: hsl(var(--primary)/.08); color: hsl(var(--primary));
+  font-size: 13px; font-weight: 500; cursor: pointer;
+  transition: all .15s ease; font-family: inherit;
+  text-decoration: none; user-select: none;
+}
+.polaris-inline-btn:hover {
+  background: hsl(var(--primary)/.14); border-color: hsl(var(--primary)/.5);
+  transform: translateY(-1px); box-shadow: 0 2px 8px hsl(var(--primary)/.1);
+}
+.polaris-inline-btn.green {
+  border-color: hsl(164,76%,44%/.3); background: hsl(164,76%,44%/.08); color: hsl(164,76%,44%);
+}
+.polaris-inline-btn.green:hover {
+  background: hsl(164,76%,44%/.14); border-color: hsl(164,76%,44%/.5);
+  box-shadow: 0 2px 8px hsl(164,76%,44%/.15);
+}
+.polaris-inline-btn.amber {
+  border-color: hsl(38,84%,55%/.3); background: hsl(38,84%,55%/.08); color: hsl(38,84%,55%);
+}

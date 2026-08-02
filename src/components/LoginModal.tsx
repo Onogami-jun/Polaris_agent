@@ -91,12 +91,13 @@ export const LoginModal: React.FC = () => {
       setVStage('input'); setMsg('注册成功！'); setTimeout(() => setMsg(''), 2000);
       delete (window as any).__pol_code;
     } else {
-      // Password reset: verify code, then update via Supabase
-      // First sign in to get session
-      var loginR = await supabase.auth.signInWithPassword({ email: vEmail, password: 'pending_reset_' + Date.now() });
-      // That will fail — use admin update via resetPasswordForEmail
-      // For now, tell user to use a new password
-      setMsg('验证成功！请设置新密码。');
+      // Password reset: send reset link via Supabase
+      var { error: resetErr } = await supabase.auth.resetPasswordForEmail(vEmail, { redirectTo: 'polaris://reset-confirm' });
+      if (!resetErr) {
+        setMsg('密码重置链接已发送至 ' + vEmail + '，请查收邮件并按链接重置密码。');
+      } else {
+        setMsg('重置失败: ' + (resetErr.message || '请稍后重试'));
+      }
       setVStage('input'); setTab('login');
       delete (window as any).__pol_code;
     }
@@ -168,7 +169,6 @@ export const LoginModal: React.FC = () => {
         <div className="flex border-b border-border">
           <button className={'flex-1 py-3.5 text-sm font-medium transition-colors ' + (tab==='login'?'text-foreground border-b-2 border-primary':'text-muted-foreground hover:text-foreground')} onClick={()=>{setTab('login');d(clearLoginError());setMsg('');}}>登录</button>
           <button className={'flex-1 py-3.5 text-sm font-medium transition-colors ' + (tab==='register'?'text-foreground border-b-2 border-primary':'text-muted-foreground hover:text-foreground')} onClick={()=>{setTab('register');d(clearLoginError());setMsg('');}}>注册</button>
-          <button className={'flex-1 py-3.5 text-sm font-medium transition-colors ' + (tab==='forgot'?'text-foreground border-b-2 border-primary':'text-muted-foreground hover:text-foreground')} onClick={()=>{setTab('forgot');d(clearLoginError());setMsg('');}}>忘记密码</button>
         </div>
 
         <form onSubmit={tab==='login'?doLogin:tab==='register'?doRegister:doForgot} className="p-6 flex flex-col gap-4">

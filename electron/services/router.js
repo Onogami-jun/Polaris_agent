@@ -10,10 +10,10 @@ const { runPipeline } = require('./subagents');
 const { buildAgentCapabilityNote } = require('./health_check');
 const { POLARIS_PERSONA } = require('./persona');
 
-// API key supplied by main process after successful auth (never hardcoded)
-let _envKey = null;
-function setApiKey(k) { _envKey = k; setReliabilityKey(k); }
-function getApiKey() { return _envKey; }
+// API key supplied by main process after successful auth
+const { setKey, getKey } = require('./keymanager');
+function setApiKey(k) { setKey(k); }
+function getApiKey() { return getKey(); }
 const skillManager = new SkillManager();
 
 /* ── Health cache ──────────────────────────────────────── */

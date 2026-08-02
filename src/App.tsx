@@ -1,5 +1,5 @@
 // @ts-nocheck
-import React,{useState,useCallback,useRef,useEffect}from'react';
+import React,{useState,useCallback,useRef,useEffect,useMemo}from'react';
 import{useAppSelector,useAppDispatch}from'./store';
 import{addMessage,updateLastAssistant,editMessage,loadSessions as lr,newSession as ns,setActiveSession,setStreaming,setStrategy,toggleSettings,setTheme,setLanguage,setFontSize,setApiKey,updateAgentConfig,setMascotSettings,updateThirdParty,updateProxy,deleteSession,branchSession,setEngineStatus}from'./store/chatSlice';
 import{restoreAuth,incrementUsage,openLoginModal,logoutUser}from'./store/authSlice';
@@ -257,7 +257,7 @@ function LeftSidebar({sessions,activeId,pct,onSelect,onNew,onDelete,onOpenSettin
             <span className="ml-auto text-[9px] text-muted-foreground/50">登出</span>
           </button>
         ) : (
-          <button onClick={() => d(openLoginModal())} className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs text-muted-foreground hover:text-foreground hover:bg-muted transition-all">
+          <button onClick={() => d(openLoginModal())} className="polaris-login-trigger w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs text-muted-foreground hover:text-foreground hover:bg-muted transition-all">
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="8" cy="5" r="3"/><path d="M2 14c0-3.3 2.7-6 6-6s6 2.7 6 6"/></svg>
             <span>登录 BitWool</span>
           </button>
@@ -308,8 +308,9 @@ const App:React.FC=()=>{
   const[leftW,setLeftW]=useState(220);const[leftOpen,setLeftOpen]=useState(true);
   const[rightW,setRightW]=useState(280);const[rightOpen,setRightOpen]=useState(true);
 
-  const dispatchRef=useRef(d);const stop=useRef(false);
-  const act=sessions.find(s=>s.id===activeSessionId);
+  const dispatchRef=useRef(d);useEffect(()=>{dispatchRef.current=d},[d]);
+  const stop=useRef(false);
+  const act=useMemo(()=>sessions.find(s=>s.id===activeSessionId),[sessions,activeSessionId]);
   const pct=contextTokens.total>0?Math.min(Math.round(contextTokens.used/Math.max(contextTokens.total,1)*100),100):0;
 
   // ── Init (auto sandbox) ──
@@ -327,12 +328,53 @@ const App:React.FC=()=>{
     }).catch(function(e:any){clearTimeout(failSafe);setSandboxErr(e.message||'沙箱自动安装失败');setTimeout(function(){setSplashFade(true);setTimeout(function(){setSplash(false)},500);},1200);});
     return function(){clearTimeout(failSafe);};
   },[]);
-  useEffect(()=>{document.documentElement.classList.toggle('dark',settings.theme==='dark');document.documentElement.style.fontSize=settings.fontSize+'px';d(restoreAuth());const s=ld();if(s.length>0)d(lr(s))},[]);
-  useEffect(()=>{if(sessions.length>0){const t=setTimeout(()=>saveSessions(sessions),500);return()=>clearTimeout(t)}},[sessions]);
-  // Persist settings to localStorage on every change
-  useEffect(()=>{const t=setTimeout(()=>saveSet(settings),300);return()=>clearTimeout(t)},[settings]);
-  // Load persisted settings on startup
-  useEffect(()=>{var saved=loadSet();if(saved&&Object.keys(saved).length>0){if(saved.theme)d(setTheme(saved.theme));if(saved.language)d(setLanguage(saved.language));if(saved.fontSize)d(setFontSize(saved.fontSize));if(saved.apiKeys){Object.keys(saved.apiKeys).forEach(function(k){d(setApiKey({provider:k,key:saved.apiKeys[k]||''}));})}if(saved.agent)d(updateAgentConfig(saved.agent));if(saved.mascot)d(setMascotSettings(saved.mascot||{}));if(saved.thirdParty)d(updateThirdParty(saved.thirdParty));if(saved.proxy)d(updateProxy(saved.proxy));}},[]);
+  // ── Auto-restore auth + sessions + settings ──
+  useEffect(()=>{
+    document.documentElement.classList.toggle('dark',settings.theme==='dark');
+    document.documentElement.style.fontSize=settings.fontSize+'px';
+    d(restoreAuth());
+    var s=ld();if(s.length>0)d(lr(s));
+    // Load persisted settings LAST (overwrites defaults)
+    var saved=loadSet();
+    if(saved&&Object.keys(saved).length>0){
+      // Wrap in setTimeout to let Redux init complete
+      setTimeout(function(){
+        if(saved.theme)d(setTheme(saved.theme));
+        if(saved.language)d(setLanguage(saved.language));
+        if(saved.fontSize)d(setFontSize(saved.fontSize));
+        if(saved.apiKeys){Object.keys(saved.apiKeys).forEach(function(k){var v=saved.apiKeys[k];if(v)d(setApiKey({provider:k,key:v}));});}
+        if(saved.agent)d(updateAgentConfig(saved.agent));
+        if(saved.mascot)d(setMascotSettings(saved.mascot||{}));
+        if(saved.thirdParty)d(updateThirdParty(saved.thirdParty));
+        if(saved.proxy)d(updateProxy(saved.proxy));
+        // Apply theme after restore
+        document.documentElement.classList.toggle('dark',saved.theme==='dark');
+      },0);
+    }
+  },[]);
+  useEffect(()=>{if(sessions.length>0){var t=setTimeout(function(){saveSessions(sessions)},500);return function(){clearTimeout(t)}}},[sessions]);
+  // Persist settings on change
+  useEffect(()=>{var t=setTimeout(function(){saveSet(settings)},300);return function(){clearTimeout(t)}},[settings]);
+  // ── Global click: handle AI-generated inline buttons ──
+  useEffect(()=>{
+    var handler=function(e:MouseEvent){
+      var target=e.target as HTMLElement;
+      if(!target||!target.classList.contains('polaris-inline-btn'))return;
+      e.preventDefault();e.stopPropagation();
+      var ta=document.querySelector('textarea');
+      var prompt=target.getAttribute('data-prompt')||target.textContent||'';
+      if(prompt&&ta){
+        var nativeInputValueSetter=Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype,'value')?.set;
+        if(nativeInputValueSetter){nativeInputValueSetter.call(ta,prompt);ta.dispatchEvent(new Event('input',{bubbles:true}));}
+        else{ta.value=prompt;ta.dispatchEvent(new Event('input',{bubbles:true}));}
+        ta.focus();setInp(prompt);
+      }
+      if(target.classList.contains('polaris-login'))d(openLoginModal());
+    };
+    document.addEventListener('click',handler);
+    return ()=>document.removeEventListener('click',handler);
+  },[d]);
+
   useEffect(()=>{const h=(e:KeyboardEvent)=>{if((e.ctrlKey||e.metaKey)&&e.key==='p'){e.preventDefault();setCmd(true)}if(e.key==='Escape'){stop.current=true;d(setStreaming(false));setThk('');setCmd(false)}if((e.ctrlKey||e.metaKey)&&e.key==='n'){e.preventDefault();d(ns())}if((e.ctrlKey||e.metaKey)&&e.key===','){e.preventDefault();d(toggleSettings())}};window.addEventListener('keydown',h);return()=>window.removeEventListener('keydown',h)},[d]);
   useEffect(()=>{const api=window.electronAPI;if(!api)return;api.monitorStart();api.onIntervention((card:any)=>{card.ts=Date.now();setInterventions(p=>[...p.slice(-4),card])});api.onPlanProgress((data:any)=>setPlanProg(data));api.onExecLog((data:any)=>{addExecLog(data.tool,data.status,data.detail||'')});api.onTodoUpdate((data:any)=>{if(data.steps)setTodoSteps(data.steps)});api.onStreamError((ed:any)=>{showToast('Stream Error: '+(ed?.message||'未知'),'error');dispatchRef.current(setStreaming(false));setThk('')});
   // Health check

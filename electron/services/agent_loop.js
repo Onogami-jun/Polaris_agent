@@ -57,7 +57,7 @@ B. 回复用户:
  * Call the LLM (DeepSeek by default) with messages, return text response.
  */
 function callLLM(messages, apiKey, onChunk) {
-  const key = apiKey || 'sk-665f376d7c0f4b91b4c3029bf82e670a';
+  const key = apiKey || require('./keymanager').getKey();
   return new Promise((res, rej) => {
     const body = JSON.stringify({
       model: 'deepseek-v4-flash',

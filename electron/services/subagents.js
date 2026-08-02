@@ -4,7 +4,7 @@
  * Each subagent runs in its own context window, coordinated by a master dispatcher.
  */
 const https = require('https');
-const DEFAULT_KEY = 'sk-665f376d7c0f4b91b4c3029bf82e670a';
+const { getKey } = require('./keymanager');
 
 // Subagent definitions — each is a standalone worker with its own prompt
 const SUBAGENTS = {
@@ -31,7 +31,7 @@ const SUBAGENTS = {
 };
 
 function callLLM(systemPrompt, userMessage, apiKey) {
-  const key = apiKey || DEFAULT_KEY;
+  const key = apiKey || require('./keymanager').getKey();
   return new Promise(resolve => {
     const body = JSON.stringify({
       model: 'deepseek-v4-flash',

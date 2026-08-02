@@ -224,7 +224,7 @@ except Exception as e:
         const https=require('https');
         const result = await new Promise((res,rej)=>{
           const body=JSON.stringify({model:'deepseek-v4-flash',messages:[{role:'user',content:prompt}],max_tokens:1024,temperature:0.2});
-          const req=https.request({hostname:'api.deepseek.com',path:'/chat/completions',method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+(key||'sk-665f376d7c0f4b91b4c3029bf82e670a'),'Content-Length':Buffer.byteLength(body)},timeout:30000},resp=>{let d='';resp.on('data',c=>d+=c.toString());resp.on('end',()=>{try{res(JSON.parse(d).choices?.[0]?.message?.content||'')}catch{res('')}})});
+          const req=https.request({hostname:'api.deepseek.com',path:'/chat/completions',method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+(key||require('./keymanager').getKey()),'Content-Length':Buffer.byteLength(body)},timeout:30000},resp=>{let d='';resp.on('data',c=>d+=c.toString());resp.on('end',()=>{try{res(JSON.parse(d).choices?.[0]?.message?.content||'')}catch{res('')}})});
           req.on('error',()=>res(''));
           req.write(body);req.end();
         });
