@@ -65,7 +65,7 @@ async function refreshApiKey(userId) {
 ipcMain.handle('polaris:query', async (_e, { text, strategy, systemPrompt, images, apiKeys }) => {
   var key = getKey();
   if (!key) {
-    return { routing:{strategy:'locked',top_intent:'locked',selected_models:[],rationale:'auth required'}, responses:[{model_id:'locked',model_display:'Locked',content:'<div style="text-align:center;padding:20px"><div style="font-size:48px;margin-bottom:12px">🔐</div><p style="font-size:14px;color:hsl(var(--foreground));margin-bottom:8px">Polaris 需要登录才能使用</p><p style="font-size:12px;color:hsl(var(--muted-foreground));margin-bottom:16px">登录 BitWool 账号后解锁全部 AI 功能</p><button onclick="document.querySelector(\\'.polaris-login-trigger\\')?.click()" style="background:hsl(var(--primary));color:hsl(var(--primary-foreground));border:none;border-radius:8px;padding:8px 24px;font-size:13px;font-weight:500;cursor:pointer;font-family:inherit">登录 BitWool</button></div>'}], total_latency_ms:0 };
+    return { routing:{strategy:'locked',top_intent:'locked',selected_models:[],rationale:'auth required'}, responses:[{model_id:'locked',model_display:'Locked',content:'<div style="text-align:center;padding:20px"><div style="font-size:48px;margin-bottom:12px">🔐</div><p style="font-size:14px;color:hsl(var(--foreground));margin-bottom:8px">Polaris 需要登录才能使用</p><p style="font-size:12px;color:hsl(var(--muted-foreground));margin-bottom:16px">登录 BitWool 账号后解锁全部 AI 功能。点击左侧栏底部的<b style="color:hsl(var(--primary))">登录 BitWool</b>按钮。</p></div>'}], total_latency_ms:0 };
   }
   console.log('[polaris:query] text:', (text||'').slice(0,80));
   var onExec = function(evt) { if (win && !win.isDestroyed()) win.webContents.send('polaris:exec-log', evt); };
@@ -80,7 +80,7 @@ ipcMain.handle('polaris:query', async (_e, { text, strategy, systemPrompt, image
 ipcMain.handle('polaris:queryStream', async (event, { text, strategy, systemPrompt, images, apiKeys }) => {
   var key = getKey();
   if (!key) {
-    var locked = { routing:{strategy:'locked',top_intent:'locked',selected_models:[],rationale:'auth required'}, responses:[{model_id:'locked',model_display:'Locked',content:'<div style="text-align:center;padding:20px"><div style="font-size:48px;margin-bottom:12px">🔐</div><p style="font-size:14px;color:hsl(var(--foreground));margin-bottom:8px">Polaris 需要登录才能使用</p><p style="font-size:12px;color:hsl(var(--muted-foreground));margin-bottom:16px">登录 BitWool 账号后解锁全部 AI 功能</p><button onclick="document.querySelector(\\'.polaris-login-trigger\\')?.click()" style="background:hsl(var(--primary));color:hsl(var(--primary-foreground));border:none;border-radius:8px;padding:8px 24px;font-size:13px;font-weight:500;cursor:pointer;font-family:inherit">登录 BitWool</button></div>'}], total_latency_ms:0 };
+    var locked = { routing:{strategy:'locked',top_intent:'locked',selected_models:[],rationale:'auth required'}, responses:[{model_id:'locked',model_display:'Locked',content:'<div style="text-align:center;padding:20px"><div style="font-size:48px;margin-bottom:12px">🔐</div><p style="font-size:14px;color:hsl(var(--foreground));margin-bottom:8px">Polaris 需要登录才能使用</p><p style="font-size:12px;color:hsl(var(--muted-foreground));margin-bottom:16px">登录 BitWool 账号后解锁全部 AI 功能。点击左侧栏底部的<b style="color:hsl(var(--primary))">登录 BitWool</b>按钮。</p></div>'}], total_latency_ms:0 };
     if (win && !win.isDestroyed()) win.webContents.send('polaris:stream-end', locked);
     return locked;
   }
