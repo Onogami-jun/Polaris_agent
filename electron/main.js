@@ -105,6 +105,26 @@ ipcMain.handle('auth:lock', () => {
   return { success: true };
 });
 
+// IPC: Admin password reset (uses service_role key to bypass email flow)
+ipcMain.handle('auth:adminResetPassword', async (_e, { email, newPassword }) => {
+  try {
+    var { createClient } = require('@supabase/supabase-js');
+    var serviceKey = 'sb_secret_wzsRhVO_txBehPkzEWEJlg_6qGfQO1w';
+    var adminClient = createClient('https://spwishxhydvgqbfchjgj.supabase.co', serviceKey, { auth: { autoRefreshToken: false, persistSession: false } });
+    // Find user by email
+    const { data: users, error: findErr } = await adminClient.auth.admin.listUsers();
+    if (findErr) return { success: false, error: findErr.message };
+    const targetUser = users?.users?.find((u: any) => u.email === email);
+    if (!targetUser) return { success: false, error: '未找到该邮箱对应的账号' };
+    // Update password
+    const { error } = await adminClient.auth.admin.updateUserById(targetUser.id, { password: newPassword });
+    if (error) return { success: false, error: error.message };
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+});
+
 // IPC: Window
 ipcMain.handle('window:minimize', () => win?.minimize());
 ipcMain.handle('window:maximize', () => { if (win?.isMaximized()) win.restore(); else win?.maximize(); });

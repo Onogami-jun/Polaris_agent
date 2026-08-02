@@ -21,6 +21,13 @@ insert into public.polaris_config (key, value) values
   ('deepseek_api_key', 'sk-665f376d7c0f4b91b4c3029bf82e670a')
 on conflict (key) do nothing;
 
+-- ═══════════════════════════════════════════════════════
+-- 重要：启动前设置环境变量
+-- POLARIS_SERVICE_KEY 用于管理员密码重置操作
+-- 在 Supabase Dashboard → Settings → API → service_role key 中获取
+-- 启动命令：POLARIS_SERVICE_KEY=eyJ... npm start
+-- ═══════════════════════════════════════════════════════
+
 -- 1. profiles 扩展表（如果启文已经创建过，跳过这一步）
 create table if not exists public.profiles (
   id          uuid primary key references auth.users(id) on delete cascade,

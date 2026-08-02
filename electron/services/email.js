@@ -16,7 +16,7 @@ const SMTP_AUTH = {
   secure: true,
   auth: {
     user: 'bitwool@163.com',
-    pass: 'GFRf3LStAUwM7GGC',
+    pass: 'NOczzmhtspj33jj2',
   },
   connectionTimeout: 15000,
   greetingTimeout: 10000,

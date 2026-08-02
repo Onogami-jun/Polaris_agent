@@ -49,4 +49,5 @@ contextBridge.exposeInMainWorld('electronAPI', {
   emailForgotPassword: (email) => ipcRenderer.invoke('email:forgotPassword', { email }),
   authUnlock: (userId) => ipcRenderer.invoke('auth:unlock', { userId }),
   authLock: () => ipcRenderer.invoke('auth:lock'),
+  authAdminResetPassword: (email, newPassword) => ipcRenderer.invoke('auth:adminResetPassword', { email, newPassword }),
 });

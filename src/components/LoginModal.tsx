@@ -97,6 +97,12 @@ export const LoginModal: React.FC = () => {
     if (e.key === 'Backspace' && !vCode[i] && i > 0) vRefs.current[i-1]?.focus();
   };
 
+  /* ── Forgot password: what happens after code verification ── */
+  const[resetStage,setResetStage]=useState<''|'setPwd'>('');
+  const[newPwd,setNewPwd]=useState('');
+  const[newPwd2,setNewPwd2]=useState('');
+  const[resetEmail,setResetEmail]=useState('');
+
   /* ── Verify and act ── */
   const doVerify = async () => {
     var inCode = vCode.join('');
@@ -105,32 +111,48 @@ export const LoginModal: React.FC = () => {
     setVError('');
     var api = window.electronAPI;
 
-    if (vMode === 'register') {
-      // Sign up + login
-      var r = await supabase.auth.signUp({ email: vEmail, password, options: { data: { display_name: name || vEmail.split('@')[0] } } });
-      if (r.error) { setVError(translate(r.error.message)); return; }
-      if (r.data.session) {
-        var user = await getCurrentUser();
-        if (user && api) {
-          await api.authUnlock(user.id);
-          // Manually dispatch to Redux
-          d({ type: 'auth/login/fulfilled' as any, payload: user } as any);
-        }
-        if (api) api.emailSendWelcome(vEmail, name || '').catch(function(){});
-      }
-      setVStage('input'); setMsg('注册成功！'); setTimeout(() => setMsg(''), 2000);
+    if (vMode === 'forgot') {
+      // Code correct → show new password form
+      setResetEmail(vEmail);
+      setVStage('input');
+      setResetStage('setPwd');
       delete (window as any).__pol_code;
-    } else {
-      // Password reset: send reset link via Supabase
-      var { error: resetErr } = await supabase.auth.resetPasswordForEmail(vEmail, { redirectTo: 'polaris://reset-confirm' });
-      if (!resetErr) {
-        setMsg('密码重置链接已发送至 ' + vEmail + '，请查收邮件并按链接重置密码。');
-      } else {
-        setMsg('重置失败: ' + (resetErr.message || '请稍后重试'));
-      }
-      setVStage('input'); setTab('login');
-      delete (window as any).__pol_code;
+      return;
     }
+
+    // Register mode: sign up + auto login
+    var r = await supabase.auth.signUp({ email: vEmail, password, options: { data: { display_name: name || vEmail.split('@')[0] } } });
+    if (r.error) { setVError(translate(r.error.message)); return; }
+    if (r.data.session) {
+      var user = await getCurrentUser();
+      if (user && api) {
+        await api.authUnlock(user.id);
+        d({ type: 'auth/login/fulfilled' as any, payload: user } as any);
+      }
+      if (api) api.emailSendWelcome(vEmail, name || '').catch(function(){});
+    }
+    setVStage('input'); setMsg('注册成功！'); setTimeout(function(){ setMsg(''); }, 2000);
+    delete (window as any).__pol_code;
+  };
+
+  /* ── Set new password after forgot-password verification ── */
+  const doResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newPwd || newPwd.length < 6) { setVError('新密码至少 6 位'); return; }
+    if (newPwd !== newPwd2) { setVError('两次密码不一致'); return; }
+    setBusy(true); setVError('');
+    try {
+      // Call admin API via main process (uses service_role key)
+      var api = window.electronAPI;
+      if (!api) throw new Error('请在 Electron 环境中使用');
+      var result = await api.authAdminResetPassword(resetEmail, newPwd);
+      if (!result.success) { setVError(result.error || '重置失败'); setBusy(false); return; }
+      setMsg('密码重置成功！请切换到"登录"标签用新密码登录。');
+      setResetStage(''); setNewPwd(''); setNewPwd2(''); setResetEmail('');
+      // Auto-switch to login tab
+      setTab('login');
+    } catch(e: any) { setVError(e.message || '重置失败'); }
+    setBusy(false);
   };
 
   /* ── Handle login ── */
@@ -163,6 +185,38 @@ export const LoginModal: React.FC = () => {
     if (!email.includes('@')) return;
     sendCode('forgot');
   };
+
+  /* ═══════════════ SET NEW PASSWORD (after forgot code verified) ═══════════════ */
+  if (resetStage === 'setPwd') {
+    return (
+      <div className="fixed inset-0 z-[400] flex items-center justify-center bg-background/70 backdrop-blur-sm" onClick={() => d(closeLoginModal())}>
+        <div className="w-[400px] max-w-[92vw] rounded-2xl border border-border bg-card shadow-2xl" onClick={e => e.stopPropagation()}>
+          <div className="p-6 flex flex-col gap-4">
+            <div className="text-center">
+              <div className="w-14 h-14 rounded-2xl bg-primary/10 mx-auto mb-3 flex items-center justify-center text-2xl">🔑</div>
+              <h3 className="text-lg font-semibold text-foreground">设置新密码</h3>
+              <p className="text-xs text-muted-foreground mt-1">为 <b className="text-foreground">{resetEmail}</b> 设置新密码</p>
+            </div>
+            {vError && <div className="rounded-lg bg-destructive/10 border border-destructive/20 px-3 py-2 text-xs text-destructive">{vError}</div>}
+            {msg && <div className="rounded-lg bg-emerald-500/10 border border-emerald-500/20 px-3 py-2 text-xs text-emerald-600">{msg}</div>}
+            <form onSubmit={doResetPassword} className="flex flex-col gap-4">
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-muted-foreground">新密码</label>
+                <Input type="password" value={newPwd} onChange={e => setNewPwd(e.target.value)} placeholder="至少 6 位" className="h-10" autoFocus />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-muted-foreground">确认新密码</label>
+                <Input type="password" value={newPwd2} onChange={e => setNewPwd2(e.target.value)} placeholder="再次输入" className="h-10" />
+              </div>
+              <Button type="submit" className="h-10 w-full mt-1" disabled={busy || !newPwd || newPwd.length < 6 || newPwd !== newPwd2}>
+                {busy ? '重置中...' : '重置密码'}
+              </Button>
+            </form>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   /* ═══════════════ CODE VERIFICATION STEP ═══════════════ */
   if (vStage === 'code') {

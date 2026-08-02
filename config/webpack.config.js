@@ -27,9 +27,7 @@ module.exports = (env, argv) => {
     },
     plugins: [
       new HtmlWebpackPlugin({ template: './public/index.html', title: 'Polaris' }),
-      new webpack.DefinePlugin({
-        'process.env.POLARIS_SUPABASE_ANON_KEY': JSON.stringify(process.env.POLARIS_SUPABASE_ANON_KEY || ''),
-      }),
+      new webpack.DefinePlugin({}),
     ],
     devServer: { port: 3000, hot: true, historyApiFallback: true },
     devtool: isDev ? 'eval-source-map' : false,
