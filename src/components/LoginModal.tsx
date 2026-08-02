@@ -28,6 +28,12 @@ export const LoginModal: React.FC = () => {
   const [vMode, setVMode] = useState<'register'|'forgot'>('register');
   const vRefs = useRef<(HTMLInputElement|null)[]>([]);
 
+  // Forgot password: reset password UI state
+  const[resetStage,setResetStage]=useState<''|'setPwd'>('');
+  const[newPwd,setNewPwd]=useState('');
+  const[newPwd2,setNewPwd2]=useState('');
+  const[resetEmail,setResetEmail]=useState('');
+
   useEffect(() => { if (!show) { setVStage('input'); setVCode(['','','','','','']); setMsg(''); setVError(''); } }, [show]);
 
   if (!show) return null;
@@ -96,12 +102,6 @@ export const LoginModal: React.FC = () => {
   const onCodeKey = (i: number, e: React.KeyboardEvent) => {
     if (e.key === 'Backspace' && !vCode[i] && i > 0) vRefs.current[i-1]?.focus();
   };
-
-  /* ── Forgot password: what happens after code verification ── */
-  const[resetStage,setResetStage]=useState<''|'setPwd'>('');
-  const[newPwd,setNewPwd]=useState('');
-  const[newPwd2,setNewPwd2]=useState('');
-  const[resetEmail,setResetEmail]=useState('');
 
   /* ── Verify and act ── */
   const doVerify = async () => {

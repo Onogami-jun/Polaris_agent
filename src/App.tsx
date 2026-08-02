@@ -464,10 +464,10 @@ const App:React.FC=()=>{
   const confirmPlan=async()=>{if(!planId)return;const api=window.electronAPI;if(!api)return;setThk('执行中...');d(setStreaming(true));try{await api.plannerExecute(planId);setPlan(null);setPlanId('');setPlanProg(null);addExecLog('planner','done','计划执行完成');d(addMessage({sessionId:activeSessionId!,message:{id:'p'+Date.now(),role:'assistant',content:'计划已执行完成。',timestamp:Date.now(),model:'Planner'}}))}catch(e:any){addExecLog('planner','error',e.message);d(addMessage({sessionId:activeSessionId!,message:{id:'e'+Date.now(),role:'assistant',content:'执行失败: '+e.message,timestamp:Date.now()}}))}d(setStreaming(false));setThk('')};
   const rejectPlan=async()=>{const api=window.electronAPI;if(!api)return;await api.plannerReject(planId);setPlan(null);setPlanId('');setPlanProg(null);setExecLog(p=>p.filter(e=>e.tool!=='planner'))};
 
-  if(splash)return <Splash fade={splashFade} setupProgress={sandboxProg} setupError={sandboxErr}/>;
-
   // ── Onboarding (once) ──
-  if(!localStorage.getItem(ONBOARDING_KEY)&&!showOnboarding){setShowOnboarding(true);}
+  useEffect(()=>{if(!localStorage.getItem(ONBOARDING_KEY)&&!showOnboarding)setShowOnboarding(true)},[]);
+
+  if(splash)return <Splash fade={splashFade} setupProgress={sandboxProg} setupError={sandboxErr}/>;
   if(showOnboarding)return <Onboarding onDone={()=>setShowOnboarding(false)}/>;
 
   // Precompute conditional panels to avoid Babel TSX parse issues
