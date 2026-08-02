@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAppSelector, useAppDispatch } from '../store';
 import { toggleSettings, setApiKey, setTheme, setLanguage, setFontSize, updateAgentConfig, updateThirdParty, updateMobileLink, updateProxy, togglePlugin, setMascotSettings, type Theme, type Language } from '../store/chatSlice';
 import { loginUser, logoutUser } from '../store/authSlice';
+import { AgentLab } from './AgentLab';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 
@@ -14,6 +15,7 @@ const Icons: Record<string, React.ReactNode> = {
   data: <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><ellipse cx="8" cy="3" rx="7" ry="2"/><path d="M1 3v5c0 1.1 3.1 2 7 2s7-.9 7-2V3"/><path d="M1 8v5c0 1.1 3.1 2 7 2s7-.9 7-2V8"/></svg>,
   account: <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="8" cy="5" r="3"/><path d="M2 14c0-3.3 2.7-6 6-6s6 2.7 6 6"/></svg>,
   sandbox: <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="1" y="5" width="14" height="8" rx="1.5"/><path d="M5 5V3a2 2 0 012-2h2a2 2 0 012 2v2"/><line x1="5" y1="9" x2="11" y2="9"/><line x1="5" y1="11" x2="7" y2="11"/></svg>,
+  lab: <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M5 2v6l-3 4h12l-3-4V2"/><line x1="8" y1="11" x2="8" y2="14"/><line x1="3" y1="12" x2="13" y2="12"/></svg>,
   about: <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="8" cy="8" r="6"/><line x1="8" y1="7.5" x2="8" y2="11.5"/><circle cx="8" cy="5" r="0.5" fill="currentColor"/></svg>,
 };
 
@@ -26,6 +28,7 @@ const TABS = [
   { id: 'data', label: '数据', icon: Icons.data },
   { id: 'account', label: '账号', icon: Icons.account },
   { id: 'sandbox', label: '沙箱', icon: Icons.sandbox },
+  { id: 'lab', label: '实验', icon: Icons.lab },
   { id: 'about', label: '关于', icon: Icons.about },
 ];
 
@@ -302,6 +305,9 @@ const SettingsPanel: React.FC = () => {
 
             {/* ── Sandbox ── */}
             {tab === 'sandbox' && <SandboxSettings />}
+
+            {/* ── Agent Lab ── */}
+            {tab === 'lab' && <AgentLab />}
 
             {/* ── About ── */}
             {tab === 'about' && (

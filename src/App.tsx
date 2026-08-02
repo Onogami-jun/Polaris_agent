@@ -7,7 +7,6 @@ import{saveSessions,loadSessions as ld}from'./store/persist';
 import SettingsPanel from'./components/SettingsPanel';
 import{LoginModal}from'./components/LoginModal';
 import{AuthBanner}from'./components/AuthBanner';
-import{SandboxHealthPanel}from'./components/SandboxWizard';
 import{Mascot}from'./components/Mascot';
 import{Button}from'./components/ui/button';
 import{Badge}from'./components/ui/badge';
@@ -113,117 +112,100 @@ words.forEach(function(x){o=o.replace(new RegExp('\\b'+x+'\\b','g'),'<span style
 return o;}
 
 /* ─────────────────────────────────────────────────
-   WORKFLOW VIEW — real-time sidebar panel
-   Shows: Plan steps + Execution log + Task status
+   WORKFLOW VIEW — elegant pipeline timeline
    ───────────────────────────────────────────────── */
 function WorkflowView({plan,planProg,planId,execLog,todoSteps,onConfirmPlan,onRejectPlan,onStopPlan}:any){
-  // Build unified step list from planner + exec log + todo
-  const hasPlan=!!plan;
-  const isExecuting=!!planProg;
+  var hasPlan=!!plan;
+  var isExecuting=!!planProg;
+  var hasContent=hasPlan||(execLog&&execLog.length>0)||(todoSteps&&todoSteps.length>0);
 
   return(
     <div className="flex flex-col h-full">
-      {/* Section header */}
-      <div className="px-3 py-2.5">
-        <div className="flex items-center gap-2">
-          <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider font-mono">工作流</span>
-          {isExecuting&&<span className="flex gap-0.5"><span className="h-1 w-1 rounded-full bg-primary animate-pulse-dot"/><span className="h-1 w-1 rounded-full bg-primary animate-pulse-dot"style={{animationDelay:'0.2s'}}/><span className="h-1 w-1 rounded-full bg-primary animate-pulse-dot"style={{animationDelay:'0.4s'}}/></span>}
-        </div>
+      <div className="px-4 py-3 flex items-center gap-2">
+        <div className="w-1.5 h-1.5 rounded-full bg-primary"/>
+        <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider font-mono">工作流</span>
+        {isExecuting&&<span className="text-[9px] text-primary font-mono animate-pulse ml-auto">运行中</span>}
+        {!isExecuting&&hasContent&&<span className="text-[9px] text-muted-foreground font-mono ml-auto">就绪</span>}
       </div>
       <Separator/>
 
       <ScrollArea className="flex-1">
-        <div className="px-2 py-2 space-y-1">
-          {/* ── Plan Steps (when planner is active) ── */}
-          {hasPlan&&plan.steps&&plan.steps.map((s:any)=>{
-            let status='pending';
-            let statusIcon='○';
-            let statusColor='text-muted-foreground/40';
-            let bg='';
-            if(planProg){
-              if(planProg.type==='step_done'&&planProg.step===s.id){status='done';statusIcon='✓';statusColor='text-emerald-500';bg='bg-emerald-500/5';}
-              else if(planProg.step===s.id&&planProg.type==='step_start'){status='running';statusIcon='●';statusColor='text-primary';bg='bg-primary/5 border border-primary/20';}
-              else if(planProg.type==='step_error'&&planProg.step===s.id){status='error';statusIcon='✗';statusColor='text-destructive';bg='bg-destructive/5';}
-            }
-            return(
-              <div key={s.id} className={'flex items-start gap-2.5 px-2.5 py-2 rounded-lg transition-all duration-300 '+bg}>
-                <span className={'font-mono text-[11px] w-4 text-center shrink-0 mt-0.5 '+statusColor}>{statusIcon}</span>
-                <div className="flex-1 min-w-0">
-                  <div className="text-[11px] font-medium text-foreground leading-tight">{s.description}</div>
-                  <div className="text-[9px] text-muted-foreground font-mono mt-0.5">{s.agent||'agent'}</div>
-                </div>
-              </div>
-            );
-          })}
-
-          {/* ── Exec Log (tool calls) ── */}
-          {execLog&&execLog.length>0&&
-            <div className="contents">
-              <div className="pt-3 pb-1">
-                <span className="text-[9px] font-semibold text-muted-foreground uppercase tracking-wider font-mono px-2">工具调用</span>
-              </div>
-              {execLog.slice(-20).reverse().map((e:any)=>{
-                const icon={running:'●',done:'✓',error:'✗'}[e.status]||'○';
-                const clr={running:'text-primary',done:'text-emerald-500',error:'text-destructive'}[e.status]||'text-muted-foreground';
-                return <div key={e.id} className="flex items-start gap-2 px-2.5 py-1.5 rounded-md hover:bg-muted/50 transition-colors">
-                    <span className={'font-mono text-[10px] w-3 text-center shrink-0 '+clr}>{icon}</span>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-[10px] font-medium text-foreground font-mono">{e.tool}</span>
-                        <span className="text-[8px] text-muted-foreground/50">{e.time}</span>
-                      </div>
-                      {e.detail&&<div className="text-[9px] text-muted-foreground truncate mt-0.5">{e.detail}</div>}
+        <div className="px-3 py-3">
+          {/* ── Timeline: plan steps ── */}
+          {hasPlan&&plan.steps&&(
+            <div className="space-y-0">
+              {plan.steps.map(function(s:any,i:number){
+                var isLast=i===plan.steps.length-1;
+                var status='pending';var dotColor='bg-muted-foreground/25';
+                if(planProg){
+                  if(planProg.type==='step_done'&&planProg.step===s.id){status='done';dotColor='bg-emerald-500';}
+                  else if(planProg.step===s.id&&planProg.type==='step_start'){status='running';dotColor='bg-primary';}
+                  else if(planProg.type==='step_error'&&planProg.step===s.id){status='error';dotColor='bg-destructive';}
+                }
+                return <div key={s.id} className="relative pl-6 pb-4 last:pb-0">
+                  {!isLast&&<div className="absolute left-[7px] top-3 w-0.5 h-[calc(100%-4px)] bg-border/50"/>}
+                  <div className={'absolute left-[3px] top-1 w-2.5 h-2.5 rounded-full border-2 '+ (status==='running'?'border-primary bg-primary':'border-border '+dotColor)} style={{boxShadow:status==='running'?'0 0 8px hsla(var(--primary)/.4)':''}}/>
+                  <div className={'rounded-lg px-3 py-2 transition-all '+ (status==='running'?'bg-primary/5 border border-primary/15':status==='done'?'opacity-50':'')}>
+                    <div className="text-[11px] font-medium text-foreground leading-snug">{s.description}</div>
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className="text-[9px] text-muted-foreground font-mono">{s.agent||'agent'}</span>
+                      {status==='running'&&<span className="flex gap-0.5"><span className="h-1 w-1 rounded-full bg-primary animate-pulse-dot"/><span className="h-1 w-1 rounded-full bg-primary animate-pulse-dot"style={{animationDelay:'0.2s'}}/></span>}
                     </div>
                   </div>
+                </div>;
               })}
             </div>
-          }
+          )}
 
-          {/* ── Todo Steps ── */}
-          {todoSteps&&todoSteps.length>0&&
-            <div className="contents">
-              <div className="pt-3 pb-1">
-                <span className="text-[9px] font-semibold text-muted-foreground uppercase tracking-wider font-mono px-2">任务</span>
+          {/* ── Exec log: compact chips ── */}
+          {execLog&&execLog.length>0&&(
+            <div className="mt-3">
+              <div className="text-[9px] font-semibold text-muted-foreground uppercase tracking-wider font-mono mb-2 px-1">工具调用</div>
+              <div className="space-y-1">
+                {execLog.slice(-15).reverse().map(function(e:any){
+                  var color={running:'border-primary/30 bg-primary/5',done:'border-emerald-500/20 bg-emerald-500/5',error:'border-destructive/20 bg-destructive/5'}[e.status]||'border-border/30 bg-muted/20';
+                  return <div key={e.id} className={'flex items-center gap-2 px-2.5 py-1.5 rounded-md border text-[10px] transition-all '+color}>
+                    <span className="font-mono font-medium text-foreground shrink-0">{e.tool}</span>
+                    <span className="flex-1 text-muted-foreground truncate">{e.detail||''}</span>
+                    <span className="text-[8px] text-muted-foreground/40 font-mono shrink-0">{e.time}</span>
+                  </div>;
+                })}
               </div>
-              {todoSteps.map((t:any)=>{
-                const icon={running:'●',done:'✓',pending:'○'}[t.status]||'○';
-                const clr={running:'text-primary',done:'text-emerald-500',pending:'text-muted-foreground/40'}[t.status]||'text-muted-foreground';
-                return <div key={t.id} className="flex items-center gap-2 px-2.5 py-1.5">
-                    <span className={'font-mono text-[10px] '+clr}>{icon}</span>
-                    <span className={t.status==='running'?'text-[10px] font-medium text-foreground':'text-[10px] text-muted-foreground'}>{t.label}</span>
-                  </div>
-              })}
             </div>
-          }
+          )}
+
+          {/* ── Todo steps: mini list ── */}
+          {todoSteps&&todoSteps.length>0&&(
+            <div className="mt-3">
+              <div className="text-[9px] font-semibold text-muted-foreground uppercase tracking-wider font-mono mb-2 px-1">任务</div>
+              <div className="space-y-0.5">
+                {todoSteps.map(function(t:any){
+                  var icon={running:'●',done:'✓',pending:'○'}[t.status]||'○';
+                  var clr={running:'text-primary',done:'text-emerald-500',pending:'text-muted-foreground/30'}[t.status]||'text-muted-foreground';
+                  return <div key={t.id} className="flex items-center gap-2 px-2.5 py-1 text-[10px]">
+                    <span className={'font-mono text-[9px] '+clr}>{icon}</span>
+                    <span className={t.status==='running'?'font-medium text-foreground':'text-muted-foreground'}>{t.label}</span>
+                  </div>;
+                })}
+              </div>
+            </div>
+          )}
 
           {/* ── Idle state ── */}
-          {!hasPlan&&(!execLog||execLog.length===0)&&(!todoSteps||todoSteps.length===0)&&(
-            <div className="flex flex-col items-center justify-center py-12 text-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center">
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className="text-muted-foreground/50">
-                  <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="1.5" strokeDasharray="3 2"/>
-                  <polygon points="8,5 8,8 10,10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+          {!hasContent&&(
+            <div className="flex flex-col items-center justify-center py-16 text-center gap-3">
+              <div className="w-12 h-12 rounded-2xl bg-muted/50 flex items-center justify-center">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-muted-foreground/30">
+                  <polyline points="22,12 18,12 15,21 9,3 6,12 2,12"/>
                 </svg>
               </div>
-              <p className="text-[10px] text-muted-foreground/60 font-mono">等待任务...</p>
-              <p className="text-[9px] text-muted-foreground/40 max-w-[180px]">描述优化问题后，工作流进度将在此实时显示</p>
+              <p className="text-[10px] text-muted-foreground/40 font-mono">等待任务</p>
             </div>
           )}
         </div>
       </ScrollArea>
 
-      {/* ── Plan actions (when pending confirmation) ── */}
-      {hasPlan&&!isExecuting&&(
-        <div className="px-3 py-2.5 border-t border-border bg-card">
-          <p className="text-[10px] text-muted-foreground mb-2 font-mono">{plan.request?.slice(0,60)}</p>
-          <div className="flex gap-2">
-            <Button size="sm" className="flex-1 h-7 text-[10px]"onClick={onConfirmPlan}>执行计划</Button>
-            <Button size="sm" variant="outline" className="flex-1 h-7 text-[10px]"onClick={onRejectPlan}>取消</Button>
-          </div>
-        </div>
-      )}
-
-      {/* ── Stop button (during execution) ── */}
+      {/* ── Stop button ── */}
       {isExecuting&&(
         <div className="px-3 py-2.5 border-t border-border bg-card">
           <Button size="sm" variant="outline" className="w-full h-7 text-[10px]"onClick={onStopPlan}>停止执行</Button>
@@ -233,12 +215,10 @@ function WorkflowView({plan,planProg,planId,execLog,todoSteps,onConfirmPlan,onRe
   );
 }
 
-/* ─────────────────────────────────────────────────
    LEFT SIDEBAR — conversations + token
    ───────────────────────────────────────────────── */
 function LeftSidebar({sessions,activeId,pct,onSelect,onNew,onDelete,onOpenSettings,width}:any){
   const auth = useAppSelector(s=>s.auth);
-  const engine = useAppSelector(s=>s.chat.engineStatus);
   const d = useAppDispatch();
   return(
     <div style={{width:width}} className="shrink-0 bg-card border-r border-border flex flex-col h-full overflow-hidden">
@@ -260,13 +240,6 @@ function LeftSidebar({sessions,activeId,pct,onSelect,onNew,onDelete,onOpenSettin
       {/* Token usage */}
       <div className="flex items-center gap-2 px-3 py-2 text-[9px] text-muted-foreground font-mono">
         <div className="flex-1 h-1 bg-muted rounded-full overflow-hidden"><div className="h-full bg-primary rounded-full transition-all duration-500"style={{width:pct+'%'}}/></div>
-      </div>
-      {/* Engine status */}
-      <div className="px-3 py-1.5 space-y-1 text-[9px] font-mono">
-        <div className="flex items-center justify-between"><span className="text-muted-foreground/50">Python</span><span className={engine.python?'text-emerald-500':'text-destructive'}>{engine.python?'✓':'✗'}</span></div>
-        <div className="flex items-center justify-between"><span className="text-muted-foreground/50">polaris-opt</span><span className={engine.polaris?'text-emerald-500':'text-destructive'}>{engine.polaris?'✓':'✗'}</span></div>
-        <div className="flex items-center justify-between"><span className="text-muted-foreground/50">DeepSeek</span><span className={engine.deepseek?'text-emerald-500':'text-destructive'}>{engine.deepseek?'✓':'✗'}</span></div>
-        {!engine.polaris && <div className="text-[8px] text-muted-foreground/40 text-center pt-0.5">pip install polaris-opt[highs]</div>}
       </div>
       {/* Settings + Login buttons */}
       <div className="px-2 py-1.5 space-y-1 border-t border-border">
@@ -297,8 +270,6 @@ function LeftSidebar({sessions,activeId,pct,onSelect,onNew,onDelete,onOpenSettin
 function RightSidebar({execLog,todoSteps,plan,planProg,planId,onConfirmPlan,onRejectPlan,onStopPlan,width}:any){
   return(
     <div style={{width:width}} className="shrink-0 bg-card border-l border-border flex flex-col h-full overflow-hidden">
-      <SandboxHealthPanel/>
-      <Separator/>
       <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
         <WorkflowView
           plan={plan} planProg={planProg} planId={planId}
