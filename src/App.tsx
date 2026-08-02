@@ -312,6 +312,7 @@ const App:React.FC=()=>{
   const[cid,setCid]=useState('');const[web,setWeb]=useState(false);
   const[cmd,setCmd]=useState(false);
   const[splash,setSplash]=useState(true);const[splashFade,setSplashFade]=useState(false);
+  const mascotCfg = useAppSelector(s => s.chat.settings.mascot);
   const splashRef=useRef(true);
   const[sandboxProg,setSandboxProg]=useState<any>(null);const[sandboxErr,setSandboxErr]=useState('');
   const[thinking,setThinking]=useState('');const mascotAreaRef=useRef<HTMLDivElement>(null);
@@ -518,7 +519,7 @@ const App:React.FC=()=>{
       <div className="flex flex-1 overflow-hidden">
         {leftPanel}
         <div className="flex-1 flex flex-col overflow-hidden min-w-0 relative" ref={mascotAreaRef}>
-          <Mascot thinking={streaming||!!thinking} containerRef={mascotAreaRef}/>
+          <Mascot thinking={streaming||!!thinking} containerRef={mascotAreaRef} enabled={mascotCfg.enabled} clickReactions={mascotCfg.clickReactions} autoWander={mascotCfg.autoWander} showWhenSleepy={mascotCfg.showWhenSleepy}/>
           <Conversation>
             {interventions.map(function(c:any){return <div key={c.ts} className={'flex items-center gap-3 px-4 py-2 rounded-lg border text-xs animate-fade-in '+ (c.level===3?'border-l-2 border-destructive bg-destructive/5':'border-l-2 border-emerald-500 bg-emerald-50 dark:bg-emerald-950/20')}><span className="flex-1 text-muted-foreground">{c.body}</span><div className="flex gap-2"><Button size="sm"variant="outline"className="h-7 text-[10px]"onClick={()=>{var api=window.electronAPI;if(api&&c.eventKey)api.monitorFeedback({eventKey:c.eventKey,accepted:true});setInterventions(function(p:any){return p.filter(function(x:any){return x.ts!==c.ts})})}}>接受</Button><Button size="sm"variant="ghost"className="h-7 text-[10px]"onClick={()=>{var api=window.electronAPI;if(api&&c.eventKey)api.monitorFeedback({eventKey:c.eventKey,accepted:false});setInterventions(function(p:any){return p.filter(function(x:any){return x.ts!==c.ts})})}}>忽略</Button></div></div>})}
             <MessageList>{msgList}</MessageList>

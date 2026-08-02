@@ -12,9 +12,21 @@ const WANDER_MOVE_MS = 3000;
 interface MascotProps {
   thinking?: boolean;
   containerRef?: React.RefObject<HTMLDivElement | null>;
+  /** If false, mascot is completely hidden */
+  enabled?: boolean;
+  /** If false, clicking does nothing */
+  clickReactions?: boolean;
+  /** If false, doesn't auto-wander */
+  autoWander?: boolean;
+  /** If false, never goes to sleep mode */
+  showWhenSleepy?: boolean;
 }
 
-export const Mascot: React.FC<MascotProps> = ({ thinking = false, containerRef }) => {
+export const Mascot: React.FC<MascotProps> = ({
+  thinking = false, containerRef,
+  enabled = true, clickReactions = true, autoWander: doWander = true, showWhenSleepy = true,
+}) => {
+  if (!enabled) return null;
   const [state,setState]=useState<State>('idle');
   const [pos,setPos]=useState<Pos>({x:0,y:0});
   const [face,setFace]=useState<Face>('normal');
@@ -60,14 +72,14 @@ export const Mascot: React.FC<MascotProps> = ({ thinking = false, containerRef }
 
   const scheduleW = useCallback(() => {
     if (wanderT.current) clearTimeout(wanderT.current);
-    wanderT.current = setTimeout(wander, 4000 + Math.random() * 8000);
-  }, [wander]);
+    if (doWander) wanderT.current = setTimeout(wander, 4000 + Math.random() * 8000);
+  }, [wander, doWander]);
 
   useEffect(() => {
     idleT.current = setInterval(() => {
       const dt = Date.now() - lastAct.current;
-      if (dt > SLEEP_TIME && state === 'idle') { setFace('sleeping'); setState('sleepy'); }
-      else if (dt > IDLE_TIME && state === 'idle') scheduleW();
+      if (dt > SLEEP_TIME && state === 'idle' && showWhenSleepy) { setFace('sleeping'); setState('sleepy'); }
+      else if (dt > IDLE_TIME && state === 'idle' && doWander) scheduleW();
     }, 5000);
     // Initial position
     setPos(pickSpot());
@@ -83,6 +95,7 @@ export const Mascot: React.FC<MascotProps> = ({ thinking = false, containerRef }
   // Click
   const onClick = (e: React.MouseEvent) => {
     e.stopPropagation(); lastAct.current = Date.now();
+    if (!clickReactions) return;
     const n = clicks + 1; setClicks(n); setState('clicked'); setFace('happy');
     const el = e.currentTarget as HTMLElement;
     el.style.transform = 'scale(1.3) rotate(15deg)';

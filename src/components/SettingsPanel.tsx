@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAppSelector, useAppDispatch } from '../store';
-import { toggleSettings, setApiKey, setTheme, setLanguage, setFontSize, updateAgentConfig, updateThirdParty, updateMobileLink, updateProxy, togglePlugin, type Theme, type Language } from '../store/chatSlice';
+import { toggleSettings, setApiKey, setTheme, setLanguage, setFontSize, updateAgentConfig, updateThirdParty, updateMobileLink, updateProxy, togglePlugin, setMascotSettings, type Theme, type Language } from '../store/chatSlice';
 import { loginUser, logoutUser } from '../store/authSlice';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -138,6 +138,22 @@ const SettingsPanel: React.FC = () => {
                 <Row label="上下文记忆" hint="跨对话记住用户偏好">
                   <Toggle on={s.memory.enabled} onClick={() => dispatch(updateAgentConfig({ webSearch: !s.agent.webSearch }))} />
                 </Row>
+
+                <div className="pt-4 border-t border-border mt-4">
+                  <h4 className="text-sm font-semibold text-foreground mb-3">🎨 吉祥物 Pola</h4>
+                  <Row label="显示吉祥物" hint="在聊天区显示啵啦吉祥物">
+                    <Toggle on={s.mascot.enabled} onClick={() => dispatch(setMascotSettings({ enabled: !s.mascot.enabled }))} />
+                  </Row>
+                  <Row label="点击互动" hint="点击吉祥物时播放动画">
+                    <Toggle on={s.mascot.clickReactions} onClick={() => dispatch(setMascotSettings({ clickReactions: !s.mascot.clickReactions }))} />
+                  </Row>
+                  <Row label="自动闲逛" hint="长时间不用时自动在聊天区移动">
+                    <Toggle on={s.mascot.autoWander} onClick={() => dispatch(setMascotSettings({ autoWander: !s.mascot.autoWander }))} />
+                  </Row>
+                  <Row label="犯困动画" hint="超长时间不理它会打瞌睡">
+                    <Toggle on={s.mascot.showWhenSleepy} onClick={() => dispatch(setMascotSettings({ showWhenSleepy: !s.mascot.showWhenSleepy }))} />
+                  </Row>
+                </div>
               </div>
             )}
 

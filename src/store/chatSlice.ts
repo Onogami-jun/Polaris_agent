@@ -16,6 +16,7 @@ interface SettingsState {
   proxy: { enabled: boolean; host: string; port: string; auth: string };
   agent: AgentConfig; plugins: PluginInfo[]; promptTemplates: PromptTemplate[];
   memory: { enabled: boolean; entries: { key: string; value: string; timestamp: number }[] };
+  mascot: { enabled: boolean; clickReactions: boolean; autoWander: boolean; showWhenSleepy: boolean };
 }
 
 interface ChatState {
@@ -39,6 +40,7 @@ const initialState: ChatState = {
     plugins: [{ id:'filesystem',name:'文件系统',description:'读写和管理本地文件',enabled:true,type:'tool' },{ id:'browser',name:'网页浏览器',description:'打开和控制浏览器标签页',enabled:false,type:'tool' },{ id:'terminal',name:'终端',description:'执行 Shell 命令',enabled:true,type:'tool' },{ id:'calendar',name:'日历',description:'管理日历事件',enabled:false,type:'skill' },{ id:'email',name:'邮件',description:'发送和阅读邮件',enabled:false,type:'tool' }],
     promptTemplates: [{ id:'t1',name:'代码审查',content:'请审查以下代码，指出潜在问题、性能瓶颈和安全风险：\n\n```\n{{code}}\n```',category:'开发' },{ id:'t2',name:'邮件撰写',content:'帮我写一封邮件。\n收件人：{{to}}\n主题：{{subject}}\n要点：{{points}}',category:'写作' },{ id:'t3',name:'翻译',content:'请将以下内容翻译为{{language}}，保持原文风格和语气：\n{{text}}',category:'写作' },{ id:'t4',name:'摘要',content:'请为以下内容生成一份简洁的摘要（200字以内）：\n{{content}}',category:'研究' },{ id:'t5',name:'会议纪要',content:'根据以下讨论内容生成一份结构化的会议纪要（议题-结论-行动项）：\n{{transcript}}',category:'写作' }],
     memory: { enabled: true, entries: [] },
+    mascot: { enabled: true, clickReactions: true, autoWander: true, showWhenSleepy: true },
   },
   engineStatus: { python: false, polaris: false, highs: false, deepseek: false },
 };
@@ -66,9 +68,10 @@ const chatSlice = createSlice({ name: 'chat', initialState, reducers: {
   removePlugin: (s, a: PayloadAction<string>) => { s.settings.plugins = s.settings.plugins.filter(x => x.id !== a.payload); },
   addMemory: (s, a: PayloadAction<{ key: string; value: string }>) => { s.settings.memory.entries.push({...a.payload, timestamp: Date.now()}); },
   setEngineStatus: (s, a: PayloadAction<Partial<ChatState['engineStatus']>>) => { Object.assign(s.engineStatus, a.payload); },
+  setMascotSettings: (s, a: PayloadAction<Partial<SettingsState['mascot']>>) => { Object.assign(s.settings.mascot, a.payload); },
   addPromptTemplate: (s, a: PayloadAction<PromptTemplate>) => { s.settings.promptTemplates.push(a.payload); },
   removePromptTemplate: (s, a: PayloadAction<string>) => { s.settings.promptTemplates = s.settings.promptTemplates.filter(x => x.id !== a.payload); },
 }});
 
-export const { addMessage, updateLastAssistant, editMessage, loadSessions, newSession, branchSession, deleteSession, setActiveSession, setStreaming, setStrategy, toggleSidebar, toggleSettings, setApiKey, setTheme, setLanguage, setFontSize, updateAgentConfig, updateThirdParty, updateMobileLink, updateProxy, togglePlugin, addPlugin, removePlugin, addMemory, addPromptTemplate, removePromptTemplate, setEngineStatus } = chatSlice.actions;
+export const { addMessage, updateLastAssistant, editMessage, loadSessions, newSession, branchSession, deleteSession, setActiveSession, setStreaming, setStrategy, toggleSidebar, toggleSettings, setApiKey, setTheme, setLanguage, setFontSize, updateAgentConfig, updateThirdParty, updateMobileLink, updateProxy, togglePlugin, addPlugin, removePlugin, addMemory, addPromptTemplate, removePromptTemplate, setEngineStatus, setMascotSettings } = chatSlice.actions;
 export default chatSlice.reducer;

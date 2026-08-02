@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useAppDispatch, useAppSelector } from '../store';
 import { closeLoginModal, clearLoginError, loginUser } from '../store/authSlice';
-import { supabase } from '../lib/supabase';
+import { supabase, getCurrentUser } from '../lib/supabase';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 
@@ -85,40 +85,64 @@ export const LoginModal: React.FC = () => {
 
   /* ── Verify code and complete registration ───────────── */
   const verifyAndLogin = async () => {
-    const entered = verifyCode.join('');
-    const stored = (window as any).__polaris_verify_code;
+    var entered = verifyCode.join('');
+    var stored = (window as any).__polaris_verify_code;
     if (entered.length < 6) { setCodeError('请输入完整验证码'); return; }
     if (entered !== stored) { setCodeError('验证码不正确'); return; }
 
     setCodeError('');
-    const storedEmail = (window as any).__polaris_verify_email;
+    var storedEmail = (window as any).__polaris_verify_email;
+    var finalEmail = storedEmail || pendingEmail;
+    var finalPass = pendingPassword;
+    var finalName = pendingName || finalEmail.split('@')[0];
 
-    // Call Supabase signUp (this time with email_confirm: false in mind)
-    // If email confirmation is required by Supabase, signUp still succeeds but user isn't auto-logged in
-    const { error: signUpErr } = await supabase.auth.signUp({
-      email: storedEmail || pendingEmail,
-      password: pendingPassword,
-      options: { data: { display_name: pendingName || storedEmail?.split('@')[0] } },
+    // Sign up with email confirmation OFF (we already verified via our code)
+    var result = await supabase.auth.signUp({
+      email: finalEmail,
+      password: finalPass,
+      options: { data: { display_name: finalName } },
     });
 
-    if (signUpErr) {
-      setCodeError(translateError(signUpErr.message));
+    if (result.error) {
+      // If user already exists, try to log in directly
+      if (result.error.message && result.error.message.includes('already registered')) {
+        d(loginUser({ email: finalEmail, password: finalPass }));
+        setStage('form');
+        cleanupCode();
+        return;
+      }
+      setCodeError(translateError(result.error.message));
       return;
     }
 
-    // Auto-login after registration
-    d(loginUser({ email: storedEmail || pendingEmail, password: pendingPassword }));
-
-    // Send welcome email
-    const api = window.electronAPI;
-    if (api) {
-      api.emailSendWelcome(storedEmail || pendingEmail, pendingName || '').catch(function(){});
+    // Check if signUp returned a session (email confirm was OFF)
+    if (result.data.session) {
+      // Auto-logged in — get user info and set Redux state
+      var user = await getCurrentUser();
+      if (user) {
+        // Manually dispatch login success (skip signInWithPassword which would fail)
+        d({ type: 'auth/login/fulfilled', payload: user });
+      }
+      sendWelcomeIfNeeded(finalEmail, finalName);
+      setStage('form');
+      cleanupCode();
+      return;
     }
 
-    // Cleanup
+    // No session = Supabase email confirmation is ON
+    setCodeError('注册成功，但需要邮箱确认。请先打开 Supabase Dashboard → Authentication → Settings → 关闭 Confirm email，然后重新注册。或者去邮箱点击 Supabase 发送的确认链接。');
+  };
+
+  var cleanupCode = function() {
     delete (window as any).__polaris_verify_code;
     delete (window as any).__polaris_verify_email;
-    setStage('form');
+  };
+
+  var sendWelcomeIfNeeded = function(toEmail: string, toName: string) {
+    var api = window.electronAPI;
+    if (api) {
+      api.emailSendWelcome(toEmail, toName).catch(function(){});
+    }
   };
 
   /* ── Register button handler ─────────────────────────── */
