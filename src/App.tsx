@@ -265,11 +265,7 @@ function LeftSidebar({sessions,activeId,pct,onSelect,onNew,onDelete,onOpenSettin
   );
 }
 
-/* ─────────────────────────────────────────────────
-/* ─────────────────────────────────────────────────
-   RIGHT SIDEBAR — workflow real-time view
-   ───────────────────────────────────────────────── */
-   ───────────────────────────────────────────────── */
+// --- Right Sidebar ---
 function RightSidebar({execLog,todoSteps,plan,planProg,planId,onConfirmPlan,onRejectPlan,onStopPlan,width}:any){
   return(
     <div style={{width:width}} className="shrink-0 bg-card border-l border-border flex flex-col h-full overflow-hidden">
