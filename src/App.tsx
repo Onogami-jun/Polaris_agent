@@ -215,6 +215,7 @@ function WorkflowView({plan,planProg,planId,execLog,todoSteps,onConfirmPlan,onRe
   );
 }
 
+/* ─────────────────────────────────────────────────
    LEFT SIDEBAR — conversations + token
    ───────────────────────────────────────────────── */
 function LeftSidebar({sessions,activeId,pct,onSelect,onNew,onDelete,onOpenSettings,width}:any){
@@ -265,7 +266,9 @@ function LeftSidebar({sessions,activeId,pct,onSelect,onNew,onDelete,onOpenSettin
 }
 
 /* ─────────────────────────────────────────────────
+/* ─────────────────────────────────────────────────
    RIGHT SIDEBAR — workflow real-time view
+   ───────────────────────────────────────────────── */
    ───────────────────────────────────────────────── */
 function RightSidebar({execLog,todoSteps,plan,planProg,planId,onConfirmPlan,onRejectPlan,onStopPlan,width}:any){
   return(
