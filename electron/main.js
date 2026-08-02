@@ -109,7 +109,8 @@ ipcMain.handle('auth:lock', () => {
 ipcMain.handle('auth:adminResetPassword', async (_e, { email, newPassword }) => {
   try {
     var { createClient } = require('@supabase/supabase-js');
-    var serviceKey = 'sb_secret_wzsRhVO_txBehPkzEWEJlg_6qGfQO1w';
+    var { get: vaultGet } = require('./services/secrets');
+    var serviceKey = vaultGet('supabase_service_role');
     var adminClient = createClient('https://spwishxhydvgqbfchjgj.supabase.co', serviceKey, { auth: { autoRefreshToken: false, persistSession: false } });
     // Find user by email
     const { data: users, error: findErr } = await adminClient.auth.admin.listUsers();

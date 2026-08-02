@@ -10,24 +10,22 @@
 
 const nodemailer = require('nodemailer');
 
-const SMTP_AUTH = {
-  host: 'smtp.163.com',
-  port: 465,
-  secure: true,
-  auth: {
-    user: 'bitwool@163.com',
-    pass: 'NOczzmhtspj33jj2',
-  },
-  connectionTimeout: 15000,
-  greetingTimeout: 10000,
-  socketTimeout: 15000,
-};
+function getSMTPAuth() {
+  const { get } = require('./secrets');
+  return {
+    host: 'smtp.163.com',
+    port: 465,
+    secure: true,
+    auth: { user: 'bitwool@163.com', pass: get('smtp_password') },
+    connectionTimeout: 15000, greetingTimeout: 10000, socketTimeout: 15000,
+  };
+}
 
 let _transporter = null;
 
 function getTransporter() {
   if (_transporter) return _transporter;
-  _transporter = nodemailer.createTransport(SMTP_AUTH);
+  _transporter = nodemailer.createTransport(getSMTPAuth());
   return _transporter;
 }
 
