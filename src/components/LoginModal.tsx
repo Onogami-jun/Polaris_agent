@@ -33,31 +33,61 @@ export const LoginModal: React.FC = () => {
   if (!show) return null;
 
   const translate = (err: string) => {
-    if (err === 'Invalid login credentials') return '邮箱或密码错误';
-    if (err === 'User already registered') return '该邮箱已注册';
+    if (err === 'Invalid login credentials') return '邮箱或密码错误。如果忘记了密码，请点击下方"忘记密码"通过邮箱重置。';
+    if (err.includes('User already registered')) return '该邮箱已注册。请切换到"登录"标签直接登录。';
+    if (err.includes('Email not confirmed')) return '邮箱未确认。请在 Supabase Dashboard 中关闭邮箱确认。';
+    if (err.includes('Email rate limit exceeded')) return '请求过于频繁，请稍后再试。';
+    if (err.includes('Password should be at least')) return '密码至少需要 6 位字符。';
+    if (err.includes('Unable to validate email')) return '邮箱格式不正确。';
     return err;
   };
 
   /* ── Send code (register or forgot) ── */
+    /* Send code (register or forgot) */
   const sendCode = async (mode: 'register'|'forgot') => {
     var now = Date.now();
     if (now - rl.current.lastSend < 60000) { setVError('请 ' + Math.ceil((60000-(now-rl.current.lastSend))/1000) + ' 秒后再试'); return; }
     if (rl.current.sendCount >= 5) { setVError('发送次数已达上限'); return; }
+    if (!email.includes('@')) { setVError('请输入有效的邮箱地址'); return; }
     var api = window.electronAPI;
     if (!api) { setVError('请在 Electron 环境中使用'); return; }
     setBusy(true); setVError('');
     rl.current.lastSend = now; rl.current.sendCount += 1;
     try {
       var r;
-      if (mode === 'register') r = await api.emailSendCode(email);
-      else r = await api.emailForgotPassword(email);
+      if (mode === 'register') {
+        // Try signUp directly — Supabase returns error if already registered
+        var signUpResult = await supabase.auth.signUp({ email, password, options: { data: { display_name: name || email.split('@')[0] } } });
+        if (signUpResult.error) {
+          if (signUpResult.error.message && signUpResult.error.message.includes('already registered')) {
+            setVError('该邮箱已注册，请直接登录。如果忘记密码，请点击"忘记密码"重置。');
+          } else if (signUpResult.error.message && (signUpResult.error.message.includes('Password') || signUpResult.error.message.includes('password'))) {
+            setVError('密码至少需要 6 位字符');
+          } else {
+            setVError(signUpResult.error.message);
+          }
+          setBusy(false); rl.current.sendCount -= 1; return;
+        }
+        if (signUpResult.data.session) {
+          // Auto-logged in (email confirm is OFF)
+          var user = await getCurrentUser();
+          if (user && api) await api.authUnlock(user.id);
+          d(loginUser({ email, password }));
+          d(closeLoginModal());
+          setBusy(false); return;
+        }
+        // No session = email confirm is ON
+        setVError('注册请求已提交。请在 Supabase Dashboard 中关闭"Confirm email"，或等待确认邮件。');
+        setBusy(false); rl.current.sendCount -= 1; return;
+      }
+      r = await api.emailForgotPassword(email);
+      if (!r) { setVError('服务器无响应，请重试'); setBusy(false); return; }
       if (!r.success || !r.code) { setVError(r.error || '发送失败'); setBusy(false); return; }
       (window as any).__pol_code = r.code;
       setVEmail(email); setVMode(mode); setVStage('code'); setBusy(false);
-      setTimeout(() => vRefs.current[0]?.focus(), 100);
-    } catch(e: any) { setVError(e.message); setBusy(false); }
+      setTimeout(function(){ vRefs.current[0]?.focus(); }, 100);
+    } catch(e: any) { setVError(e.message || '发送失败'); setBusy(false); }
   };
-
   const onCode = (i: number, v: string) => {
     if (!/^\d?$/.test(v)) return;
     var next = [...vCode]; next[i] = v; setVCode(next);
