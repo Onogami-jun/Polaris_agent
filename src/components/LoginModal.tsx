@@ -251,8 +251,8 @@ export const LoginModal: React.FC = () => {
     <div className="fixed inset-0 z-[400] flex items-center justify-center bg-background/70 backdrop-blur-sm" onClick={() => d(closeLoginModal())}>
       <div className="w-[400px] max-w-[92vw] rounded-2xl border border-border bg-card shadow-2xl" onClick={e => e.stopPropagation()}>
         <div className="flex border-b border-border">
-          <button className={'flex-1 py-3.5 text-sm font-medium transition-colors ' + (tab==='login'?'text-foreground border-b-2 border-primary':'text-muted-foreground hover:text-foreground')} onClick={()=>{setTab('login');d(clearLoginError());setMsg('');}}>登录</button>
-          <button className={'flex-1 py-3.5 text-sm font-medium transition-colors ' + (tab==='register'?'text-foreground border-b-2 border-primary':'text-muted-foreground hover:text-foreground')} onClick={()=>{setTab('register');d(clearLoginError());setMsg('');}}>注册</button>
+          <button className={'flex-1 py-3.5 text-sm font-medium transition-colors ' + (tab==='login'?'text-foreground border-b-2 border-primary':'text-muted-foreground hover:text-foreground')} onClick={()=>{setTab('login');d(clearLoginError());setMsg('');setVError('');}}>登录</button>
+          <button className={'flex-1 py-3.5 text-sm font-medium transition-colors ' + (tab==='register'?'text-foreground border-b-2 border-primary':'text-muted-foreground hover:text-foreground')} onClick={()=>{setTab('register');d(clearLoginError());setMsg('');setVError('');}}>注册</button>
         </div>
 
         <form onSubmit={tab==='login'?doLogin:tab==='register'?doRegister:doForgot} className="p-6 flex flex-col gap-4">
@@ -262,6 +262,7 @@ export const LoginModal: React.FC = () => {
           </div>
 
           {error && <div className="rounded-lg bg-destructive/10 border border-destructive/20 px-3 py-2 text-xs text-destructive">{translate(error)}</div>}
+          {vError && <div className="rounded-lg bg-destructive/10 border border-destructive/20 px-3 py-2 text-xs text-destructive">{vError}</div>}
           {msg && <div className="rounded-lg bg-emerald-500/10 border border-emerald-500/20 px-3 py-2 text-xs text-emerald-600">{msg}</div>}
 
           {tab === 'register' && (
@@ -288,10 +289,10 @@ export const LoginModal: React.FC = () => {
           </Button>
 
           <p className="text-[10px] text-muted-foreground text-center">
-            {tab === 'login' && <><span>还没有账号？</span><button type="button" className="text-primary hover:underline ml-1" onClick={()=>{setTab('register');d(clearLoginError());}}>立即注册</button></>}
-            {tab === 'register' && <><span>已有账号？</span><button type="button" className="text-primary hover:underline ml-1" onClick={()=>{setTab('login');d(clearLoginError());}}>去登录</button></>}
-            {tab === 'forgot' && <button type="button" className="text-primary hover:underline" onClick={()=>{setTab('login');d(clearLoginError());}}>返回登录</button>}
-            {tab === 'login' && <button type="button" className="text-primary hover:underline ml-3" onClick={()=>{setTab('forgot');d(clearLoginError());}}>忘记密码？</button>}
+            {tab === 'login' && <><span>还没有账号？</span><button type="button" className="text-primary hover:underline ml-1" onClick={()=>{setTab('register');d(clearLoginError());setMsg('');setVError('');}}>立即注册</button></>}
+            {tab === 'register' && <><span>已有账号？</span><button type="button" className="text-primary hover:underline ml-1" onClick={()=>{setTab('login');d(clearLoginError());setMsg('');setVError('');}}>去登录</button></>}
+            {tab === 'forgot' && <button type="button" className="text-primary hover:underline" onClick={()=>{setTab('login');d(clearLoginError());setMsg('');setVError('');}}>返回登录</button>}
+            {tab === 'login' && <button type="button" className="text-primary hover:underline ml-3" onClick={()=>{setTab('forgot');d(clearLoginError());setMsg('');setVError('');}}>忘记密码？</button>}
           </p>
         </form>
       </div>
