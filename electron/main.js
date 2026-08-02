@@ -184,17 +184,23 @@ const { sendVerificationCode, sendWelcomeEmail, generateCode } = require('./serv
 ipcMain.handle('email:sendCode', async (_e, { email }) => {
   try {
     const code = generateCode();
+    console.log('[email] Sending verification code to:', email, 'code:', code);
     await sendVerificationCode(email, code);
+    console.log('[email] Verification code sent successfully');
     return { success: true, code };
   } catch (e) {
+    console.error('[email] sendCode failed:', e.message, e.stack);
     return { success: false, error: e.message };
   }
 });
 ipcMain.handle('email:sendWelcome', async (_e, { email, displayName }) => {
   try {
+    console.log('[email] Sending welcome email to:', email);
     await sendWelcomeEmail(email, displayName);
+    console.log('[email] Welcome email sent successfully');
     return { success: true };
   } catch (e) {
+    console.error('[email] sendWelcome failed:', e.message, e.stack);
     return { success: false, error: e.message };
   }
 });
