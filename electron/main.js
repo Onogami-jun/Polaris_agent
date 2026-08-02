@@ -113,13 +113,17 @@ ipcMain.handle('auth:adminResetPassword', async (_e, { email, newPassword }) => 
     var serviceKey = vaultGet('supabase_service_role');
     var adminClient = createClient('https://spwishxhydvgqbfchjgj.supabase.co', serviceKey, { auth: { autoRefreshToken: false, persistSession: false } });
     // Find user by email
-    const { data: users, error: findErr } = await adminClient.auth.admin.listUsers();
-    if (findErr) return { success: false, error: findErr.message };
-    const targetUser = users?.users?.find((u: any) => u.email === email);
+    var listResult = await adminClient.auth.admin.listUsers();
+    if (listResult.error) return { success: false, error: listResult.error.message };
+    var targetUser = null;
+    var userList = listResult.data && listResult.data.users ? listResult.data.users : [];
+    for (var i = 0; i < userList.length; i++) {
+      if (userList[i].email === email) { targetUser = userList[i]; break; }
+    }
     if (!targetUser) return { success: false, error: '未找到该邮箱对应的账号' };
     // Update password
-    const { error } = await adminClient.auth.admin.updateUserById(targetUser.id, { password: newPassword });
-    if (error) return { success: false, error: error.message };
+    var updateResult = await adminClient.auth.admin.updateUserById(targetUser.id, { password: newPassword });
+    if (updateResult.error) return { success: false, error: updateResult.error.message };
     return { success: true };
   } catch (e) {
     return { success: false, error: e.message };
@@ -127,9 +131,9 @@ ipcMain.handle('auth:adminResetPassword', async (_e, { email, newPassword }) => 
 });
 
 // IPC: Window
-ipcMain.handle('window:minimize', () => win?.minimize());
-ipcMain.handle('window:maximize', () => { if (win?.isMaximized()) win.restore(); else win?.maximize(); });
-ipcMain.handle('window:close', () => win?.close());
+ipcMain.handle('window:minimize', function() { if (win) win.minimize(); });
+ipcMain.handle('window:maximize', function() { if (win) { if (win.isMaximized()) win.restore(); else win.maximize(); } });
+ipcMain.handle('window:close', function() { if (win) win.close(); });
 
 // IPC: Desktop
 ipcMain.handle('desktop:screenshot', async () => desktop.takeScreenshot());
