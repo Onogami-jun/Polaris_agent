@@ -12,6 +12,12 @@ const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 const ROOT = path.join(__dirname, '..');
 const planner = new Planner();
 
+// ── Single-instance lock ──
+const gotLock = app.requestSingleInstanceLock();
+if (!gotLock) { app.quit(); } else {
+app.on('second-instance', () => { if (win) { win.show(); win.focus(); } });
+}
+
 let win = null, tray = null;
 const mcpProcesses = new Map();
 
