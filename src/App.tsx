@@ -507,7 +507,7 @@ const App:React.FC=()=>{
   } else {
     msgList = act.messages.map((m:any,i:number)=>{
       var isLast=i===act.messages.length-1;
-      if (m.role==='user') return <div key={m.id} className="msg-row user"><div className="msg-bubble user">{m.content}</div></div>;
+      if (m.role==='user') return <div key={m.id} className="msg-row user"><div className="msg-bubble usr">{m.content}</div></div>;
       var dlBlocks=[];var matches=m.content.matchAll(/```(python|py|code)\n([\s\S]*?)```/g);for(var match of matches)dlBlocks.push({lang:match[1],code:match[2].trim()});
       var dlEl=dlBlocks.length>0?<div className="flex gap-1 mt-2">{dlBlocks.map(function(b:any,j:number){return <button key={j} className="msg-act-btn" style={{fontSize:10,padding:'2px 10px'}} onClick={function(){var blob=new Blob([b.code],{type:'text/plain'});var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=b.lang==='py'?'model.py':(b.lang+'.py');a.click()}}>Download {b.lang}</button>})}</div>:null;
       return <div key={m.id} className="msg-row assistant"><div className="msg-bubble assistant">
