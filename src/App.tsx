@@ -342,6 +342,7 @@ const App:React.FC=()=>{
   const[sandboxProg,setSandboxProg]=useState<any>(null);const[sandboxErr,setSandboxErr]=useState('');
   const[thinking,setThinking]=useState('');const mascotAreaRef=useRef<HTMLDivElement>(null);
   const[toasts,setToasts]=useState<any[]>([]);
+  const[permReq,setPermReq]=useState<any>(null); // Claude-style permission request
   const[execLog,setExecLog]=useState<{id:string;time:string;tool:string;status:'running'|'done'|'error';detail:string}[]>([]);
   const[todoSteps,setTodoSteps]=useState<{id:string;status:'pending'|'running'|'done';label:string}[]>([]);
   const[interventions,setInterventions]=useState<any[]>([]);
@@ -349,7 +350,7 @@ const App:React.FC=()=>{
 
   // Panel widths (px) & visibility
   const[leftW,setLeftW]=useState(220);const[leftOpen,setLeftOpen]=useState(true);
-  const[rightW,setRightW]=useState(280);const[rightOpen,setRightOpen]=useState(true);
+  const[rightW,setRightW]=useState(280);const[rightOpen,setRightOpen]=useState(false);
 
   const dispatchRef=useRef(d);useEffect(()=>{dispatchRef.current=d},[d]);
   const stop=useRef(false);
@@ -420,10 +421,11 @@ const App:React.FC=()=>{
 
   useEffect(()=>{const h=(e:KeyboardEvent)=>{if((e.ctrlKey||e.metaKey)&&e.key==='p'){e.preventDefault();setCmd(true)}if(e.key==='Escape'){stop.current=true;d(setStreaming(false));setThk('');setCmd(false)}if((e.ctrlKey||e.metaKey)&&e.key==='n'){e.preventDefault();d(ns())}if((e.ctrlKey||e.metaKey)&&e.key===','){e.preventDefault();d(toggleSettings())}};window.addEventListener('keydown',h);return()=>window.removeEventListener('keydown',h)},[d]);
   useEffect(()=>{const api=window.electronAPI;if(!api)return;api.monitorStart();api.onIntervention((card:any)=>{card.ts=Date.now();setInterventions(p=>[...p.slice(-4),card])});api.onPlanProgress((data:any)=>setPlanProg(data));api.onExecLog((data:any)=>{addExecLog(data.tool,data.status,data.detail||'')});api.onTodoUpdate((data:any)=>{if(data.steps)setTodoSteps(data.steps)});api.onStreamError((ed:any)=>{showToast('Stream Error: '+(ed?.message||'未知'),'error');dispatchRef.current(setStreaming(false));setThk('')});
+  api.onToolConfirm((data:any)=>{setPermReq(data)});api.onToolConfirmDismiss((data:any)=>{setPermReq(function(p:any){return p&&p.id===data.id?null:p})});
   // Health check
   api.healthCheck().then((r:any)=>{if(Array.isArray(r)){const s={python:false,polaris:false,highs:false,deepseek:false};r.forEach((x:any)=>{if(x.service==='Python')s.python=x.ok;if(x.service==='Polaris Engine')s.polaris=x.ok;if(x.service==='HiGHS Solver')s.highs=x.ok;if(x.service==='DeepSeek API')s.deepseek=x.ok;});d(setEngineStatus(s))}}).catch(()=>{});
   let kc=0;const onKb=()=>{kc++;if(kc%30===0)api.monitorUpdate({count:kc,lastPress:Date.now(),window:document.title})};window.addEventListener('keydown',onKb);return()=>window.removeEventListener('keydown',onKb)},[]);
-  useEffect(()=>{document.documentElement.classList.toggle('dark',settings.theme==='dark');document.documentElement.style.fontSize=settings.fontSize+'px'},[settings.theme,settings.fontSize]);
+  useEffect(()=>{document.documentElement.classList.toggle('dark',settings.theme==='dark');document.documentElement.style.fontSize=settings.fontSize+'px';document.documentElement.lang=settings.language},[settings.theme,settings.fontSize,settings.language]);
 
   // ── Helpers ──
   const addExecLog=(tool:string,status:'running'|'done'|'error',detail='')=>{const id=Date.now()+Math.random().toString(36);setExecLog(p=>[...p.slice(-30),{id,time:new Date().toLocaleTimeString(),tool,status,detail}]);if(status!=='running'){setTimeout(()=>setExecLog(p=>p.filter(e=>e.id!==id||e.status==='running'||p.slice(-3).some(x=>x.id===id))),8000)}};
@@ -626,6 +628,33 @@ const App:React.FC=()=>{
     {settingsEl}
     {cmdEl}
     <LoginModal/>
+    {/* ── Claude Code-style Permission Dialog ── */}
+    {permReq&&<div className="fixed inset-0 z-[500] flex items-end justify-center pb-8 bg-black/20 animate-fade-in" onClick={()=>{var api=window.electronAPI;if(api)api.rejectPermission(permReq.id);setPermReq(null)}}>
+      <div className="w-[460px] max-w-[94vw] rounded-2xl border border-border bg-card shadow-2xl overflow-hidden animate-fade-in" onClick={e=>e.stopPropagation()}>
+        <div className="px-5 py-4 border-b border-border bg-amber-500/5 flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-amber-500/10 flex items-center justify-center shrink-0">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#d97706" strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/><circle cx="12" cy="16" r="1"/></svg>
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-sm font-semibold text-foreground">Polaris 请求权限</div>
+            <div className="text-[11px] text-muted-foreground">Agent 正在尝试执行以下操作</div>
+          </div>
+        </div>
+        <div className="px-5 py-4 space-y-3">
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-semibold text-muted-foreground uppercase bg-muted px-2 py-0.5 rounded font-mono">{permReq.tool}</span>
+            <span className="text-sm font-medium text-foreground">{permReq.displayName||permReq.tool}</span>
+          </div>
+          {permReq.params&&Object.keys(permReq.params).length>0&&<div className="rounded-lg bg-muted/50 border border-border/50 p-3 max-h-[120px] overflow-auto">
+            {Object.keys(permReq.params).map(function(k){return<div key={k} className="flex gap-2 text-[11px] py-0.5"><span className="text-muted-foreground font-mono shrink-0">{k}:</span><span className="text-foreground font-mono truncate">{String(permReq.params[k]).slice(0,200)}</span></div>})}
+          </div>}
+        </div>
+        <div className="px-5 py-3 border-t border-border flex gap-2 justify-end">
+          <Button variant="outline" size="sm" className="h-8 px-4 text-xs" onClick={()=>{var api=window.electronAPI;if(api)api.rejectPermission(permReq.id);setPermReq(null)}}>拒绝</Button>
+          <Button size="sm" className="h-8 px-4 text-xs" onClick={()=>{var api=window.electronAPI;if(api)api.approvePermission(permReq.id);setPermReq(null)}}>允许</Button>
+        </div>
+      </div>
+    </div>}
   </div>;
 };
 

@@ -312,6 +312,71 @@ except Exception as e:
       }
     }
   },
+
+  // ── File System tools (Claude Code-style, requires_confirm) ──
+  read_file: {
+    name: 'Read File',
+    description: '读取本地文件内容。参数: path（绝对路径）。每次读取最大 5000 字符。',
+    requires_confirm: true,
+    category: 'filesystem',
+    execute: async (params) => {
+      const filepath = params.path || params.filepath || '';
+      if (!filepath) return { success: false, error: '请提供文件路径 (path)' };
+      try {
+        const fs = require('fs');
+        if (!fs.existsSync(filepath)) return { success: false, error: '文件不存在: ' + filepath };
+        const stat = fs.statSync(filepath);
+        if (stat.size > 10 * 1024 * 1024) return { success: false, error: '文件过大（>10MB），拒绝读取' };
+        const content = fs.readFileSync(filepath, 'utf8').slice(0, 5000);
+        return { success: true, result: content, path: filepath, size: stat.size };
+      } catch (e) { return { success: false, error: e.message }; }
+    }
+  },
+
+  list_dir: {
+    name: 'List Directory',
+    description: '列出目录内容。参数: path（绝对路径）。',
+    requires_confirm: true,
+    category: 'filesystem',
+    execute: async (params) => {
+      const dirpath = params.path || params.dirpath || process.env.USERPROFILE || require('os').homedir();
+      try {
+        const fs = require('fs');
+        const path = require('path');
+        if (!fs.existsSync(dirpath)) return { success: false, error: '目录不存在: ' + dirpath };
+        const entries = fs.readdirSync(dirpath, { withFileTypes: true }).slice(0, 200);
+        const result = entries.map(e => ({
+          name: e.name,
+          type: e.isDirectory() ? 'dir' : e.isFile() ? 'file' : 'other',
+        }));
+        return { success: true, result: JSON.stringify(result), files: result, path: dirpath };
+      } catch (e) { return { success: false, error: e.message }; }
+    }
+  },
+
+  write_file: {
+    name: 'Write File',
+    description: '写入内容到本地文件。参数: path（绝对路径）, content（文件内容）。',
+    requires_confirm: true,
+    category: 'filesystem',
+    execute: async (params) => {
+      const filepath = params.path || params.filepath || '';
+      const content = params.content || '';
+      if (!filepath) return { success: false, error: '请提供文件路径 (path)' };
+      if (!content) return { success: false, error: '请提供文件内容 (content)' };
+      try {
+        const fs = require('fs');
+        const path = require('path');
+        // Safety: refuse to write to system directories
+        const unsafe = /^(\/etc|\/bin|\/sbin|\/usr\/bin|\/usr\/sbin|\/boot|C:\\Windows|C:\\Program Files)/i;
+        if (unsafe.test(filepath)) return { success: false, error: '安全限制：不能写入系统目录' };
+        const dir = path.dirname(filepath);
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+        fs.writeFileSync(filepath, content);
+        return { success: true, result: '已写入: ' + filepath, path: filepath, bytes: Buffer.byteLength(content, 'utf8') };
+      } catch (e) { return { success: false, error: e.message }; }
+    }
+  },
 };
 
 // ============================================================

@@ -299,6 +299,18 @@ ipcMain.handle('tools:execute', (_e, { tool, params }) => te.execute(tool, param
 ipcMain.handle('tools:confirm', (_e, { confirmId }) => te.confirmAndExecute(confirmId));
 ipcMain.handle('tools:reject', (_e, { confirmId }) => te.rejectConfirmation(confirmId));
 
+// ── Tool Permission Bridge ──
+const permBridge = require('./services/permission_bridge');
+permBridge.initPermissionBridge(function(msg) {
+  if (win && !win.isDestroyed()) win.webContents.send(msg.channel, msg.data);
+});
+ipcMain.handle('tools:approvePermission', (_e, { id }) => {
+  return { ok: permBridge.approvePermission(id) };
+});
+ipcMain.handle('tools:rejectPermission', (_e, { id }) => {
+  return { ok: permBridge.rejectPermission(id) };
+});
+
 // IPC: Agents
 const AGENTS = require('./services/agents');
 ipcMain.handle('agents:list', () => Object.entries(AGENTS).map(([id, a]) => ({ id, name: a.name, role: a.role, goal: a.goal, tools: a.tools })));

@@ -10,6 +10,7 @@ const { runPipeline } = require('./subagents');
 const { buildAgentCapabilityNote } = require('./health_check');
 const AGENTS = require('./agents');
 const { POLARIS_PERSONA } = require('./persona');
+const { requestPermission } = require('./permission_bridge');
 
 // API key supplied by main process after successful auth
 const { setKey, getKey } = require('./keymanager');
@@ -356,6 +357,29 @@ async function runAgentLoop(userMessage, apiKey, onExec, onTodo, onStreamChunk, 
       try { args = JSON.parse(tc.function.arguments); } catch { args = { prompt: userMessage }; }
       if (onStreamChunk) onStreamChunk({ type: 'thinking', text: '调用 ' + tc.function.name + '...' });
       const result = await executeTool(tc.function.name, args, onExec);
+      // ── Claude Code-style: if tool needs user permission, ask first ──
+      if (result.confirmation_required) {
+        const toolDef = TOOLS[tc.function.name];
+        const displayName = toolDef ? toolDef.name : tc.function.name;
+        const userApproved = await requestPermission(tc.function.name, args, displayName);
+        if (!userApproved) {
+          messages.push({ role: 'tool', tool_call_id: tc.id, content: '用户拒绝了此操作。' });
+          break; // Skip remaining tool calls in this round
+        }
+        // User approved → execute with autoConfirm
+        const approved = await new Promise((resolve) => {
+          const te = new (require('./tools').ToolExecutor)();
+          te.confirmAndExecute(result.confirmation_id).then(resolve).catch(() => resolve({ success: false, error: '确认执行失败' }));
+        });
+        const approvedResult = approved.success
+          ? (approved.result || approved.stdout || '已完成')
+          : '工具 ' + tc.function.name + ' 返回：' + (approved.error || '失败');
+        messages.push({ role: 'tool', tool_call_id: tc.id, content: '用户已授权此操作。\n' + String(approvedResult).slice(0, 4000) });
+        if (approved.success && (approved.result || approved.stdout)) {
+          bestResponse = (approved.result || approved.stdout || '').slice(0, 8000);
+        }
+        continue;
+      }
       const toolResult = result.success
         ? (result.result || result.stdout || '已完成')
         : '工具 ' + tc.function.name + ' 返回：' + (result.error || '失败');

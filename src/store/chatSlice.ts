@@ -2,7 +2,7 @@ import { createSlice, PayloadAction } from '@reduxjs/toolkit';
 
 export interface ChatMessage { id: string; role: 'user' | 'assistant'; content: string; model?: string; timestamp: number; routing?: { intent: string; models: string[]; rationale: string; }; edited?: boolean; }
 export interface ChatSession { id: string; name: string; messages: ChatMessage[]; createdAt: number; parentId?: string; }
-export type Strategy = 'best_quality' | 'cost_optimized' | 'ensemble'; export type Theme = 'dark' | 'light'; export type Language = 'en' | 'zh-CN';
+export type Strategy = 'best_quality' | 'cost_optimized' | 'ensemble'; export type Theme = 'dark' | 'light'; export type Language = 'en' | 'zh-CN' | 'ja' | 'fr';
 
 interface AgentConfig { name: string; systemPrompt: string; maxTokens: number; temperature: number; reasoningStyle: 'concise' | 'detailed' | 'creative'; autoExecute: boolean; webSearch: boolean; }
 export interface PluginInfo { id: string; name: string; description: string; enabled: boolean; type: 'mcp_server' | 'tool' | 'skill'; config?: Record<string, string>; }

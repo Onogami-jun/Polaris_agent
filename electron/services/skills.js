@@ -11,7 +11,7 @@ const SKILLS = {
   discuss: {
     name: '讨论模式',
     description: '开放讨论——设计算法、探讨方法、解释概念、没有具体数据',
-    tools: ['search_web', 'polaris_literature'],
+    tools: ['search_web', 'polaris_literature', 'read_file', 'list_dir'],
     systemPrompt: `你是 Polaris，运筹优化领域的资深研究伙伴。用户想和你深度讨论一个优化问题。
 
 回复结构（按优先级）：

@@ -6,6 +6,15 @@ import { AgentLab } from './AgentLab';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 
+/* ── i18n labels ── */
+const LANG_LABELS: Record<Language, string> = {
+  'zh-CN': '中文（简体）',
+  'en': 'English',
+  'ja': '日本語',
+  'fr': 'Français',
+};
+function langLabel(lang: Language): string { return LANG_LABELS[lang] || lang; }
+
 /* ── Icons ── */
 const Icons: Record<string, React.ReactNode> = {
   general: <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="8" cy="8" r="2.5"/><path d="M8 1v2m0 10v2M1 8h2m10 0h2M3.05 3.05l1.41 1.41m7.08 7.08l1.41 1.41M3.05 12.95l1.41-1.41m7.08-7.08l1.41-1.41"/></svg>,
@@ -124,15 +133,19 @@ const SettingsPanel: React.FC = () => {
                     <option value="light">浅色</option><option value="dark">深色</option>
                   </select>
                 </Row>
-                <Row label="语言">
+                <Row label="语言" hint={langLabel(s.language)}>
                   <select value={s.language} onChange={e => dispatch(setLanguage(e.target.value as Language))} className="rounded-lg border border-border bg-muted px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring">
-                    <option value="zh-CN">中文</option><option value="en">English</option>
+                    <option value="zh-CN">中文 (简体)</option>
+                    <option value="en">English</option>
+                    <option value="ja">日本語</option>
+                    <option value="fr">Français</option>
                   </select>
                 </Row>
                 <Row label="字体大小" hint={`${s.fontSize}px`}>
                   <div className="flex items-center gap-3">
                     <span className="text-xs text-muted-foreground">12</span>
                     <input type="range" min="12" max="22" value={s.fontSize} onChange={e => dispatch(setFontSize(Number(e.target.value)))} className="w-28 accent-primary" />
+                    <span className="text-xs text-muted-foreground font-mono w-6 text-center font-semibold text-foreground">{s.fontSize}</span>
                     <span className="text-xs text-muted-foreground">22</span>
                   </div>
                 </Row>
