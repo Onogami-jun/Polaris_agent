@@ -48,14 +48,39 @@ let _authUserId = null;
 
 async function refreshApiKey(userId) {
   try {
-    const { createClient } = require('@supabase/supabase-js');
-    const sb = createClient('https://spwishxhydvgqbfchjgj.supabase.co', 'sb_publishable_hY1a3BqHfPvUNPQwkV6AEg_Nz-b2bgY');
-    const { data } = await sb.from('polaris_config').select('value').eq('key', 'deepseek_api_key').single();
-    if (data && data.value) {
-      _authUserId = userId;
-      setKey(data.value);
-      console.log('[API Key] Loaded for user:', userId);
-    }
+    var https = require('https');
+    var anonKey = 'sb_publishable_hY1a3BqHfPvUNPQwkV6AEg_Nz-b2bgY';
+    await new Promise(function(resolve, reject) {
+      var options = {
+        hostname: 'spwishxhydvgqbfchjgj.supabase.co',
+        path: '/rest/v1/polaris_config?select=value&key=eq.deepseek_api_key',
+        method: 'GET',
+        headers: {
+          'apikey': anonKey,
+          'Authorization': 'Bearer ' + anonKey,
+          'Accept': 'application/json',
+        },
+        timeout: 10000,
+      };
+      var req = https.request(options, function(resp) {
+        var d = '';
+        resp.on('data', function(c) { d += c.toString(); });
+        resp.on('end', function() {
+          try {
+            var arr = JSON.parse(d);
+            if (Array.isArray(arr) && arr.length > 0 && arr[0].value) {
+              _authUserId = userId;
+              setKey(arr[0].value);
+              console.log('[API Key] Loaded for user:', userId);
+            }
+            resolve();
+          } catch(e) { resolve(); }
+        });
+      });
+      req.on('error', function(e) { console.warn('[API Key] Fetch failed:', e.message); resolve(); });
+      req.on('timeout', function() { req.destroy(); resolve(); });
+      req.end();
+    });
   } catch(e) {
     console.warn('[API Key] Fetch failed:', e.message);
   }
@@ -105,25 +130,63 @@ ipcMain.handle('auth:lock', () => {
   return { success: true };
 });
 
+// ═══════════════════════════════════════════════════════════
+// Admin helpers — pure HTTPS (no supabase-js → no WebSocket)
+// ═══════════════════════════════════════════════════════════
+
+function supabaseAdminCall(method, path, body) {
+  var https = require('https');
+  var { get: vaultGet } = require('./services/secrets');
+  var serviceKey = vaultGet('supabase_service_role');
+  if (!serviceKey) return Promise.resolve({ success: false, error: 'Supabase service_role key not configured' });
+
+  return new Promise(function(resolve) {
+    var payload = body ? JSON.stringify(body) : null;
+    var options = {
+      hostname: 'spwishxhydvgqbfchjgj.supabase.co',
+      path: '/auth/v1' + path,
+      method: method,
+      headers: {
+        'Authorization': 'Bearer ' + serviceKey,
+        'Content-Type': 'application/json',
+        'apikey': serviceKey,
+      },
+      timeout: 15000,
+    };
+    if (payload) options.headers['Content-Length'] = Buffer.byteLength(payload);
+
+    var req = https.request(options, function(resp) {
+      var d = '';
+      resp.on('data', function(c) { d += c.toString(); });
+      resp.on('end', function() {
+        try { resolve({ ok: true, data: JSON.parse(d), status: resp.statusCode }); }
+        catch { resolve({ ok: false, error: d.slice(0, 500), status: resp.statusCode }); }
+      });
+    });
+    req.on('error', function(e) { resolve({ ok: false, error: e.message }); });
+    req.on('timeout', function() { req.destroy(); resolve({ ok: false, error: 'Timeout' }); });
+    if (payload) req.write(payload);
+    req.end();
+  });
+}
+
+async function findUserByEmail(email) {
+  var r = await supabaseAdminCall('GET', '/admin/users?per_page=100');
+  if (!r.ok) return null;
+  var users = (r.data && r.data.users) ? r.data.users : [];
+  for (var i = 0; i < users.length; i++) {
+    if (users[i].email === email) return users[i];
+  }
+  return null;
+}
+
 // IPC: Admin password reset (uses service_role key to bypass email flow)
 ipcMain.handle('auth:adminResetPassword', async (_e, { email, newPassword }) => {
   try {
-    var { createClient } = require('@supabase/supabase-js');
-    var { get: vaultGet } = require('./services/secrets');
-    var serviceKey = vaultGet('supabase_service_role');
-    var adminClient = createClient('https://spwishxhydvgqbfchjgj.supabase.co', serviceKey, { auth: { autoRefreshToken: false, persistSession: false } });
-    // Find user by email
-    var listResult = await adminClient.auth.admin.listUsers();
-    if (listResult.error) return { success: false, error: listResult.error.message };
-    var targetUser = null;
-    var userList = listResult.data && listResult.data.users ? listResult.data.users : [];
-    for (var i = 0; i < userList.length; i++) {
-      if (userList[i].email === email) { targetUser = userList[i]; break; }
-    }
+    var targetUser = await findUserByEmail(email);
     if (!targetUser) return { success: false, error: '未找到该邮箱对应的账号' };
-    // Update password
-    var updateResult = await adminClient.auth.admin.updateUserById(targetUser.id, { password: newPassword });
-    if (updateResult.error) return { success: false, error: updateResult.error.message };
+    var r = await supabaseAdminCall('PUT', '/admin/users/' + targetUser.id, { password: newPassword });
+    if (!r.ok) return { success: false, error: r.error || '更新失败' };
     return { success: true };
   } catch (e) {
     return { success: false, error: e.message };
@@ -133,21 +196,10 @@ ipcMain.handle('auth:adminResetPassword', async (_e, { email, newPassword }) => 
 // IPC: Admin confirm user email (bypass Supabase email confirmation)
 ipcMain.handle('auth:adminConfirmUser', async (_e, { email }) => {
   try {
-    var { createClient } = require('@supabase/supabase-js');
-    var { get: vaultGet } = require('./services/secrets');
-    var serviceKey = vaultGet('supabase_service_role');
-    var adminClient = createClient('https://spwishxhydvgqbfchjgj.supabase.co', serviceKey, { auth: { autoRefreshToken: false, persistSession: false } });
-    var listResult = await adminClient.auth.admin.listUsers();
-    if (listResult.error) return { success: false, error: listResult.error.message };
-    var targetUser = null;
-    var userList = listResult.data && listResult.data.users ? listResult.data.users : [];
-    for (var i = 0; i < userList.length; i++) {
-      if (userList[i].email === email) { targetUser = userList[i]; break; }
-    }
+    var targetUser = await findUserByEmail(email);
     if (!targetUser) return { success: false, error: '未找到该邮箱对应的账号' };
-    // Confirm email
-    var updateResult = await adminClient.auth.admin.updateUserById(targetUser.id, { email_confirm: true });
-    if (updateResult.error) return { success: false, error: updateResult.error.message };
+    var r = await supabaseAdminCall('PUT', '/admin/users/' + targetUser.id, { email_confirm: true });
+    if (!r.ok) return { success: false, error: r.error || '确认失败' };
     return { success: true };
   } catch (e) {
     return { success: false, error: e.message };
@@ -157,33 +209,25 @@ ipcMain.handle('auth:adminConfirmUser', async (_e, { email }) => {
 // IPC: Admin create user with email confirmed (register + confirm in one call)
 ipcMain.handle('auth:adminCreateUser', async (_e, { email, password, displayName }) => {
   try {
-    var { createClient } = require('@supabase/supabase-js');
-    var { get: vaultGet } = require('./services/secrets');
-    var serviceKey = vaultGet('supabase_service_role');
-    var adminClient = createClient('https://spwishxhydvgqbfchjgj.supabase.co', serviceKey, { auth: { autoRefreshToken: false, persistSession: false } });
-    // Create user with email already confirmed
-    var createResult = await adminClient.auth.admin.createUser({
+    var r = await supabaseAdminCall('POST', '/admin/users', {
       email: email,
       password: password,
       email_confirm: true,
       user_metadata: { display_name: displayName || email.split('@')[0] },
     });
-    if (createResult.error) {
-      // If user already exists, just confirm them
-      if (createResult.error.message && createResult.error.message.includes('already')) {
-        // Find and confirm
-        var listR = await adminClient.auth.admin.listUsers();
-        var users = listR.data?.users || [];
-        var found = users.find(function(u) { return u.email === email; });
-        if (found) {
-          var cfmR = await adminClient.auth.admin.updateUserById(found.id, { email_confirm: true });
-          if (cfmR.error) return { success: false, error: cfmR.error.message };
-          return { success: true, userId: found.id };
-        }
-      }
-      return { success: false, error: createResult.error.message };
+    if (r.ok && r.data && !r.data.error) {
+      return { success: true, userId: r.data.id || r.data.user?.id };
     }
-    return { success: true, userId: createResult.data.user?.id };
+    // If user exists, find and confirm
+    if (r.data && r.data.msg && r.data.msg.includes('already')) {
+      var existing = await findUserByEmail(email);
+      if (existing) {
+        var cfm = await supabaseAdminCall('PUT', '/admin/users/' + existing.id, { email_confirm: true });
+        if (cfm.ok) return { success: true, userId: existing.id };
+        return { success: false, error: cfm.error || '确认失败' };
+      }
+    }
+    return { success: false, error: (r.data && r.data.msg) || r.error || '创建失败' };
   } catch (e) {
     return { success: false, error: e.message };
   }
