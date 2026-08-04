@@ -161,10 +161,7 @@ class SkillManager {
     let prompt = skill.systemPrompt;
     prompt += `\n\n当前对话轮次：第 ${this.conversationTurn} 轮。`;
 
-    const hcResults = require('./health_check').buildAgentCapabilityNote(
-      [] // will be filled in router.js via the actual cache
-    );
-
+    // env note is injected by router.js — not here, to avoid stale caches
     return prompt;
   }
 

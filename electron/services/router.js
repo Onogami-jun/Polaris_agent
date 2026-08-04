@@ -50,26 +50,10 @@ function buildToolDeclarations(skillTools) {
   return all;
 }
 
-/* ── Python resolver ───────────────────────────────────── */
-function resolvePython() {
-  const path = require('path'); const os = require('os'); const fs = require('fs');
-  const sandboxPy = path.join(os.homedir(), 'AppData', 'Roaming', 'polaris-agent', 'sandbox', 'python.exe');
-  if (fs.existsSync(sandboxPy)) {
-    const { spawnSync: sp } = require('child_process');
-    const r = sp(sandboxPy, ['-c', 'from polaris.chat import solve; print("POLARIS_OK")'], {
-      timeout: 5000, encoding: 'utf8', windowsHide: true,
-    });
-    if (r.status === 0 && r.stdout.includes('POLARIS_OK')) return sandboxPy;
-  }
-  for (const cmd of ['python', 'python3']) {
-    const { spawnSync: sp } = require('child_process');
-    const r = sp(cmd, ['-c', 'from polaris.chat import solve; print("POLARIS_OK")'], {
-      timeout: 5000, encoding: 'utf8', windowsHide: true,
-    });
-    if (r.status === 0 && r.stdout.includes('POLARIS_OK')) return cmd;
-  }
-  return null;
-}
+/* ── Python resolver (shared module) ──────────────────── */
+const { resolvePython, runPython: sharedRunPython } = require('./python_resolver');
+
+function getPython() { return resolvePython(); }
 
 /* ── Direct solve ──────────────────────────────────────── */
 async function directSolve(userMessage, onExec) {
@@ -250,10 +234,10 @@ function buildAgentPrompt(agentId, effectiveSkillPrompt, envNote) {
 
 // ── Check if content signals completion ──
 function isContentComplete(content) {
-  if (!content || content.trim().length < 5) return false;
+  if (!content || content.trim().length < 3) return false;
   if (content.includes('[CONTINUE]')) return false;
   if (content.includes('[NEED_MORE]')) return false;
-  return content.trim().length > 15;
+  return true; // accept any non-empty response, LLM decides when done
 }
 
 async function runAgentLoop(userMessage, apiKey, onExec, onTodo, onStreamChunk, strategyConfig) {

@@ -1,45 +1,12 @@
 /**
- * Polaris Solver Tool System v2.0
+ * Polaris Solver Tool System v2.1
  * Optimization-centric tools: solve, decompose, benchmark.
  */
-const { spawnSync } = require('child_process');
-const path = require('path');
-const os = require('os');
+const { resolvePython, runPython } = require('./python_resolver');
 
-/* ── Resolve Python executable ── */
-function getPython() {
-  // 1. Bundled sandbox
-  const sandboxPy = path.join(os.homedir(), 'AppData', 'Roaming', 'polaris-agent', 'sandbox', 'python.exe');
-  try {
-    const fs = require('fs');
-    if (fs.existsSync(sandboxPy)) {
-      const r = spawnSync(sandboxPy, ['-c', 'print("OK")'], { timeout: 5000, encoding: 'utf8', windowsHide: true });
-      if (r.status === 0 && r.stdout.includes('OK')) return sandboxPy;
-    }
-  } catch {}
-
-  // 2. System Python
-  for (const cmd of ['python', 'python3']) {
-    const r = spawnSync(cmd, ['-c', 'print("OK")'], { timeout: 5000, encoding: 'utf8', windowsHide: true });
-    if (r.status === 0 && r.stdout.includes('OK')) return cmd;
-  }
-  return null;
-}
-
-function runPython(code, timeout = 60000) {
-  const py = getPython();
-  if (!py) return { success: false, error: 'Python 未安装。请点击左侧栏底部"安装沙箱"按钮，一键部署 Python 环境。' };
-  const maxOut = 1_000_000; // 1MB cap
-  const r = spawnSync(py, ['-c', code], {
-    timeout, encoding: 'utf8', windowsHide: true,
-    env: { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1' },
-  });
-  return {
-    success: r.status === 0,
-    stdout: (r.stdout || '').slice(0, maxOut),
-    stderr: (r.stderr || '').slice(0, 10000),
-    exitCode: r.status,
-  };
+/* ── Safe escaping for Python string interpolation ── */
+function safeEscape(s) {
+  return (s || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, ' ').replace(/\r/g, '').slice(0, 5000);
 }
 
 // ============================================================
@@ -57,15 +24,17 @@ const TOOLS = {
         return { success: false, error: '请提供优化问题描述。\n\n支持的问题类型：\n- 背包："3件物品，价值60 100 120，重量10 20 30，容量50"\n- 排产："排产3个任务，处理时间1 2 3"\n- 指派："指派，成本 10 2 8  5 12 3  7 4 9"\n- VRV："3个客户，距离矩阵...，需求量...，车载量...，车辆数..."' };
       }
       try {
-        const normalized = prompt.replace(/"/g, '\\"').replace(/\n/g, ' ');
+        // Safe escaping: backslashes first, then quotes, then newlines
+        const normalized = safeEscape(prompt);
         const code = `from polaris.engine import Engine\nfrom polaris.chat import solve\nprint(solve("${normalized}"))`;
         const result = runPython(code, 60000);
         if (!result.success) {
           return { success: false, error: result.stderr || result.error || '求解失败' };
         }
         const output = result.stdout;
-        if (output.includes('ModuleNotFoundError') || output.includes('ImportError')) {
-          return { success: false, error: 'Polaris 引擎未安装。点击左侧栏底部"安装沙箱"按钮一键部署。' };
+        const errOut = result.stderr || '';
+        if (output.includes('ModuleNotFoundError') || output.includes('ImportError') || errOut.includes('ModuleNotFoundError') || errOut.includes('ImportError')) {
+          return { success: false, error: 'Polaris 引擎未安装。请在设置→沙箱中一键部署。' };
         }
         return { success: true, result: output };
       } catch(e) {
@@ -83,7 +52,7 @@ const TOOLS = {
       const { prompt } = params;
       if (!prompt || prompt.trim().length < 3) return { success: false, error: '请描述优化问题' };
       try {
-        const normalized = prompt.replace(/"/g, '\\"');
+        const normalized = safeEscape(prompt);
         const code = `from polaris.engine import Engine\nfrom polaris.chat import _parse, _build_model\nparsed = _parse("${normalized}")\nmodel = _build_model(parsed)\neng = Engine()\nresult = eng.solve(model)\nprint(result.summary())`;
         const result = runPython(code, 30000);
         return { success: result.success, result: result.stdout || result.stderr || 'No output' };
@@ -145,7 +114,7 @@ print("=== DONE ===")`;
     category: 'solver',
     execute: async (params) => {
       const { prompt } = params;
-      const normalized = (prompt||'').replace(/"/g,'\\"').replace(/\n/g,' ').slice(0,200);
+      const normalized = safeEscape((prompt||'').slice(0,200));
       const code = `from polaris.chat import _parse,_build_model
 from polaris.analyze.structure import analyze
 try:
@@ -170,7 +139,7 @@ except Exception as e:
     execute: async (params) => {
       const prompt = params.prompt || params.code || '';
       if (!prompt || prompt.trim().length < 10) return { success: false, error: '请提供优化问题的完整描述' };
-      const normalized = prompt.replace(/"/g,'\\"').replace(/\n/g,' ');
+      const normalized = safeEscape(prompt);
       const code = `from polaris.chat import solve; print(solve("${normalized}"))`;
       const r = runPython(code, 30000);
       return { success: r.success, result: r.stdout || r.stderr || '求解失败' };

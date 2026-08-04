@@ -268,7 +268,7 @@ ipcMain.handle('desktop:typeText', (_e, t) => desktop.typeText(t));
 ipcMain.handle('desktop:pressKey', (_e, k) => desktop.pressKey(k));
 ipcMain.handle('desktop:hotkey', (_e, c) => desktop.hotkey(c));
 ipcMain.handle('desktop:moveMouse', (_e, x, y) => desktop.moveMouse(x, y));
-ipcMain.handle('desktop:clickMouse', (_e, x, y, b) => { desktop.moveMouse(x, y); setTimeout(() => desktop.clickMouse(x, y, b), 200); return { success: true }; });
+ipcMain.handle('desktop:clickMouse', async (_e, x, y, b) => { desktop.moveMouse(x, y); await new Promise(r => setTimeout(r, 200)); return desktop.clickMouse(x, y, b); });
 ipcMain.handle('desktop:doubleClick', (_e, x, y) => desktop.doubleClick(x, y));
 ipcMain.handle('desktop:scrollMouse', (_e, d, a) => desktop.scrollMouse(d, a));
 ipcMain.handle('desktop:getClipboard', () => desktop.getClipboard());

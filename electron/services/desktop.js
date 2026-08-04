@@ -9,6 +9,18 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 
+/* ── Safe PowerShell escaping ── */
+function safePS(s) {
+  // Escape single quotes by doubling them (PowerShell convention)
+  return String(s).replace(/'/g, "''").replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '');
+}
+
+function safePSNum(n) {
+  const num = parseInt(String(n), 10);
+  if (isNaN(num)) return '0';
+  return String(Math.min(Math.max(num, -30000), 30000)); // clamp coordinates
+}
+
 // ── Screenshot ──────────────────────────────────────────────
 
 async function takeScreenshot() {
@@ -95,7 +107,7 @@ function hotkey(combo) {
 
 function moveMouse(x, y) {
   try {
-    execSync(`powershell -NoProfile -Command "[System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point(${x},${y})"`, { timeout: 3000 });
+    execSync(`powershell -NoProfile -Command "[System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point(${safePSNum(x)},${safePSNum(y)})"`, { timeout: 3000 });
     return { success: true, message: `Mouse → ${x},${y}` };
   } catch (e) { return { success: false, message: e.message }; }
 }
@@ -109,7 +121,8 @@ function clickMouse(x, y, button) {
     const vbs = `Set objShell = CreateObject("WScript.Shell")\nobjShell.SendKeys "{F13}"\n`;
     fs.writeFileSync(vbsPath, vbs);
     // Use mouse_event via powershell for actual clicking
-    const psScript = `Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point(${x},${y}); Add-Type -MemberDefinition '[DllImport("user32.dll")] public static extern void mouse_event(int dwFlags, int dx, int dy, int dwData, int dwExtraInfo);' -Name Win32 -Namespace System; $down = ${b === 'left' ? '0x0002' : b === 'right' ? '0x0008' : '0x0020'}; $up = ${b === 'left' ? '0x0004' : b === 'right' ? '0x0010' : '0x0040'}; [System.Win32]::mouse_event($down, 0, 0, 0, 0); Start-Sleep -Milliseconds 80; [System.Win32]::mouse_event($up, 0, 0, 0, 0)`;
+    const sx = safePSNum(x), sy = safePSNum(y);
+    const psScript = `Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point(${sx},${sy}); Add-Type -MemberDefinition '[DllImport("user32.dll")] public static extern void mouse_event(int dwFlags, int dx, int dy, int dwData, int dwExtraInfo);' -Name Win32 -Namespace System; $down = ${b === 'left' ? '0x0002' : b === 'right' ? '0x0008' : '0x0020'}; $up = ${b === 'left' ? '0x0004' : b === 'right' ? '0x0010' : '0x0040'}; [System.Win32]::mouse_event($down, 0, 0, 0, 0); Start-Sleep -Milliseconds 80; [System.Win32]::mouse_event($up, 0, 0, 0, 0)`;
     execSync(`powershell -NoProfile -Command "${psScript}"`, { timeout: 3000 });
     return { success: true, message: `Clicked ${b} at ${x},${y}` };
   } catch (e) { return { success: false, message: e.message }; }
@@ -139,7 +152,7 @@ function getClipboard() {
 }
 
 function setClipboard(text) {
-  try { execSync(`powershell -NoProfile -Command "Set-Clipboard -Value '${text.replace(/'/g, "''")}'"`, { timeout: 3000 }); return true; } catch { return false; }
+  try { execSync(`powershell -NoProfile -Command "Set-Clipboard -Value '${safePS(text)}'"`, { timeout: 3000 }); return true; } catch { return false; }
 }
 
 // ── System Info ─────────────────────────────────────────────

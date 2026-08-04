@@ -733,12 +733,13 @@ function test_supporting() {
     skip++; results.push({ status: 'SKIP', msg: 'persona: ' + e.message });
   }
 
-  sub('Token Budget');
+  sub('Python Resolver (shared module)');
   try {
-    const tb = require(BASE + '/token_budget.js');
-    assert(typeof tb === 'object', 'token_budget 是对象');
+    const pr = require(BASE + '/python_resolver.js');
+    assert(typeof pr.resolvePython === 'function', 'resolvePython 是函数');
+    assert(typeof pr.runPython === 'function', 'runPython 是函数');
   } catch (e) {
-    skip++; results.push({ status: 'SKIP', msg: 'token_budget: ' + e.message });
+    skip++; results.push({ status: 'SKIP', msg: 'python_resolver: ' + e.message });
   }
 
   return true;

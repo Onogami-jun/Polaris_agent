@@ -65,14 +65,16 @@ const ToastC:React.FC<{toasts:any[]}>=({toasts})=>(
     {toasts.map(t=><div key={t.id} className={'animate-fade-in px-4 py-2.5 rounded-lg text-sm text-white max-w-[380px] shadow-lg '+ (t.type==='error'?'bg-destructive':t.type==='warn'?'bg-amber-500':'bg-primary')}>{t.msg}</div>)}
   </div>);
 
-/* ── Markdown ── */
+/* ── Markdown (with memoization, re-parses only on content change) ── */
+var _mdCache = new Map(); var _mdCacheSize = 0; var _mdCacheLimit = 200;
 function md(t:string):string{
+if(_mdCache.has(t))return _mdCache.get(t);
 // Pass through pre-formatted HTML (locked messages, inline buttons etc.)
-if(t.substr(0,4)==='<div'||t.substr(0,5)==='<span'||t.substr(0,3)==='<p>')return t;
+if(t.slice(0,4)==='<div'||t.slice(0,5)==='<span'||t.slice(0,3)==='<p>')return t;
 var BL="%%BLOCK%%";var BE="%%BEND%%";
 var blocks=[];var out="";var inB=false;var lang="";var bc="";
 for(var i=0;i<t.length;i++){
- if(t.substr(i,3)==="```"){
+ if(t.slice(i,i+3)==="```"){
   if(inB){blocks.push({l:lang,c:bc.trim()});out+=BL+(blocks.length-1)+BE;bc="";lang="";inB=false;i+=2;}
   else{inB=true;i+=2;while(i+1<t.length&&t[i+1]!=="\n"[0]&&t[i+1]!=="\r"[0]){lang+=t[i+1];i++;}if(t[i+1]==="\r"[0])i++;i++;}
   continue;}
@@ -109,7 +111,9 @@ out=out.replace(/^# (.+)/gm,'<h1 class="text-lg font-bold mt-5 mb-3 pb-2 border-
 out=out.replace(/^[-*] (.+)/gm,'<li class="ml-4 text-sm">$1</li>');
 var br2=new RegExp('\\n\\n','g');out=out.replace(br2,'<br/><br/>');
 var br1=new RegExp('\\n','g');out=out.replace(br1,'<br/>');
-return'<p>'+out+'</p>';}
+var result='<p>'+out+'</p>';
+if(_mdCacheSize<_mdCacheLimit){_mdCache.set(t,result);_mdCacheSize++;}
+return result;}
 
 function hl(c:string,l:string):string{
 var kw={js:'const let var function return if else for while class export import async await'.split(' '),py:'def return if elif else for while class import from async await try except'.split(' ')};
@@ -449,6 +453,7 @@ const App:React.FC=()=>{
       // True streaming: add message on first content, then update incrementally
       streamApi.onStreamChunk(function(chunk){
         if(stop.current)return;
+        resetSafety(); // Each chunk resets the timeout
         if(chunk.type==='thinking'){setThinking(chunk.text||'');}
         else if(chunk.type==='content'){
           fullContent=chunk.full||fullContent;setThk('');
@@ -469,14 +474,19 @@ const App:React.FC=()=>{
         d(incrementUsage());d(setStreaming(false));setThinking('');setThk('');
         streamApi.removeStreamListeners();
       });
-      // Safety: 30s timeout
-      var safetyTimer=setTimeout(function(){
-        if(!hasAdded){fullContent=fullContent||'*响应超时*';d(addMessage({sessionId:sid,message:{id:msgId,role:'assistant',content:fullContent,timestamp:Date.now()}}));}
-        d(incrementUsage());d(setStreaming(false));setThinking('');setThk('');
-        streamApi.removeStreamListeners();
-      },30000);
+      // Smart timeout — 120s max, resets on each chunk
+      var safetyTimer; var timeoutMs = 120000;
+      var resetSafety = function() {
+        if (safetyTimer) clearTimeout(safetyTimer);
+        safetyTimer = setTimeout(function() {
+          if (!hasAdded) { fullContent = fullContent || '*响应超时，请重试*'; d(addMessage({ sessionId: sid, message: { id: msgId, role: 'assistant', content: fullContent, timestamp: Date.now() } })); }
+          d(incrementUsage()); d(setStreaming(false)); setThinking(''); setThk('');
+          streamApi.removeStreamListeners();
+        }, timeoutMs);
+      };
+      resetSafety();
       await streamApi.queryStream({text:ctx,strategy,apiKeys:settings.apiKeys});
-      clearTimeout(safetyTimer);
+      if (safetyTimer) clearTimeout(safetyTimer);
     }catch(e){showToast('连接失败: '+(e.message||'未知错误'),'error');d(setStreaming(false));setThinking('');setThk('');}
 
   },[streaming,strategy,activeSessionId,d,fs,web,settings]);

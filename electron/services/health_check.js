@@ -3,24 +3,11 @@
  */
 const { spawnSync } = require('child_process');
 const https = require('https');
-const path = require('path');
-const os = require('os');
-const fs = require('fs');
 const { getKey } = require('./keymanager');
-
-// Try sandbox Python first, then system Python
-function getBestPython() {
-  const sandboxPy = path.join(os.homedir(), 'AppData', 'Roaming', 'polaris-agent', 'sandbox', 'python.exe');
-  if (fs.existsSync(sandboxPy)) return sandboxPy;
-  for (const cmd of ['python', 'python3']) {
-    const r = spawnSync(cmd, ['-c', 'print("OK")'], { timeout: 5000, encoding: 'utf8', windowsHide: true });
-    if (r.status === 0 && r.stdout.includes('OK')) return cmd;
-  }
-  return null;
-}
+const { resolvePython } = require('./python_resolver');
 
 function checkPython() {
-  const py = getBestPython();
+  const py = resolvePython();
   if (py) return { ok: true, cmd: py };
   return { ok: false, error: 'Python not found. Click "安装沙箱" to auto-install.' };
 }
