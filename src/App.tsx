@@ -325,6 +325,7 @@ const App:React.FC=()=>{
   // ── Auto-restore auth + sessions + settings ──
   useEffect(()=>{
     document.documentElement.classList.toggle('dark',settings.theme==='dark');
+    document.documentElement.classList.toggle('light',settings.theme==='light');
     document.documentElement.style.fontSize=settings.fontSize+'px';
     d(restoreAuth());
     var s=ld();if(s.length>0)d(lr(s));
@@ -343,6 +344,7 @@ const App:React.FC=()=>{
         if(saved.proxy)d(updateProxy(saved.proxy));
         // Apply theme after restore
         document.documentElement.classList.toggle('dark',saved.theme==='dark');
+        document.documentElement.classList.toggle('light',saved.theme==='light');
       },0);
     }
   },[]);
@@ -375,7 +377,7 @@ const App:React.FC=()=>{
   // Health check
   api.healthCheck().then((r:any)=>{if(Array.isArray(r)){const s={python:false,polaris:false,highs:false,deepseek:false};r.forEach((x:any)=>{if(x.service==='Python')s.python=x.ok;if(x.service==='Polaris Engine')s.polaris=x.ok;if(x.service==='HiGHS Solver')s.highs=x.ok;if(x.service==='DeepSeek API')s.deepseek=x.ok;});d(setEngineStatus(s))}}).catch(()=>{});
   let kc=0;const onKb=()=>{kc++;if(kc%30===0)api.monitorUpdate({count:kc,lastPress:Date.now(),window:document.title})};window.addEventListener('keydown',onKb);return()=>window.removeEventListener('keydown',onKb)},[]);
-  useEffect(()=>{document.documentElement.classList.toggle('dark',settings.theme==='dark');document.documentElement.style.fontSize=settings.fontSize+'px';document.documentElement.lang=settings.language},[settings.theme,settings.fontSize,settings.language]);
+  useEffect(()=>{document.documentElement.classList.toggle('dark',settings.theme==='dark');document.documentElement.classList.toggle('light',settings.theme==='light');document.documentElement.style.fontSize=settings.fontSize+'px';document.documentElement.lang=settings.language},[settings.theme,settings.fontSize,settings.language]);
 
   // ── Helpers ──
   const addExecLog=(tool:string,status:'running'|'done'|'error',detail='')=>{const id=Date.now()+Math.random().toString(36);setExecLog(p=>[...p.slice(-30),{id,time:new Date().toLocaleTimeString(),tool,status,detail}]);if(status!=='running'){setTimeout(()=>setExecLog(p=>p.filter(e=>e.id!==id||e.status==='running'||p.slice(-3).some(x=>x.id===id))),8000)}};

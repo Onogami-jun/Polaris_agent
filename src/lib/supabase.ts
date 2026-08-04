@@ -28,37 +28,24 @@ export async function restoreSession(): Promise<boolean> {
   }
 }
 
-/** 获取当前用户完整信息（兼容无 profiles 表的情况） */
+/** 获取当前用户完整信息（从 user_metadata 获取，不依赖 profiles 表） */
 export async function getCurrentUser() {
   const { data: { user }, error } = await supabase.auth.getUser();
   if (error || !user) return null;
 
-  let displayName = user.email?.split('@')[0] || 'User';
-  let avatar = '#6366f1';
-  let plan = 'free';
-
-  // profiles 表是可选的——不存在也不应该阻断登录
-  try {
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('display_name, avatar_color, plan')
-      .eq('id', user.id)
-      .single();
-    if (profile) {
-      displayName = profile.display_name || displayName;
-      avatar = profile.avatar_color || avatar;
-      plan = profile.plan || plan;
-    }
-  } catch {
-    // profiles 表不存在 — 用默认值，登录正常进行
-  }
+  // Use user_metadata (always available from auth) instead of profiles table
+  // This avoids 406 errors when columns/schema don't match
+  const meta = (user.user_metadata || {}) as Record<string, any>;
+  const displayName = meta.display_name || user.email?.split('@')[0] || 'User';
+  const avatar = meta.avatar_color || '#6366f1';
+  const plan = (meta.plan || 'free') as 'free' | 'pro' | 'enterprise';
 
   return {
     id: user.id,
     email: user.email!,
     displayName,
     avatar,
-    plan: plan as 'free' | 'pro' | 'enterprise',
+    plan,
     createdAt: user.created_at,
     lastSignIn: user.last_sign_in_at,
   };

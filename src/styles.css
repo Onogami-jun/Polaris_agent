@@ -27,47 +27,51 @@
   --p-accent-red: #d45a5a;
   --p-accent-blue: #5a8ad4;
   --p-accent-amber: #d4a85a;
+}
 
-  /* Typography */
+/* Light theme */
+html.light {
+  --p-black: #faf8f5;
+  --p-gold: #a08030;
+  --p-gold-dim: #8a6820;
+  --p-gold-bright: #c8a040;
+  --p-surface: #f2efe8;
+  --p-surface-hover: #e8e4dc;
+  --p-card: #f5f2eb;
+  --p-card-hover: #ebe7e0;
+  --p-border: #d8d4cc;
+  --p-border-light: #c5c0b8;
+  --p-text: #1a1814;
+  --p-text-dim: #6b6560;
+  --p-text-muted: #a09890;
+  --p-accent-green: #2a8a6e;
+  --p-accent-red: #c04040;
+  --p-accent-blue: #4a78c0;
+  --p-accent-amber: #c08840;
+}
+
+/* Typography & Spacing */
+:root {
   --font-sans: 'Inter', 'Noto Sans SC', -apple-system, BlinkMacSystemFont, sans-serif;
   --font-mono: 'JetBrains Mono', 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
   --font-size-xs: 11px;
   --font-size-sm: 13px;
   --font-size-base: 14px;
-
-  /* Spacing */
   --radius-sm: 6px;
   --radius-md: 10px;
   --radius-lg: 14px;
   --radius-xl: 18px;
-
-  /* Shadows */
   --shadow-card: 0 1px 3px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.2);
   --shadow-popup: 0 2px 8px rgba(0,0,0,.4), 0 16px 48px rgba(0,0,0,.3);
   --shadow-input: 0 0 0 2px rgba(200,169,110,.15);
-
-  /* Transitions */
   --ease-out: cubic-bezier(.22,1,.36,1);
   --ease-in-out: cubic-bezier(.4,0,.2,1);
+}
 
-  /* Tailwind CSS variable bridge */
-  --background: 240 12% 6%;
-  --foreground: 40 18% 90%;
-  --card: 240 12% 10%;
-  --card-foreground: 40 18% 90%;
-  --border: 240 10% 18%;
-  --input: 240 10% 18%;
-  --ring: 41 48% 61%;
-  --primary: 41 48% 61%;
-  --primary-foreground: 240 12% 6%;
-  --secondary: 240 10% 16%;
-  --secondary-foreground: 40 18% 90%;
-  --muted: 240 10% 14%;
-  --muted-foreground: 40 5% 55%;
-  --accent: 240 10% 16%;
-  --accent-foreground: 40 18% 90%;
-  --destructive: 0 62% 60%;
-  --destructive-foreground: 0 0% 100%;
+/* Light theme shadows */
+html.light {
+  --shadow-card: 0 1px 3px rgba(0,0,0,.08), 0 8px 24px rgba(0,0,0,.06);
+  --shadow-popup: 0 2px 8px rgba(0,0,0,.12), 0 16px 48px rgba(0,0,0,.1);
 }
 
 /* ── BASE ─────────────────────────────────────────────────── */
