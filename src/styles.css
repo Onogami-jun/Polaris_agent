@@ -72,30 +72,33 @@ html, body, #root {
   margin-bottom: 8px; font-size: 10px;
   font-family: 'JetBrains Mono', 'SF Mono', monospace;
 }
-.msg-meta .tag-intent {
+.msg-meta .intent-tag {
   padding: 1px 6px; border-radius: 8px; font-size: 9px;
   background: hsl(var(--muted)); color: hsl(var(--muted-foreground));
 }
-.msg-meta .tag-model {
+.msg-meta .model-tag {
   padding: 1px 8px; border-radius: 10px; font-size: 9px;
   background: hsla(var(--primary), .1);
   border: 1px solid hsla(var(--primary), .2);
   color: hsl(var(--primary));
 }
 
-/* Hover actions */
+/* Hover actions bar — bottom-right inside bubble */
 .msg-actions {
-  position: absolute; top: 6px; right: 8px; display: flex; gap: 2px;
+  display: flex; gap: 2px;
+  margin-top: 8px; padding-top: 6px;
+  border-top: 1px solid hsl(var(--border));
+  justify-content: flex-end;
   opacity: 0; transition: opacity .15s;
 }
 .msg-bubble:hover .msg-actions { opacity: 1; }
-.msg-act {
-  width: 26px; height: 26px; border-radius: 6px; border: none;
-  background: hsl(var(--muted)); color: hsl(var(--muted-foreground));
-  cursor: pointer; display: flex; align-items: center; justify-content: center;
-  font-size: 12px; transition: all .1s;
+.msg-act-btn {
+  height: 26px; padding: 0 8px; border-radius: 6px; border: none;
+  background: transparent; color: hsl(var(--muted-foreground));
+  cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
+  font-size: 11px; gap: 3px; transition: all .1s;
 }
-.msg-act:hover { background: hsl(var(--accent)); color: hsl(var(--accent-foreground)); }
+.msg-act-btn:hover { background: hsl(var(--muted)); color: hsl(var(--foreground)); }
 
 /* Markdown inside bubbles */
 .msg-bubble .code-block {

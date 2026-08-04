@@ -377,7 +377,14 @@ const App:React.FC=()=>{
   // Health check
   api.healthCheck().then((r:any)=>{if(Array.isArray(r)){const s={python:false,polaris:false,highs:false,deepseek:false};r.forEach((x:any)=>{if(x.service==='Python')s.python=x.ok;if(x.service==='Polaris Engine')s.polaris=x.ok;if(x.service==='HiGHS Solver')s.highs=x.ok;if(x.service==='DeepSeek API')s.deepseek=x.ok;});d(setEngineStatus(s))}}).catch(()=>{});
   let kc=0;const onKb=()=>{kc++;if(kc%30===0)api.monitorUpdate({count:kc,lastPress:Date.now(),window:document.title})};window.addEventListener('keydown',onKb);return()=>window.removeEventListener('keydown',onKb)},[]);
-  useEffect(()=>{document.documentElement.classList.toggle('dark',settings.theme==='dark');document.documentElement.classList.toggle('light',settings.theme==='light');document.documentElement.style.fontSize=settings.fontSize+'px';document.documentElement.lang=settings.language},[settings.theme,settings.fontSize,settings.language]);
+  // i18n map for visible text
+  var i18n=useMemo(function(){var l=settings.language;
+    if(l==='zh-CN')return{placeholder:'描述优化问题... Enter 发送，Shift+Enter 换行',emptyTitle:'描述你的优化问题',emptyDesc:'试试：「背包容量50，价值60 100 120，重量10 20 30」',fast:'快速',quality:'优质',expert:'专家',thinking:'思考中...'};
+    if(l==='ja')return{placeholder:'最適化問題を記述... Enterで送信、Shift+Enterで改行',emptyTitle:'最適化問題を入力してください',emptyDesc:'例：「ナップサック容量50、価値60 100 120、重量10 20 30」',fast:'高速',quality:'品質',expert:'専門家',thinking:'考え中...'};
+    if(l==='fr')return{placeholder:'Decrivez un probleme d\'optimisation... Entree pour envoyer',emptyTitle:'Decrivez votre probleme',emptyDesc:'Essayez: "Sac a dos capacite 50, valeurs 60 100 120, poids 10 20 30"',fast:'Rapide',quality:'Qualite',expert:'Expert',thinking:'Reflexion...'};
+    return{placeholder:'Describe optimization problem... Enter to send, Shift+Enter for newline',emptyTitle:'Describe your optimization problem',emptyDesc:'Try: "Knapsack capacity 50, values 60 100 120, weights 10 20 30"',fast:'Fast',quality:'Quality',expert:'Expert',thinking:'Thinking...'};
+  },[settings.language]);
+  useEffect(function(){document.documentElement.classList.toggle('dark',settings.theme==='dark');document.documentElement.classList.toggle('light',settings.theme==='light');document.documentElement.style.fontSize=settings.fontSize+'px';document.documentElement.lang=settings.language},[settings.theme,settings.fontSize,settings.language]);
 
   // ── Helpers ──
   const addExecLog=(tool:string,status:'running'|'done'|'error',detail='')=>{const id=Date.now()+Math.random().toString(36);setExecLog(p=>[...p.slice(-30),{id,time:new Date().toLocaleTimeString(),tool,status,detail}]);if(status!=='running'){setTimeout(()=>setExecLog(p=>p.filter(e=>e.id!==id||e.status==='running'||p.slice(-3).some(x=>x.id===id))),8000)}};
@@ -503,7 +510,7 @@ const App:React.FC=()=>{
   // Precompute messages
   var msgList = null;
   if (!act || act.messages.length===0) {
-    msgList = <div className="empty-state"><div className="empty-state-icon">✦</div><div className="empty-state-title">Describe your optimization problem</div><div className="empty-state-desc">Try: "Knapsack capacity 50, values 60 100 120, weights 10 20 30"</div></div>;
+    msgList = <div className="empty-state"><div className="empty-state-icon">✦</div><div className="empty-state-title">{i18n.emptyTitle}</div><div className="empty-state-desc">{i18n.emptyDesc}</div></div>;
   } else {
     msgList = act.messages.map((m:any,i:number)=>{
       var isLast=i===act.messages.length-1;
@@ -527,7 +534,7 @@ const App:React.FC=()=>{
     });
   }
 
-  var thinkingEl=(thk||thinking)?<div className="think-indicator"><div className="think-dots"><span/><span/><span/></div>{thinking||thk||'Thinking...'}</div>:null;
+  var thinkingEl=(thk||thinking)?<div className="think-indicator"><div className="think-dots"><span/><span/><span/></div>{thinking||thk||i18n.thinking}</div>:null;
 
   return <div>
     {toastEl}
@@ -562,7 +569,7 @@ const App:React.FC=()=>{
             <div className="px-4 pb-6 pt-2">
               <MessageInput
                 value={inp} onChange={setInp} onSubmit={send}
-                placeholder="描述优化问题... Enter 发送，Shift+Enter 换行"
+                placeholder={i18n.placeholder}
                 disabled={streaming} isStreaming={streaming}
                 onStop={()=>{stop.current=true;d(setStreaming(false));setThk('')}}
                 onCommand={()=>setCmd(true)}
@@ -602,8 +609,9 @@ const App:React.FC=()=>{
 
 /* ── Strategy Selector ── */
 function StrategySelector(){
-  var d=useAppDispatch();var st=useAppSelector(function(s){return s.chat.strategy});
-  var modes=[{id:'cost_optimized',label:'Fast',hint:'Low token'},{id:'best_quality',label:'Quality',hint:'Medium token'},{id:'ensemble',label:'Expert',hint:'High token'}];
+  var d=useAppDispatch();var st=useAppSelector(function(s){return s.chat.strategy});var l=useAppSelector(function(s){return s.chat.settings.language});
+  var labels=l==='zh-CN'?{fast:'快速',quality:'优质',expert:'专家'}:l==='ja'?{fast:'高速',quality:'品質',expert:'専門家'}:l==='fr'?{fast:'Rapide',quality:'Qualité',expert:'Expert'}:{fast:'Fast',quality:'Quality',expert:'Expert'};
+  var modes=[{id:'cost_optimized',label:labels.fast,hint:'Low token'},{id:'best_quality',label:labels.quality,hint:'Medium token'},{id:'ensemble',label:labels.expert,hint:'High token'}];
   return React.createElement('div',{className:'strategy-selector'},
     modes.map(function(m,i){
       var isActive=st===m.id;
