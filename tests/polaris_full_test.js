@@ -168,34 +168,59 @@ function test_agents() {
    ══════════════════════════════════════════════════════════ */
 function test_workflows() {
   section('3. WORKFLOWS');
-  const { WORKFLOWS, executeWorkflow } = require(BASE + '/workflow.js');
+  const { WORKFLOWS, executeWorkflow, resolveNext, evaluateEdge, always, passFail } = require(BASE + '/workflow.js');
 
-  sub('Workflow 定义');
+  sub('Workflow 定义 (v3: nodes + edges)');
   const wfIds = Object.keys(WORKFLOWS);
-  assertEq(wfIds.length, 4, '4 个 workflow');
-  assertDeepEq(wfIds.sort(), ['benchmark', 'general_chat', 'optimization', 'research_solve'].sort(), 'workflow ID 集合正确');
+  assert(wfIds.length >= 5, `至少 5 个 workflow，实际 ${wfIds.length}`);
+  assert(wfIds.includes('code_review'), '新增 code_review workflow');
 
   for (const [id, wf] of Object.entries(WORKFLOWS)) {
     assert(typeof wf.name === 'string', `${id}.name: ${wf.name}`);
-    assert(Array.isArray(wf.steps) && wf.steps.length > 0, `${id}.steps 非空 (${wf.steps.length} 步)`);
-    for (const step of wf.steps) {
-      assert(typeof step.id === 'string', `step ${step.id} 有 id`);
-      assert(typeof step.description === 'string', `step ${step.id} 有 description`);
+    assert(wf.nodes !== undefined && Object.keys(wf.nodes).length > 0, `${id}.nodes 非空`);
+    assert(wf.edges !== undefined && Object.keys(wf.edges).length > 0, `${id}.edges 非空`);
+    for (const [nid, node] of Object.entries(wf.nodes)) {
+      assert(typeof node.agent === 'string', `node ${nid}.agent: ${node.agent}`);
+      assert(typeof node.description === 'string', `node ${nid}.description 存在`);
+    }
+    // Verify all edge targets exist as nodes
+    for (const [eid, edge] of Object.entries(wf.edges)) {
+      if (!edge) continue; // terminal
+      if (edge.type === 'always') assert(wf.nodes[edge.target], `edge ${eid} → ${edge.target} 存在`);
+      if (edge.type === 'passFail') {
+        assert(wf.nodes[edge.pass], `edge ${eid}.pass → ${edge.pass} 存在`);
+        assert(wf.nodes[edge.fail], `edge ${eid}.fail → ${edge.fail} 存在`);
+      }
     }
   }
 
-  sub('optimization workflow 步骤顺序');
-  const optIds = WORKFLOWS.optimization.steps.map(s => s.id);
-  assertDeepEq(optIds, ['detect', 'solve', 'verify', 'explain'], 'optimization: detect→solve→verify→explain');
+  sub('★ P4: 条件边 (LangGraph-style)');
+  const opt = WORKFLOWS.optimization;
+  assert(opt.edges.start.type === 'always', 'start 边 → always');
+  assert(opt.edges.verify.type === 'passFail', 'verify 边 → passFail (条件)');
+  assertEq(opt.edges.verify.pass, 'explain', '验证通过 → explain');
+  assertEq(opt.edges.verify.fail, 'solve', '验证失败 → solve (回环)');
 
-  sub('conditional routing (nextWhen)');
-  const verifyStep = WORKFLOWS.optimization.steps.find(s => s.id === 'verify');
-  assert(verifyStep.nextWhen !== undefined, 'verify 有 nextWhen');
-  assertEq(verifyStep.nextWhen.fail, 'solve', '验证失败 → 回到 solve');
+  const cr = WORKFLOWS.code_review;
+  assert(cr.edges.review.type === 'passFail', 'code_review review → passFail');
+  assertEq(cr.edges.fix.target, 'review', 'fix → review (循环审查)');
+
+  sub('evaluateEdge');
+  assertEq(evaluateEdge(always('next'), null, 'x'), 'next', 'always → 返回 target');
+  assertEq(evaluateEdge(passFail('ok', 'bad'), { content: 'PASS' }, 'verify'), 'ok', 'passFail PASS → ok');
+  assertEq(evaluateEdge(passFail('ok', 'bad'), { content: 'FAIL' }, 'verify'), 'bad', 'passFail FAIL → bad');
+
+  sub('resolveNext');
+  assertEq(resolveNext(opt.edges, 'start', null, opt.nodes), 'detect', 'start → detect');
+  assertEq(resolveNext(opt.edges, 'detect', {}, opt.nodes), 'solve', 'detect → solve');
+
+  sub('optimization workflow 节点顺序');
+  const nodeIds = Object.keys(opt.nodes);
+  assertDeepEq(nodeIds, ['detect', 'solve', 'verify', 'explain'], 'optimization: detect→solve→verify→explain');
 
   sub('research_solve 重试机制');
-  const rsSolve = WORKFLOWS.research_solve.steps.find(s => s.id === 'solve');
-  assertEq(rsSolve.maxRetries, 2, 'research_solve 的 solve 步骤最多重试 2 次');
+  const rsSolve = WORKFLOWS.research_solve.nodes.solve;
+  assertEq(rsSolve.maxRetries, 3, 'research_solve solve 最多重试 3 次');
 
   return true;
 }
@@ -752,9 +777,9 @@ function test_audit() {
     }
   }
   for (const wf of Object.values(WORKFLOWS)) {
-    for (const step of wf.steps) {
+    for (const step of Object.values(wf.nodes)) {
       if (step.agent) {
-        assert(agentIds.has(step.agent), `workflow step ${step.id}.agent → ${step.agent} 存在`);
+        assert(agentIds.has(step.agent), `workflow node ${step.agent} 存在`);
       }
     }
   }
@@ -942,13 +967,13 @@ function test_integration() {
   sub('场景 4: Handoff 链条 -> optimization workflow');
   // 用户求解 → optimization workflow: detect→solve→verify→explain
   const wf = WORKFLOWS.optimization;
-  const wfAgentIds = new Set(wf.steps.map(s => s.agent));
+  const wfAgentIds = new Set(Object.values(wf.nodes).map(function(n) { return n.agent; }));
   assert(wfAgentIds.has('solver'), 'workflow 使用 solver');
   assert(wfAgentIds.has('verifier'), 'workflow 使用 verifier');
   assert(wfAgentIds.has('explainer'), 'workflow 使用 explainer');
 
   // Verify all workflow agents exist
-  for (const step of wf.steps) {
+  for (const step of Object.values(wf.nodes)) {
     assert(!!agents[step.agent], `workflow agent ${step.agent} 存在`);
   }
 

@@ -1,5 +1,5 @@
 /**
- * Polaris Router v7 — Streaming + Persona + LLM routing
+ * Polaris Router v8 — Claude Code-style while loop + Quality Check + Handoff runtime
  */
 const https = require('https');
 const { TOOLS } = require('./tools');
@@ -8,6 +8,7 @@ const { reliableSolve, diagnose, setReliabilityKey } = require('./reliability');
 const { SkillManager } = require('./skills');
 const { runPipeline } = require('./subagents');
 const { buildAgentCapabilityNote } = require('./health_check');
+const AGENTS = require('./agents');
 const { POLARIS_PERSONA } = require('./persona');
 
 // API key supplied by main process after successful auth
@@ -233,8 +234,27 @@ function callDeepSeek(messages, tools, apiKey, temperature, maxTokens) {
 }
 
 /* ══════════════════════════════════════════════════════════
-   CORE: runAgentLoop (streaming version)
+   CORE: runAgentLoop — Claude Code-style while(true) + QC + Handoff
    ══════════════════════════════════════════════════════════ */
+
+// ── Pick an agent by name ──
+function getAgentById(id) {
+  return AGENTS[id] || AGENTS.chat;
+}
+
+// ── Build system prompt for a specific agent ──
+function buildAgentPrompt(agentId, effectiveSkillPrompt, envNote) {
+  const agent = getAgentById(agentId);
+  return POLARIS_PERSONA + '\n\n' + agent.prompt + '\n\n' + effectiveSkillPrompt + '\n\n' + envNote;
+}
+
+// ── Check if content signals completion ──
+function isContentComplete(content) {
+  if (!content || content.trim().length < 5) return false;
+  if (content.includes('[CONTINUE]')) return false;
+  if (content.includes('[NEED_MORE]')) return false;
+  return content.trim().length > 15;
+}
 
 async function runAgentLoop(userMessage, apiKey, onExec, onTodo, onStreamChunk, strategyConfig) {
   var maxTok = (strategyConfig && strategyConfig.maxTokens) || 4096;
@@ -247,97 +267,205 @@ async function runAgentLoop(userMessage, apiKey, onExec, onTodo, onStreamChunk, 
   const hcResults = await healthCheckCache();
   const envNote = buildAgentCapabilityNote(hcResults);
 
-  // ── Inject Polaris persona ──
-  const fullPrompt = POLARIS_PERSONA + '\n\n' + effectivePrompt + '\n\n' + envNote;
-
-  // ── Chat / Discuss: streaming first, fallback to non-streaming ──
+  // ── Chat / Discuss: streaming ──
   if (skillName === '对话模式' || skillName === '讨论模式' || skillName === 'chat' || skillName === 'discuss') {
     if (onExec) onExec({ tool: skillName, status: 'running', detail: '正在思考...' });
     if (onStreamChunk) onStreamChunk({ type: 'thinking', text: '正在分析你的问题...' });
-
+    const agentPrompt = buildAgentPrompt('chat', effectivePrompt, envNote);
     var content = '';
     try {
       var resp = await callDeepSeekStream(
-        [{ role: 'system', content: fullPrompt }, { role: 'user', content: userMessage }],
-        [], apiKey, activeSkill.temperature || temp, maxTok,
-        onStreamChunk,
-      );
+        [{ role: 'system', content: agentPrompt }, { role: 'user', content: userMessage }],
+        [], apiKey, activeSkill.temperature || temp, maxTok, onStreamChunk);
       content = resp.choices?.[0]?.message?.content || '';
-    } catch(e) {
-      logger.warn('Streaming failed, falling back to non-streaming', { error: e.message });
-    }
-
-    // If streaming produced nothing, fall back to non-streaming
+    } catch(e) { logger.warn('Streaming failed', { error: e.message }); }
     if (!content || content.trim().length < 5) {
       if (onStreamChunk) onStreamChunk({ type: 'thinking', text: '正在生成回复...' });
       var fallback = await callDeepSeek(
-        [{ role: 'system', content: fullPrompt }, { role: 'user', content: userMessage }],
-        [], apiKey, activeSkill.temperature || temp, maxTok,
-      );
+        [{ role: 'system', content: agentPrompt }, { role: 'user', content: userMessage }],
+        [], apiKey, activeSkill.temperature || temp, maxTok);
       content = fallback.choices?.[0]?.message?.content || '';
-      if (content && onStreamChunk) {
-        onStreamChunk({ type: 'content', text: content, full: content });
-      }
+      if (content && onStreamChunk) onStreamChunk({ type: 'content', text: content, full: content });
     }
-
     if (onExec) onExec({ tool: skillName, status: 'done', detail: '回答完成' });
     return content.trim().length > 10 ? content : '嗯，让我再想想... 你想聊什么方向？';
   }
 
-  // ── Solve / Analyze / Experiment: tool loop ──
-  const tools = buildToolDeclarations(activeSkill.tools);
+  // ═══════════════════════════════════════════════════════
+  // ★ P0: Claude Code-style while(true) agent loop
+  // ★ P2: Runtime Handoff — switch agent mid-loop
+  // ★ P1: Quality Check — review before returning
+  // ═══════════════════════════════════════════════════════
+
+  // Start with the agent that best matches the skill
+  var currentAgentId = mapSkillToAgent(skillName);
+  var currentAgent = getAgentById(currentAgentId);
+  var agentPrompt = buildAgentPrompt(currentAgentId, effectivePrompt, envNote);
+  var tools = buildToolDeclarations([...new Set([...activeSkill.tools, ...currentAgent.tools])]); // union of skill+agent tools
+  var agentTemp = currentAgent.temperature || activeSkill.temperature || temp;
+
   const messages = [
-    { role: 'system', content: fullPrompt },
+    { role: 'system', content: agentPrompt },
     { role: 'user', content: userMessage },
   ];
 
-  let bestResponse = '';
-  let toolsUsed = false;
+  var bestResponse = '';
+  var toolsUsed = false;
+  const MAX_ROUNDS = 10;
+  var round = 0;
 
-  for (let round = 0; round < 3; round++) {
-    if (onStreamChunk) onStreamChunk({ type: 'thinking', text: round === 0 ? '分析问题...' : round === 1 ? '执行求解...' : '整理结果...' });
-    const resp = await callDeepSeek(messages, tools, apiKey, activeSkill.temperature || temp, maxTok);
+  // ── P0: while(true) — LLM decides when to stop ──
+  while (round < MAX_ROUNDS) {
+    round++;
+    var thinkingText = round <= 1 ? '分析问题...' : round <= 3 ? `执行第${round}步...` : `继续处理 (${round}/${MAX_ROUNDS})...`;
+    if (onStreamChunk) onStreamChunk({ type: 'thinking', text: thinkingText });
 
+    const resp = await callDeepSeek(messages, tools, apiKey, agentTemp, maxTok);
     if (resp.error) break;
+
     const choice = resp.choices?.[0];
     if (!choice) break;
 
+    // ── No tool calls → LLM is done (or giving final answer) ──
     if (!choice.message?.tool_calls?.length) {
       const content = choice.message?.content || '';
-      if (content.trim().length > 20) {
+      if (isContentComplete(content)) {
         if (toolsUsed) {
-          if (onStreamChunk) onStreamChunk({ type: 'thinking', text: '正在生成回答...' });
+          if (onStreamChunk) onStreamChunk({ type: 'thinking', text: '整理结果...' });
+          // ── P2: Handoff check ──
+          var nextAgent = tryHandoff(currentAgentId, userMessage, content);
+          if (nextAgent && nextAgent !== currentAgentId) {
+            logger.info('Handoff triggered', { from: currentAgentId, to: nextAgent });
+            currentAgentId = nextAgent; currentAgent = getAgentById(currentAgentId);
+            agentPrompt = buildAgentPrompt(currentAgentId, effectivePrompt, envNote);
+            agentTemp = currentAgent.temperature || activeSkill.temperature || temp;
+            tools = buildToolDeclarations([...new Set([...activeSkill.tools, ...currentAgent.tools])]);
+            messages[0] = { role: 'system', content: agentPrompt };
+            messages.push({ role: 'assistant', content: `[交接至 ${currentAgent.name}]` });
+            messages.push({ role: 'user', content: '上一步结果：\n' + bestResponse + '\n\n请基于此继续处理。' });
+            continue; // Continue loop with new agent
+          }
           return bestResponse + '\n\n---\n\n' + content;
         }
         return content;
       }
-      if (toolsUsed) return bestResponse || '求解完成。';
-      break;
+      if (toolsUsed) {
+        // LLM output is short but tools were used → it's probably summarizing
+        if (onStreamChunk) onStreamChunk({ type: 'thinking', text: '整理结果...' });
+        var qcResult = await qualityCheck(userMessage, messages, bestResponse, content, apiKey);
+        if (qcResult.needsMore) {
+          messages.push({ role: 'user', content: qcResult.feedback });
+          continue;
+        }
+        return bestResponse || content || '求解完成。';
+      }
+      break; // No tools used, short content → stop
     }
 
+    // ── Tool calls present → execute them ──
     toolsUsed = true;
     const toolCalls = choice.message.tool_calls;
     messages.push({ role: 'assistant', content: choice.message.content || '调用工具...', tool_calls: toolCalls });
 
     for (const tc of toolCalls) {
-      let args = {};
+      var args = {};
       try { args = JSON.parse(tc.function.arguments); } catch { args = { prompt: userMessage }; }
-      if (onStreamChunk) onStreamChunk({ type: 'thinking', text: `调用 ${tc.function.name}...` });
+      if (onStreamChunk) onStreamChunk({ type: 'thinking', text: '调用 ' + tc.function.name + '...' });
       const result = await executeTool(tc.function.name, args, onExec);
       const toolResult = result.success
-        ? (result.result || '已完成')
-        : `工具 ${tc.function.name} 返回：${result.error || '失败'}`;
-      messages.push({ role: 'tool', tool_call_id: tc.id, content: String(toolResult).slice(0, 3000) });
-      if (result.success && result.result) bestResponse = (result.result || '').slice(0, 5000);
+        ? (result.result || result.stdout || '已完成')
+        : '工具 ' + tc.function.name + ' 返回：' + (result.error || '失败');
+      messages.push({ role: 'tool', tool_call_id: tc.id, content: String(toolResult).slice(0, 4000) });
+      if (result.success && (result.result || result.stdout)) {
+        bestResponse = (result.result || result.stdout || '').slice(0, 8000);
+      }
+    }
+
+    // ── P2: Check if agent should handoff after tool execution ──
+    var nextAgent = shouldHandoffAfterTools(currentAgentId, toolCalls, bestResponse);
+    if (nextAgent && nextAgent !== currentAgentId) {
+      logger.info('Handoff after tools', { from: currentAgentId, to: nextAgent });
+      currentAgentId = nextAgent; currentAgent = getAgentById(currentAgentId);
+      agentPrompt = buildAgentPrompt(currentAgentId, effectivePrompt, envNote);
+      agentTemp = currentAgent.temperature || activeSkill.temperature || temp;
+      tools = buildToolDeclarations([...new Set([...activeSkill.tools, ...currentAgent.tools])]);
+      messages[0] = { role: 'system', content: agentPrompt };
+      messages.push({ role: 'assistant', content: '[交接至 ' + currentAgent.name + ']' });
     }
   }
 
+  // ── Exhausted rounds → quality check then return best ──
   if (toolsUsed && !bestResponse) {
     const dr = await directSolve(userMessage, onExec);
     if (dr.success && dr.result) return dr.result;
   }
+
+  // ── P1: Final quality check ──
+  if (bestResponse && bestResponse.length > 50) {
+    var finalQC = await qualityCheck(userMessage, messages, bestResponse, '', apiKey);
+    if (finalQC.suggestion) bestResponse += '\n\n' + finalQC.suggestion;
+  }
+
   if (bestResponse) return bestResponse;
   return 'Polaris 引擎已尝试求解，但未能得出结果。请提供更详细的问题数据。';
+}
+
+/** ── Map skill name to best starting agent ── */
+function mapSkillToAgent(skillName) {
+  var map = { '求解模式': 'solver', 'solve': 'solver', '分析模式': 'researcher', 'analyze': 'researcher', '实验模式': 'researcher', 'experiment': 'researcher', '讨论模式': 'researcher', 'discuss': 'researcher', '对话模式': 'chat', 'chat': 'chat' };
+  return map[skillName] || 'researcher';
+}
+
+/** ── P2: Runtime Handoff — decide if agent should switch based on output ── */
+function tryHandoff(currentId, userMessage, content) {
+  const agent = getAgentById(currentId);
+  if (!agent.handoffs || !agent.handoffs.length) return null;
+  // If content mentions verification/check → handoff to verifier
+  if (/验证|检查|verify|check|confirm|VALIDATE|PASS|FAIL/i.test(content)) {
+    if (agent.handoffs.includes('verifier')) return 'verifier';
+  }
+  // If content is dense numerical output → handoff to explainer
+  if (/目标值|最优解|objective|optimal|solution/i.test(content)) {
+    if (agent.handoffs.includes('explainer')) return 'explainer';
+  }
+  // If content mentions need more research → handoff to researcher
+  if (/需要更多|进一步研究|literature|文献|参考/i.test(content)) {
+    if (agent.handoffs.includes('researcher')) return 'researcher';
+  }
+  return null;
+}
+
+/** ── P2: Check handoff after tool execution ── */
+function shouldHandoffAfterTools(currentId, toolCalls, response) {
+  const agent = getAgentById(currentId);
+  if (!agent.handoffs || !agent.handoffs.length) return null;
+  for (const tc of toolCalls) {
+    const name = tc.function?.name || '';
+    // After solving → handoff to verifier if available
+    if ((name === 'polaris_opt' || name === 'polaris_model') && agent.handoffs.includes('verifier')) return 'verifier';
+    // After analyze → handoff to solver if available
+    if (name === 'polaris_analyze' && agent.handoffs.includes('solver')) return 'solver';
+  }
+  return null;
+}
+
+/** ── P1: Quality Check — review output, suggest improvements ── */
+async function qualityCheck(userMessage, messages, bestResponse, latestContent, apiKey) {
+  try {
+    var finalText = bestResponse || latestContent || '';
+    if (finalText.length < 50) return { needsMore: false };
+    var qcPrompt = '你是一个质量审核员。审阅以下对用户问题的回答。只输出一个 JSON：{"needsMore":true/false,"feedback":"如果 needsMore 为 true，写一条具体的改进指令","suggestion":"一句话补充建议（可选）"}\n\n用户问题：' + userMessage.slice(0, 500) + '\n\n回答摘要：' + finalText.slice(0, 1500);
+    const qcResp = await callDeepSeek(
+      [{ role: 'system', content: '你是一个质量审核员。只输出 JSON。' }, { role: 'user', content: qcPrompt }],
+      [], apiKey, 0.1, 512);
+    var json = qcResp.choices?.[0]?.message?.content || '';
+    var match = json.match(/\{[\s\S]*\}/);
+    if (match) {
+      var parsed = JSON.parse(match[0]);
+      return { needsMore: !!parsed.needsMore, feedback: parsed.feedback || '', suggestion: parsed.suggestion || '' };
+    }
+  } catch {}
+  return { needsMore: false };
 }
 
 /* ══════════════════════════════════════════════════════════

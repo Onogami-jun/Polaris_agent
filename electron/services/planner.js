@@ -118,18 +118,75 @@ class Planner {
       return plan;
     }
 
-    // Fallback
+    // ── P3: Fallback → LLM dynamic step generation ──
+    return this.generateDynamicPlan(text);
+  }
+
+  /**
+   * ★ P3: LLM 动态规划 — 调用 LLM 自主生成步骤列表
+   */
+  async generateDynamicPlan(text) {
+    try {
+      var steps = await this._callLLMForSteps(text);
+      if (steps && steps.length > 0) {
+        const plan = {
+          id: 'plan_' + Date.now(),
+          request: text, workflow: 'dynamic', type: 'custom',
+          steps: steps.map(function(s, i) { return { id: 'step_' + i, action: 'exec', description: s, risk: 'low', agent: 'researcher' }; }),
+          createdAt: Date.now(),
+        };
+        this.pendingPlans.set(plan.id, plan);
+        return plan;
+      }
+    } catch {}
+    // Ultimate fallback
     const plan = {
       id: 'plan_' + Date.now(),
       request: text, workflow: 'default', type: 'general',
       steps: [
-        { id: 'analyze', action: 'analyze', description: '分析请求', risk: 'low' },
+        { id: 'analyze', action: 'analyze', description: '分析请求: ' + text.slice(0, 60), risk: 'low' },
         { id: 'confirm', action: 'confirm', description: '等待确认执行方案', risk: 'medium', needsConfirm: true },
       ],
       createdAt: Date.now(),
     };
     this.pendingPlans.set(plan.id, plan);
     return plan;
+  }
+
+  /** Call LLM to generate step list */
+  async _callLLMForSteps(text) {
+    var https = require('https');
+    var { getKey } = require('./keymanager');
+    var key = getKey();
+    if (!key) return null;
+
+    return new Promise(function(resolve) {
+      var body = JSON.stringify({
+        model: 'deepseek-v4-flash',
+        messages: [
+          { role: 'system', content: '你是任务规划器。把用户请求拆成 3-6 个可执行的步骤。每行一个步骤，格式：步骤描述。不要编号、不要额外文字。' },
+          { role: 'user', content: '任务：' + text.slice(0, 1000) },
+        ],
+        max_tokens: 512, temperature: 0.2,
+      });
+      var req = https.request({
+        hostname: 'api.deepseek.com', path: '/chat/completions', method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key, 'Content-Length': Buffer.byteLength(body) },
+        timeout: 15000,
+      }, function(resp) {
+        var d = ''; resp.on('data', function(c) { d += c.toString(); });
+        resp.on('end', function() {
+          try {
+            var content = JSON.parse(d).choices?.[0]?.message?.content || '';
+            var steps = content.split('\n').map(function(l) { return l.replace(/^[\d\.\-\*\s]+/, '').trim(); }).filter(function(l) { return l.length > 5; });
+            resolve(steps.length > 0 ? steps : null);
+          } catch { resolve(null); }
+        });
+      });
+      req.on('error', function() { resolve(null); });
+      req.on('timeout', function() { req.destroy(); resolve(null); });
+      req.write(body); req.end();
+    });
   }
 
   /**
