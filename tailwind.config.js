@@ -54,9 +54,21 @@ module.exports = {
           "60%": { opacity: "0.6", transform: "translateY(0)" },
           "100%": { opacity: "1", transform: "translateY(0)" },
         },
+        "slide-up": {
+          "0%": { opacity: "0", transform: "translateY(12px)" },
+          "100%": { opacity: "1", transform: "translateY(0)" },
+        },
+        "slide-left": {
+          "0%": { opacity: "0", transform: "translateX(8px)" },
+          "100%": { opacity: "1", transform: "translateX(0)" },
+        },
         "pulse-dot": {
           "0%, 100%": { opacity: "0.2", transform: "scale(0.5)" },
           "50%": { opacity: "1", transform: "scale(1.3)" },
+        },
+        "pulse-gold": {
+          "0%, 100%": { opacity: "0.6" },
+          "50%": { opacity: "1" },
         },
         "converge": {
           "0%": { opacity: "0.3", transform: "rotate(0deg)" },
@@ -67,13 +79,26 @@ module.exports = {
           "0%": { backgroundPosition: "-200% 0" },
           "100%": { backgroundPosition: "200% 0" },
         },
+        "msg-enter": {
+          "0%": { opacity: "0", transform: "translateY(6px) scale(0.98)" },
+          "100%": { opacity: "1", transform: "translateY(0) scale(1)" },
+        },
+        "scale-in": {
+          "0%": { opacity: "0", transform: "scale(0.92)" },
+          "100%": { opacity: "1", transform: "scale(1)" },
+        },
       },
       animation: {
         "fade-in": "fade-in 0.3s ease-out",
         "fade-in-bright": "fade-in-bright 0.6s cubic-bezier(0.22,1,0.36,1) forwards",
+        "slide-up": "slide-up 0.25s cubic-bezier(0.22,1,0.36,1)",
+        "slide-left": "slide-left 0.25s cubic-bezier(0.22,1,0.36,1)",
         "pulse-dot": "pulse-dot 2s cubic-bezier(0.4,0,0.6,1) infinite",
+        "pulse-gold": "pulse-gold 2s cubic-bezier(0.4,0,0.6,1) infinite",
         "converge": "converge 3s cubic-bezier(0.65,0,0.35,1) infinite",
-        shimmer: "shimmer 2s linear infinite",
+        "shimmer": "shimmer 2s linear infinite",
+        "msg-enter": "msg-enter 0.35s cubic-bezier(0.22,1,0.36,1) forwards",
+        "scale-in": "scale-in 0.2s cubic-bezier(0.22,1,0.36,1)",
       },
     },
   },

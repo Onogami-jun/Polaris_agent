@@ -10,17 +10,8 @@ import{Onboarding,ONBOARDING_KEY}from'./components/Onboarding';
 import{AuthBanner}from'./components/AuthBanner';
 import{Mascot}from'./components/Mascot';
 import{Button}from'./components/ui/button';
-import{Badge}from'./components/ui/badge';
-import{Separator}from'./components/ui/separator';
 import{ScrollArea}from'./components/ui/scroll-area';
-import{
-  Conversation,ConversationEmpty,
-  MessageList,
-  Message,
-  MessageInput,WebSearchButton,
-  MessageActions,CopyButton,RetryButton,EditButton,BranchButton,DownloadButton,
-  Thinking,Reasoning
-}from'./components/ai';
+import{Conversation,MessageInput,WebSearchButton}from'./components/ai';
 
 if(typeof window!=='undefined')(window).copyCode=function(btn){var pre=btn.closest('.code-block')?.querySelector('pre code');var text=pre?.textContent||'';navigator.clipboard.writeText(text).then(function(){btn.textContent='已复制';setTimeout(function(){btn.textContent='复制'},1500)}).catch(function(){})};
 
@@ -54,9 +45,9 @@ const Splash=({fade,setupProgress,setupError}:{fade:boolean;setupProgress:any;se
 /* ── Win Buttons ── */
 const WinBtns=()=>(
   <div className="flex gap-2 ml-3">
-    <button onClick={()=>window.electronAPI?.minimize()} className="w-3 h-3 rounded-full bg-amber-400 hover:bg-amber-300 transition-colors"/>
-    <button onClick={()=>window.electronAPI?.maximize()} className="w-3 h-3 rounded-full bg-emerald-400 hover:bg-emerald-300 transition-colors"/>
-    <button onClick={()=>window.electronAPI?.close()} className="w-3 h-3 rounded-full bg-red-400 hover:bg-red-300 transition-colors"/>
+    <button onClick={()=>window.electronAPI?.minimize()} className="win-btn min"/>
+    <button onClick={()=>window.electronAPI?.maximize()} className="win-btn max"/>
+    <button onClick={()=>window.electronAPI?.close()} className="win-btn close"/>
   </div>);
 
 /* ── Toast ── */
@@ -124,103 +115,61 @@ return o;}
 /* ─────────────────────────────────────────────────
    WORKFLOW VIEW — elegant pipeline timeline
    ───────────────────────────────────────────────── */
-function WorkflowView({plan,planProg,planId,execLog,todoSteps,onConfirmPlan,onRejectPlan,onStopPlan}:any){
-  var hasPlan=!!plan;
+function WorkflowView({plan,planProg,planId,execLog,todoSteps,onStopPlan}:any){
   var isExecuting=!!planProg;
-  var hasContent=hasPlan||(execLog&&execLog.length>0)||(todoSteps&&todoSteps.length>0);
+  var hasContent=!!plan||(execLog&&execLog.length>0)||(todoSteps&&todoSteps.length>0);
+
+  function stepStatus(sId){
+    if(!planProg)return'pending';
+    if(planProg.type==='step_done'&&planProg.step===sId)return'done';
+    if(planProg.step===sId&&planProg.type==='step_start')return'active';
+    if(planProg.type==='step_error'&&planProg.step===sId)return'fail';
+    return'pending';
+  }
 
   return(
-    <div className="flex flex-col h-full">
-      <div className="px-4 py-3 flex items-center gap-2">
-        <div className="w-1.5 h-1.5 rounded-full bg-primary"/>
-        <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider font-mono">工作流</span>
-        {isExecuting&&<span className="text-[9px] text-primary font-mono animate-pulse ml-auto">运行中</span>}
-        {!isExecuting&&hasContent&&<span className="text-[9px] text-muted-foreground font-mono ml-auto">就绪</span>}
+    <div className="wf-panel">
+      <div className="wf-header">
+        <div className="wf-header-dot"/>
+        <span className="wf-header-label">Workflow</span>
+        <span className={'wf-header-status '+(isExecuting?'running':'idle')}>{isExecuting?'running':'idle'}</span>
       </div>
-      <Separator/>
-
-      <ScrollArea className="flex-1">
-        <div className="px-3 py-3">
-          {/* ── Timeline: plan steps ── */}
-          {hasPlan&&plan.steps&&(
-            <div className="space-y-0">
-              {plan.steps.map(function(s:any,i:number){
-                var isLast=i===plan.steps.length-1;
-                var status='pending';var dotColor='bg-muted-foreground/25';
-                if(planProg){
-                  if(planProg.type==='step_done'&&planProg.step===s.id){status='done';dotColor='bg-emerald-500';}
-                  else if(planProg.step===s.id&&planProg.type==='step_start'){status='running';dotColor='bg-primary';}
-                  else if(planProg.type==='step_error'&&planProg.step===s.id){status='error';dotColor='bg-destructive';}
-                }
-                return <div key={s.id} className="relative pl-6 pb-4 last:pb-0">
-                  {!isLast&&<div className="absolute left-[7px] top-3 w-0.5 h-[calc(100%-4px)] bg-border/50"/>}
-                  <div className={'absolute left-[3px] top-1 w-2.5 h-2.5 rounded-full border-2 '+ (status==='running'?'border-primary bg-primary':'border-border '+dotColor)} style={{boxShadow:status==='running'?'0 0 8px hsla(var(--primary)/.4)':''}}/>
-                  <div className={'rounded-lg px-3 py-2 transition-all '+ (status==='running'?'bg-primary/5 border border-primary/15':status==='done'?'opacity-50':'')}>
-                    <div className="text-[11px] font-medium text-foreground leading-snug">{s.description}</div>
-                    <div className="flex items-center gap-2 mt-1">
-                      <span className="text-[9px] text-muted-foreground font-mono">{s.agent||'agent'}</span>
-                      {status==='running'&&<span className="flex gap-0.5"><span className="h-1 w-1 rounded-full bg-primary animate-pulse-dot"/><span className="h-1 w-1 rounded-full bg-primary animate-pulse-dot"style={{animationDelay:'0.2s'}}/></span>}
-                    </div>
-                  </div>
-                </div>;
-              })}
-            </div>
-          )}
-
-          {/* ── Exec log: compact chips ── */}
-          {execLog&&execLog.length>0&&(
-            <div className="mt-3">
-              <div className="text-[9px] font-semibold text-muted-foreground uppercase tracking-wider font-mono mb-2 px-1">工具调用</div>
-              <div className="space-y-1">
-                {execLog.slice(-15).reverse().map(function(e:any){
-                  var color={running:'border-primary/30 bg-primary/5',done:'border-emerald-500/20 bg-emerald-500/5',error:'border-destructive/20 bg-destructive/5'}[e.status]||'border-border/30 bg-muted/20';
-                  return <div key={e.id} className={'flex items-center gap-2 px-2.5 py-1.5 rounded-md border text-[10px] transition-all '+color}>
-                    <span className="font-mono font-medium text-foreground shrink-0">{e.tool}</span>
-                    <span className="flex-1 text-muted-foreground truncate">{e.detail||''}</span>
-                    <span className="text-[8px] text-muted-foreground/40 font-mono shrink-0">{e.time}</span>
-                  </div>;
-                })}
+      <div className="flex-1 overflow-y-auto" style={{padding:'10px 0'}}>
+        {/* ── Plan steps as semantic timeline ── */}
+        {plan&&plan.steps&&plan.steps.map(function(s:any,i:number){
+          var st=stepStatus(s.id);var isLast=i===plan.steps.length-1;
+          return <div key={s.id} className="wf-step">
+            {!isLast&&<div className={'wf-step-line '+(st==='done'?'done':st==='active'?'active':st==='fail'?'fail':'')}/>}
+            <div className={'wf-step-dot '+st}/>
+            <div className={'wf-step-card '+st}>
+              <div className="wf-step-title">{s.description}</div>
+              <div className="wf-step-agent">
+                <span>{s.agent||'agent'}</span>
+                {st==='active'&&<span className="think-dots" style={{marginLeft:6}}><span/><span/><span/></span>}
               </div>
             </div>
-          )}
-
-          {/* ── Todo steps: mini list ── */}
-          {todoSteps&&todoSteps.length>0&&(
-            <div className="mt-3">
-              <div className="text-[9px] font-semibold text-muted-foreground uppercase tracking-wider font-mono mb-2 px-1">任务</div>
-              <div className="space-y-0.5">
-                {todoSteps.map(function(t:any){
-                  var icon={running:'●',done:'✓',pending:'○'}[t.status]||'○';
-                  var clr={running:'text-primary',done:'text-emerald-500',pending:'text-muted-foreground/30'}[t.status]||'text-muted-foreground';
-                  return <div key={t.id} className="flex items-center gap-2 px-2.5 py-1 text-[10px]">
-                    <span className={'font-mono text-[9px] '+clr}>{icon}</span>
-                    <span className={t.status==='running'?'font-medium text-foreground':'text-muted-foreground'}>{t.label}</span>
-                  </div>;
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* ── Idle state ── */}
-          {!hasContent&&(
-            <div className="flex flex-col items-center justify-center py-16 text-center gap-3">
-              <div className="w-12 h-12 rounded-2xl bg-muted/50 flex items-center justify-center">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-muted-foreground/30">
-                  <polyline points="22,12 18,12 15,21 9,3 6,12 2,12"/>
-                </svg>
-              </div>
-              <p className="text-[10px] text-muted-foreground/40 font-mono">等待任务</p>
-            </div>
-          )}
-        </div>
-      </ScrollArea>
-
-      {/* ── Stop button ── */}
-      {isExecuting&&(
-        <div className="px-3 py-2.5 border-t border-border bg-card">
-          <Button size="sm" variant="outline" className="w-full h-7 text-[10px]"onClick={onStopPlan}>停止执行</Button>
-        </div>
-      )}
+          </div>;
+        })}
+        {/* ── Tool execution chips ── */}
+        {execLog&&execLog.length>0&&<div style={{padding:'8px 14px'}}>
+          <div style={{fontSize:9,fontFamily:'var(--font-mono)',color:'var(--p-text-muted)',marginBottom:6,textTransform:'uppercase',letterSpacing:'.06em'}}>Tools</div>
+          {execLog.slice(-10).reverse().map(function(e:any){
+            return <div key={e.id} className={'wf-tool-chip '+e.status}>
+              <span className="wf-tool-name">{e.tool}</span>
+              <span className="wf-tool-detail">{e.detail||''}</span>
+              <span className="wf-tool-time">{e.time}</span>
+            </div>;
+          })}
+        </div>}
+        {/* ── Idle state ── */}
+        {!hasContent&&<div style={{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:'40px 20px',gap:12,textAlign:'center'}}>
+          <div style={{width:40,height:40,borderRadius:12,background:'var(--p-surface-hover)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:18,color:'var(--p-text-muted)'}}>✦</div>
+          <p style={{fontSize:11,color:'var(--p-text-muted)',fontFamily:'var(--font-mono)'}}>Waiting for task</p>
+        </div>}
+      </div>
+      {isExecuting&&<div style={{padding:'10px 14px',borderTop:'1px solid var(--p-border)'}}>
+        <button onClick={onStopPlan} style={{width:'100%',padding:'6px',borderRadius:6,border:'1px solid var(--p-border)',background:'var(--p-surface)',color:'var(--p-text-dim)',fontSize:11,cursor:'pointer',fontFamily:'var(--font-mono)'}}>Stop</button>
+      </div>}
     </div>
   );
 }
@@ -551,45 +500,43 @@ const App:React.FC=()=>{
   // Precompute messages
   var msgList = null;
   if (!act || act.messages.length===0) {
-    msgList = <ConversationEmpty
-      icon={<span>✦</span>}
-      title="描述你的优化问题"
-    />;
+    msgList = <div className="empty-state"><div className="empty-state-icon">✦</div><div className="empty-state-title">Describe your optimization problem</div><div className="empty-state-desc">Try: "Knapsack capacity 50, values 60 100 120, weights 10 20 30"</div></div>;
   } else {
     msgList = act.messages.map((m:any,i:number)=>{
-      if (m.role==='user') return <Message key={m.id} from="user" index={i}>{m.content}</Message>;
+      var isLast=i===act.messages.length-1;
+      if (m.role==='user') return <div key={m.id} className="msg-row user"><div className="msg-bubble user">{m.content}</div></div>;
       var dlBlocks=[];var matches=m.content.matchAll(/```(python|py|code)\n([\s\S]*?)```/g);for(var match of matches)dlBlocks.push({lang:match[1],code:match[2].trim()});
-      var dlEl = dlBlocks.length>0 ? <div className="flex gap-1 mt-3">{dlBlocks.map(function(b:any,j:number){return <DownloadButton key={j}onClick={function(){var blob=new Blob([b.code],{type:'text/plain'});var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=b.lang==='py'?'polaris_model.py':'model.py';a.click()}}/>})}</div> : null;
-      var actBtns = i===act.messages.length-1 ? <div style={{display:'flex',gap:2}}><RetryButton onClick={rg}/><BranchButton onClick={br}/></div> : null;
-      return <Message key={m.id} from="assistant" index={i} metadata={m.model||''}>
-        {m.routing&&<Reasoning title={m.routing.intent||'路由'}>
-          <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
-            <span style={{borderRadius:9999,background:'hsl(var(--primary)/.1)',color:'hsl(var(--primary))',padding:'1px 8px',fontSize:10,fontFamily:'monospace'}}>{m.routing.intent}</span>
-            {m.routing.models?.map((md:any,j:number)=><span key={j} style={{borderRadius:9999,background:'hsl(var(--muted-foreground)/.1)',padding:'1px 8px',fontSize:10,fontFamily:'monospace'}}>{md}</span>)}
-          </div>
-        </Reasoning>}
-        <div dangerouslySetInnerHTML={{__html:md(m.content)}} style={{fontSize:14,lineHeight:1.625}}/>
+      var dlEl=dlBlocks.length>0?<div className="flex gap-1 mt-2">{dlBlocks.map(function(b:any,j:number){return <button key={j} className="msg-act-btn" style={{fontSize:10,padding:'2px 10px'}} onClick={function(){var blob=new Blob([b.code],{type:'text/plain'});var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=b.lang==='py'?'model.py':(b.lang+'.py');a.click()}}>Download {b.lang}</button>})}</div>:null;
+      return <div key={m.id} className="msg-row assistant"><div className="msg-bubble assistant">
+        {(m.model||m.routing)&&<div className="msg-meta">
+          {m.routing?.intent&&<span className="intent-tag">{m.routing.intent}</span>}
+          {m.routing?.models?.map((md:any,j:number)=><span key={j} className="model-tag">{md}</span>)}
+          {m.model&&<span className="model-tag">{m.model}</span>}
+        </div>}
+        <div dangerouslySetInnerHTML={{__html:md(m.content)}}/>
         {dlEl}
-        <div className="mt-3 pt-2 border-t border-border/30 flex items-center justify-end gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
-          <CopyButton onClick={()=>cp(m.content)} copied={cid===m.content.slice(0,20)}/>
-          {actBtns}
-        </div>
-      </Message>;
+        {isLast&&<div className="msg-actions">
+          <button className="msg-act-btn" title="Copy" onClick={()=>cp(m.content)}>{cid===m.content.slice(0,20)?'✓':'⧉'}</button>
+          <button className="msg-act-btn" title="Retry" onClick={rg}>↻</button>
+          <button className="msg-act-btn" title="Branch" onClick={br}>⑂</button>
+        </div>}
+      </div></div>;
     });
   }
 
-  var thinkingEl = (thk||thinking) ? <Thinking label={thinking||thk||'思考中...'}/> : null;
+  var thinkingEl=(thk||thinking)?<div className="think-indicator"><div className="think-dots"><span/><span/><span/></div>{thinking||thk||'Thinking...'}</div>:null;
 
   return <div>
     {toastEl}
     <div className="flex flex-col h-screen overflow-hidden bg-background">
       {/* ── Titlebar ── */}
-      <div className="flex items-center justify-between h-11 px-4 bg-card border-b border-border shrink-0 select-none drag">
-        <div className="flex items-center gap-3 no-drag">
-          <div className="flex items-baseline gap-2"><span className="text-sm font-semibold font-mono tracking-tight">Polaris</span><Badge variant="secondary" className="text-[9px] font-mono px-1.5">SOLVER</Badge></div>
-          {thk?<span className="text-[10px] text-muted-foreground font-mono animate-pulse">{thk}</span>:null}
+      <div className="titlebar drag">
+        <div className="titlebar-left no-drag">
+          <span className="titlebar-logo">Polaris</span>
+          <span className="titlebar-badge">SOLVER</span>
+          {thk?<span className="titlebar-status animate-pulse">{thk}</span>:null}
         </div>
-        <div className="flex items-center gap-1 no-drag">
+        <div className="titlebar-right no-drag">
           <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground" onClick={()=>setLeftOpen(!leftOpen)} title={leftOpen?'隐藏侧栏':'显示侧栏'}>◧</Button>
           <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground" onClick={()=>setRightOpen(!rightOpen)} title={rightOpen?'隐藏工作流':'显示工作流'}>◨</Button>
           <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground" onClick={()=>setCmd(true)} title="命令面板 (Ctrl+P)">⌘</Button>
@@ -629,29 +576,21 @@ const App:React.FC=()=>{
     {cmdEl}
     <LoginModal/>
     {/* ── Claude Code-style Permission Dialog ── */}
-    {permReq&&<div className="fixed inset-0 z-[500] flex items-end justify-center pb-8 bg-black/20 animate-fade-in" onClick={()=>{var api=window.electronAPI;if(api)api.rejectPermission(permReq.id);setPermReq(null)}}>
-      <div className="w-[460px] max-w-[94vw] rounded-2xl border border-border bg-card shadow-2xl overflow-hidden animate-fade-in" onClick={e=>e.stopPropagation()}>
-        <div className="px-5 py-4 border-b border-border bg-amber-500/5 flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-amber-500/10 flex items-center justify-center shrink-0">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#d97706" strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/><circle cx="12" cy="16" r="1"/></svg>
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="text-sm font-semibold text-foreground">Polaris 请求权限</div>
-            <div className="text-[11px] text-muted-foreground">Agent 正在尝试执行以下操作</div>
-          </div>
+    {permReq&&<div className="perm-dialog" onClick={()=>{var api=window.electronAPI;if(api)api.rejectPermission(permReq.id);setPermReq(null)}}>
+      <div className="perm-card" onClick={e=>e.stopPropagation()}>
+        <div className="perm-header">
+          <div className="perm-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg></div>
+          <div><div className="perm-title">Polaris requests permission</div><div className="perm-subtitle">Agent wants to perform this action</div></div>
         </div>
-        <div className="px-5 py-4 space-y-3">
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] font-semibold text-muted-foreground uppercase bg-muted px-2 py-0.5 rounded font-mono">{permReq.tool}</span>
-            <span className="text-sm font-medium text-foreground">{permReq.displayName||permReq.tool}</span>
-          </div>
-          {permReq.params&&Object.keys(permReq.params).length>0&&<div className="rounded-lg bg-muted/50 border border-border/50 p-3 max-h-[120px] overflow-auto">
-            {Object.keys(permReq.params).map(function(k){return<div key={k} className="flex gap-2 text-[11px] py-0.5"><span className="text-muted-foreground font-mono shrink-0">{k}:</span><span className="text-foreground font-mono truncate">{String(permReq.params[k]).slice(0,200)}</span></div>})}
+        <div className="perm-body">
+          <div className="perm-tool-name">{permReq.tool}{permReq.displayName?' — '+permReq.displayName:''}</div>
+          {permReq.params&&Object.keys(permReq.params).length>0&&<div className="perm-params">
+            {Object.keys(permReq.params).map(function(k){return<div key={k} className="perm-param-row"><span className="perm-param-key">{k}</span><span className="perm-param-val">{String(permReq.params[k]).slice(0,200)}</span></div>})}
           </div>}
         </div>
-        <div className="px-5 py-3 border-t border-border flex gap-2 justify-end">
-          <Button variant="outline" size="sm" className="h-8 px-4 text-xs" onClick={()=>{var api=window.electronAPI;if(api)api.rejectPermission(permReq.id);setPermReq(null)}}>拒绝</Button>
-          <Button size="sm" className="h-8 px-4 text-xs" onClick={()=>{var api=window.electronAPI;if(api)api.approvePermission(permReq.id);setPermReq(null)}}>允许</Button>
+        <div className="perm-footer">
+          <button className="perm-btn" onClick={()=>{var api=window.electronAPI;if(api)api.rejectPermission(permReq.id);setPermReq(null)}}>Deny</button>
+          <button className="perm-btn approve" onClick={()=>{var api=window.electronAPI;if(api)api.approvePermission(permReq.id);setPermReq(null)}}>Allow</button>
         </div>
       </div>
     </div>}
@@ -661,26 +600,11 @@ const App:React.FC=()=>{
 /* ── Strategy Selector ── */
 function StrategySelector(){
   var d=useAppDispatch();var st=useAppSelector(function(s){return s.chat.strategy});
-  var modes=[
-    {id:'cost_optimized',label:'快速',icon:'⚡',hint:'轻量回复 · 低 token'},
-    {id:'best_quality',label:'优质',icon:'✦',hint:'标准回复 · 中 token'},
-    {id:'ensemble',label:'专家',icon:'◈',hint:'深度推理 · 高 token'},
-  ];
-  return React.createElement('div',{className:'flex items-center gap-1.5'},
-    React.createElement('span',{className:'text-[9px] text-muted-foreground/40 font-mono shrink-0'},'模式'),
+  var modes=[{id:'cost_optimized',label:'Fast',hint:'Low token'},{id:'best_quality',label:'Quality',hint:'Medium token'},{id:'ensemble',label:'Expert',hint:'High token'}];
+  return React.createElement('div',{className:'strategy-selector'},
     modes.map(function(m,i){
       var isActive=st===m.id;
-      return React.createElement('button',{
-        key:m.id,
-        onClick:function(){d(setStrategy(m.id));},
-        style:{border:'1px solid '+(isActive?'hsl(var(--primary)/.3)':'transparent'),background:isActive?'hsl(var(--primary)/.06)':'',borderRadius:'5px',padding:'2px 8px',cursor:'pointer',display:'flex',alignItems:'center',gap:'4px',transition:'all .15s',outline:'none'},
-        className:isActive?'':'hover:bg-muted/50',
-        title:m.hint,
-      },
-        React.createElement('span',{className:'text-[10px] opacity-50'},m.icon),
-        React.createElement('span',{className:'text-[10px] font-medium',style:{color:isActive?'hsl(var(--primary))':'hsl(var(--muted-foreground))'}},m.label),
-        isActive?React.createElement('span',{className:'text-[8px] font-mono',style:{color:'hsl(var(--primary)/.5)'}},m.hint.split('·')[1]?.trim()||''):null
-      );
+      return React.createElement('button',{key:m.id,onClick:function(){d(setStrategy(m.id));},className:'strategy-btn'+(isActive?' active':''),title:m.hint},m.label);
     })
   );
 }
