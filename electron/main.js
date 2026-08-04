@@ -6,6 +6,10 @@ const desktop = require('./services/desktop');
 const { spawn } = require('child_process');
 const systemMonitor = require('./services/system-monitor');
 const { Planner } = require('./services/planner');
+const security = require('./services/security');
+
+// ── Production security lockdown ──
+security.setProductionMode();
 
 log.transports.file.level = 'info';
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
@@ -145,13 +149,17 @@ ipcMain.handle('polaris:queryStream', async (event, { text, strategy, systemProm
   }
 });
 
-// IPC: Auth — unlock/lock API key
+// IPC: Auth — unlock/lock API key + session token
 ipcMain.handle('auth:unlock', async (_e, { userId }) => {
   await refreshApiKey(userId);
+  security.createAuthSession(userId);
+  security.auditLog('auth', 'unlock', 'User: ' + userId);
   return { success: !!getKey() };
 });
 ipcMain.handle('auth:lock', () => {
   _authUserId = null; setKey(null);
+  security.destroyAuthSession();
+  security.auditLog('auth', 'lock', 'Session destroyed');
   return { success: true };
 });
 
@@ -205,8 +213,11 @@ async function findUserByEmail(email) {
   return null;
 }
 
-// IPC: Admin password reset (uses service_role key to bypass email flow)
-ipcMain.handle('auth:adminResetPassword', async (_e, { email, newPassword }) => {
+// IPC: Admin password reset — ★ 需速率限制 + 鉴权 ★
+ipcMain.handle('auth:adminResetPassword', async (_e, { email, newPassword, token }) => {
+  var rl = security.checkRateLimit('admin|rpc|' + (email || 'unknown'), security.RATE_LIMITS.adminCall.max, security.RATE_LIMITS.adminCall.window);
+  if (!rl.allowed) return { success: false, error: '操作过于频繁，请 ' + rl.retryAfter + ' 秒后重试' };
+  security.auditLog('admin', 'resetPassword', 'For: ' + email);
   try {
     var targetUser = await findUserByEmail(email);
     if (!targetUser) return { success: false, error: '未找到该邮箱对应的账号' };
@@ -218,8 +229,11 @@ ipcMain.handle('auth:adminResetPassword', async (_e, { email, newPassword }) => 
   }
 });
 
-// IPC: Admin confirm user email (bypass Supabase email confirmation)
-ipcMain.handle('auth:adminConfirmUser', async (_e, { email }) => {
+// IPC: Admin confirm user email — ★ 需速率限制 ★
+ipcMain.handle('auth:adminConfirmUser', async (_e, { email, token }) => {
+  var rl = security.checkRateLimit('admin|confirm|' + (email || 'unknown'), security.RATE_LIMITS.adminCall.max, security.RATE_LIMITS.adminCall.window);
+  if (!rl.allowed) return { success: false, error: '操作过于频繁' };
+  security.auditLog('admin', 'confirmUser', 'For: ' + email);
   try {
     var targetUser = await findUserByEmail(email);
     if (!targetUser) return { success: false, error: '未找到该邮箱对应的账号' };
@@ -231,8 +245,11 @@ ipcMain.handle('auth:adminConfirmUser', async (_e, { email }) => {
   }
 });
 
-// IPC: Admin create user with email confirmed (register + confirm in one call)
-ipcMain.handle('auth:adminCreateUser', async (_e, { email, password, displayName }) => {
+// IPC: Admin create user — ★ 需速率限制 ★
+ipcMain.handle('auth:adminCreateUser', async (_e, { email, password, displayName, token }) => {
+  var rl = security.checkRateLimit('admin|create', security.RATE_LIMITS.adminCall.max, security.RATE_LIMITS.adminCall.window);
+  if (!rl.allowed) return { success: false, error: '操作过于频繁' };
+  security.auditLog('admin', 'createUser', 'For: ' + email);
   try {
     var r = await supabaseAdminCall('POST', '/admin/users', {
       email: email,
@@ -243,7 +260,6 @@ ipcMain.handle('auth:adminCreateUser', async (_e, { email, password, displayName
     if (r.ok && r.data && !r.data.error) {
       return { success: true, userId: r.data.id || r.data.user?.id };
     }
-    // If user exists, find and confirm
     if (r.data && r.data.msg && r.data.msg.includes('already')) {
       var existing = await findUserByEmail(email);
       if (existing) {
@@ -280,10 +296,32 @@ ipcMain.handle('desktop:scrollMouse', (_e, d, a) => desktop.scrollMouse(d, a));
 ipcMain.handle('desktop:getClipboard', () => desktop.getClipboard());
 ipcMain.handle('desktop:setClipboard', (_e, t) => desktop.setClipboard(t));
 ipcMain.handle('desktop:systemInfo', () => desktop.getSystemInfo());
-ipcMain.handle('desktop:listFiles', (_e, d) => desktop.listFiles(d));
-ipcMain.handle('desktop:readFile', (_e, fp) => desktop.readFile(fp));
-ipcMain.handle('desktop:writeFile', (_e, fp, c) => desktop.writeFile(fp, c));
-ipcMain.handle('desktop:runCommand', (_e, c) => desktop.runCommand(c));
+ipcMain.handle('desktop:listFiles', (_e, d) => {
+  var safe = security.sanitizePath(d) || require('os').homedir();
+  return desktop.listFiles(safe);
+});
+ipcMain.handle('desktop:readFile', (_e, fp) => {
+  var safe = security.sanitizePath(fp);
+  if (!safe) return { success: false, error: '路径不允许——仅可读取用户目录下的文件' };
+  security.auditLog('filesystem', 'readFile', safe);
+  return desktop.readFile(safe);
+});
+ipcMain.handle('desktop:writeFile', (_e, fp, c) => {
+  var safe = security.sanitizePath(fp);
+  if (!safe) return { success: false, error: '路径不允许——仅可写入用户目录下的文件' };
+  if (typeof c !== 'string' || c.length > 5 * 1024 * 1024) return { success: false, error: '内容过大（>5MB）' };
+  security.auditLog('filesystem', 'writeFile', safe);
+  return desktop.writeFile(safe, c);
+});
+ipcMain.handle('desktop:runCommand', (_e, c) => {
+  security.auditLog('system', 'runCommand', String(c).slice(0, 100));
+  // Only allow whitelisted commands
+  var blocked = /rm\s+-rf|del\s+\/f|format|shutdown|taskkill/i;
+  if (blocked.test(String(c))) return { success: false, error: '命令被安全策略阻止' };
+  var rl = security.checkRateLimit('runCommand', 5, 60 * 1000);
+  if (!rl.allowed) return { success: false, error: '操作过于频繁' };
+  return desktop.runCommand(c);
+});
 ipcMain.handle('desktop:agentStep', async (_e, { goal, screenshot, history }) => { const sys = 'Goal: ' + goal + '. Reply JSON: {"action":"open_browser","url":"..."}'; try { const r = await executeQuery(goal, 'best_quality', sys); const cnt = r.responses?.[0]?.content || ''; const m = cnt.match(/\{[\s\S]*"action"[\s\S]*\}/); return { action: m ? JSON.parse(m[0]) : { action: 'done', summary: 'no action' }, raw: cnt }; } catch (e) { return { action: { action: 'done', summary: 'error' }, raw: '' }; } });
 
 // IPC: MCP
@@ -381,25 +419,24 @@ ipcMain.handle('sandbox:runCode', (_e, { code }) => {
 // IPC: Email verification (SMTP via bitwool@163.com)
 const { sendVerificationCode, sendWelcomeEmail, generateCode } = require('./services/email');
 ipcMain.handle('email:sendCode', async (_e, { email }) => {
+  var rl = security.checkRateLimit('email|code|' + (email || 'unknown'), security.RATE_LIMITS.sendCode.max, security.RATE_LIMITS.sendCode.window);
+  if (!rl.allowed) return { success: false, error: '发送过于频繁，请 ' + rl.retryAfter + ' 秒后重试' };
   try {
     const code = generateCode();
-    console.log('[email] Sending verification code to:', email, 'code:', code);
     await sendVerificationCode(email, code);
-    console.log('[email] Verification code sent successfully');
+    security.auditLog('email', 'sendCode', email);
     return { success: true, code };
   } catch (e) {
-    console.error('[email] sendCode failed:', e.message, e.stack);
+    console.error('[email] sendCode failed:', e.message);
     return { success: false, error: e.message };
   }
 });
 ipcMain.handle('email:sendWelcome', async (_e, { email, displayName }) => {
   try {
-    console.log('[email] Sending welcome email to:', email);
     await sendWelcomeEmail(email, displayName);
-    console.log('[email] Welcome email sent successfully');
     return { success: true };
   } catch (e) {
-    console.error('[email] sendWelcome failed:', e.message, e.stack);
+    console.error('[email] sendWelcome failed:', e.message);
     return { success: false, error: e.message };
   }
 });
@@ -407,10 +444,12 @@ ipcMain.handle('email:sendWelcome', async (_e, { email, displayName }) => {
 // IPC: Forgot password email
 const { sendPasswordResetCode } = require('./services/email');
 ipcMain.handle('email:forgotPassword', async (_e, { email }) => {
+  var rl = security.checkRateLimit('email|forgot|' + (email || 'unknown'), security.RATE_LIMITS.forgotPassword.max, security.RATE_LIMITS.forgotPassword.window);
+  if (!rl.allowed) return { success: false, error: '重置请求过于频繁，请 ' + rl.retryAfter + ' 秒后重试' };
   try {
     const code = generateCode();
-    console.log('[email] Sending password reset code to:', email);
     await sendPasswordResetCode(email, code);
+    security.auditLog('email', 'forgotPassword', email);
     return { success: true, code };
   } catch (e) {
     console.error('[email] forgotPassword failed:', e.message);

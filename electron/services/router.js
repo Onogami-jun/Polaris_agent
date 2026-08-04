@@ -11,6 +11,7 @@ const { buildAgentCapabilityNote } = require('./health_check');
 const AGENTS = require('./agents');
 const { POLARIS_PERSONA } = require('./persona');
 const { requestPermission } = require('./permission_bridge');
+const { verifyAndScore } = require('./verification_engine');
 
 // API key supplied by main process after successful auth
 const { setKey, getKey } = require('./keymanager');
@@ -406,6 +407,31 @@ async function runAgentLoop(userMessage, apiKey, onExec, onTodo, onStreamChunk, 
   if (toolsUsed && !bestResponse) {
     const dr = await directSolve(userMessage, onExec);
     if (dr.success && dr.result) return dr.result;
+  }
+
+  // ── ★ Verification-First: 投票制验证引擎 ──
+  var finalResult = bestResponse || '';
+  if (toolsUsed && finalResult && finalResult.length > 20) {
+    try {
+      if (onStreamChunk) onStreamChunk({ type: 'thinking', text: '验证结果...' });
+      var execLog = []; // tool execution log
+      var verification = await verifyAndScore(userMessage, finalResult, execLog, messages, apiKey);
+      if (verification.passed) {
+        bestResponse = bestResponse + '\n\n---\n\n' + verification.verdict + '\n\n' + verification.details;
+        logger.info('Verification passed', { score: verification.finalScore });
+      } else {
+        // Hard veto failed — try direct solve as fallback
+        logger.warn('Verification failed', { score: verification.finalScore, reason: verification.reason });
+        const dr = await directSolve(userMessage, onExec);
+        if (dr.success && dr.result) {
+          bestResponse = dr.result + '\n\n---\n\n⚠ 原始输出未通过验证引擎，已自动回退到引擎直接求解。\n' + verification.details;
+        } else {
+          bestResponse = bestResponse + '\n\n---\n\n' + verification.verdict + '\n\n' + verification.details;
+        }
+      }
+    } catch(e) {
+      logger.warn('Verification engine error', { error: e.message });
+    }
   }
 
   // ── P1: Final quality check ──
