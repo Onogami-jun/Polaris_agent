@@ -227,6 +227,9 @@ function WorkflowView({plan,planProg,planId,execLog,todoSteps,onConfirmPlan,onRe
 function LeftSidebar({sessions,activeId,pct,onSelect,onNew,onDelete,onOpenSettings,width}:any){
   const auth = useAppSelector(s=>s.auth);
   const d = useAppDispatch();
+  const[proOpen,setProOpen]=useState(false);
+  const proRef=useRef<HTMLDivElement>(null);
+  useEffect(()=>{function click(e:MouseEvent){if(proRef.current&&!proRef.current.contains(e.target as Node))setProOpen(false)};document.addEventListener('mousedown',click);return()=>document.removeEventListener('mousedown',click)},[]);
   return(
     <div style={{width:width}} className="shrink-0 bg-card border-r border-border flex flex-col h-full overflow-hidden">
       <div className="flex items-center justify-between px-3 py-3">
@@ -259,11 +262,39 @@ function LeftSidebar({sessions,activeId,pct,onSelect,onNew,onDelete,onOpenSettin
           <span>实验 Lab</span>
         </button>
         {auth.user ? (
-          <button onClick={() => d(logoutUser())} className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs text-muted-foreground hover:text-foreground hover:bg-muted transition-all">
-            <div className="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold text-white shrink-0" style={{background:auth.user.avatar}}>{auth.user.displayName.slice(0,1).toUpperCase()}</div>
-            <span className="truncate">{auth.user.displayName}</span>
-            <span className="ml-auto text-[9px] text-muted-foreground/50">登出</span>
-          </button>
+          <div className="relative" ref={proRef}>
+            <button onClick={()=>setProOpen(!proOpen)} className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs text-muted-foreground hover:text-foreground hover:bg-muted transition-all">
+              <div className="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold text-white shrink-0" style={{background:auth.user.avatar}}>{auth.user.displayName.slice(0,1).toUpperCase()}</div>
+              <span className="truncate">{auth.user.displayName}</span>
+              <span className="ml-auto text-[9px] text-muted-foreground/50">▾</span>
+            </button>
+            {proOpen && (
+              <div className="absolute bottom-full left-0 mb-1 w-52 rounded-xl border border-border bg-card shadow-2xl overflow-hidden animate-fade-in z-[200]">
+                <div className="px-3.5 py-3 border-b border-border bg-muted/30">
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0" style={{background:auth.user.avatar}}>{auth.user.displayName.slice(0,1).toUpperCase()}</div>
+                    <div className="min-w-0">
+                      <div className="text-sm font-semibold text-foreground truncate">{auth.user.displayName}</div>
+                      <div className="text-[10px] text-muted-foreground truncate">{auth.user.email}</div>
+                    </div>
+                  </div>
+                  <div className="mt-1.5">
+                    <span className="text-[9px] text-muted-foreground/50 font-mono">ID: {auth.user.id?.slice(0,10)}…</span>
+                  </div>
+                </div>
+                <div className="px-2 py-1">
+                  <button onClick={()=>{d(openLoginModal());setProOpen(false)}} className="w-full px-3 py-2 rounded-lg text-left text-xs text-muted-foreground hover:text-foreground hover:bg-muted transition-colors flex items-center gap-2">
+                    <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M8 8a3 3 0 100-6 3 3 0 000 6zM2 14s2-4 6-4 6 4 6 4"/></svg>
+                    切换账号
+                  </button>
+                  <button onClick={()=>{d(logoutUser());setProOpen(false)}} className="w-full px-3 py-2 rounded-lg text-left text-xs text-destructive hover:bg-destructive/5 transition-colors flex items-center gap-2">
+                    <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M6 14H3a1 1 0 01-1-1V3a1 1 0 011-1h3M11 11l3-3-3-3M14 8H7"/></svg>
+                    退出登录
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
         ) : (
           <button onClick={() => d(openLoginModal())} className="polaris-login-trigger w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs text-muted-foreground hover:text-foreground hover:bg-muted transition-all">
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="8" cy="5" r="3"/><path d="M2 14c0-3.3 2.7-6 6-6s6 2.7 6 6"/></svg>

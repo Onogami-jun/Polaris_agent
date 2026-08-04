@@ -50,7 +50,8 @@ async function refreshApiKey(userId) {
   try {
     var https = require('https');
     var anonKey = 'sb_publishable_hY1a3BqHfPvUNPQwkV6AEg_Nz-b2bgY';
-    await new Promise(function(resolve, reject) {
+    var fetched = false;
+    await new Promise(function(resolve) {
       var options = {
         hostname: 'spwishxhydvgqbfchjgj.supabase.co',
         path: '/rest/v1/polaris_config?select=value&key=eq.deepseek_api_key',
@@ -71,18 +72,36 @@ async function refreshApiKey(userId) {
             if (Array.isArray(arr) && arr.length > 0 && arr[0].value) {
               _authUserId = userId;
               setKey(arr[0].value);
-              console.log('[API Key] Loaded for user:', userId);
+              fetched = true;
+              console.log('[API Key] Loaded from cloud for user:', userId);
             }
-            resolve();
-          } catch(e) { resolve(); }
+          } catch {}
+          resolve();
         });
       });
-      req.on('error', function(e) { console.warn('[API Key] Fetch failed:', e.message); resolve(); });
+      req.on('error', function() { resolve(); });
       req.on('timeout', function() { req.destroy(); resolve(); });
       req.end();
     });
+    if (!fetched) {
+      // Fallback: use built-in encrypted key from secrets vault
+      try {
+        var { get: vaultGet } = require('./services/secrets');
+        var builtinKey = vaultGet('deepseek_api_key');
+        if (builtinKey) {
+          _authUserId = userId;
+          setKey(builtinKey);
+          console.log('[API Key] Using built-in key for user:', userId);
+        }
+      } catch {}
+    }
   } catch(e) {
-    console.warn('[API Key] Fetch failed:', e.message);
+    console.warn('[API Key] Fetch failed, using built-in:', e.message);
+    try {
+      var { get: vaultGet } = require('./services/secrets');
+      var builtinKey = vaultGet('deepseek_api_key');
+      if (builtinKey) { _authUserId = userId; setKey(builtinKey); }
+    } catch {}
   }
 }
 
