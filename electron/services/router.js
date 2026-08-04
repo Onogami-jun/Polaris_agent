@@ -417,16 +417,15 @@ async function runAgentLoop(userMessage, apiKey, onExec, onTodo, onStreamChunk, 
       var execLog = []; // tool execution log
       var verification = await verifyAndScore(userMessage, finalResult, execLog, messages, apiKey);
       if (verification.passed) {
-        bestResponse = bestResponse + '\n\n---\n\n' + verification.verdict + '\n\n' + verification.details;
-        logger.info('Verification passed', { score: verification.finalScore });
+        logger.info('Verified OK', { score: verification.finalScore, verdict: verification.verdict });
+        bestResponse = bestResponse + '\n\n[Verified: ' + verification.verdict + ', score ' + verification.finalScore + ']';
       } else {
-        // Hard veto failed — try direct solve as fallback
-        logger.warn('Verification failed', { score: verification.finalScore, reason: verification.reason });
+        logger.warn('Verified FAIL', { score: verification.finalScore, reason: verification.reason });
         const dr = await directSolve(userMessage, onExec);
         if (dr.success && dr.result) {
-          bestResponse = dr.result + '\n\n---\n\n⚠ 原始输出未通过验证引擎，已自动回退到引擎直接求解。\n' + verification.details;
+          bestResponse = dr.result + '\n\n[Verified: fell back to direct solver]';
         } else {
-          bestResponse = bestResponse + '\n\n---\n\n' + verification.verdict + '\n\n' + verification.details;
+          bestResponse = bestResponse + '\n\n[Verified: ' + verification.verdict + ']';
         }
       }
     } catch(e) {
