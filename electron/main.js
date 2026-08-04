@@ -130,6 +130,65 @@ ipcMain.handle('auth:adminResetPassword', async (_e, { email, newPassword }) => 
   }
 });
 
+// IPC: Admin confirm user email (bypass Supabase email confirmation)
+ipcMain.handle('auth:adminConfirmUser', async (_e, { email }) => {
+  try {
+    var { createClient } = require('@supabase/supabase-js');
+    var { get: vaultGet } = require('./services/secrets');
+    var serviceKey = vaultGet('supabase_service_role');
+    var adminClient = createClient('https://spwishxhydvgqbfchjgj.supabase.co', serviceKey, { auth: { autoRefreshToken: false, persistSession: false } });
+    var listResult = await adminClient.auth.admin.listUsers();
+    if (listResult.error) return { success: false, error: listResult.error.message };
+    var targetUser = null;
+    var userList = listResult.data && listResult.data.users ? listResult.data.users : [];
+    for (var i = 0; i < userList.length; i++) {
+      if (userList[i].email === email) { targetUser = userList[i]; break; }
+    }
+    if (!targetUser) return { success: false, error: '未找到该邮箱对应的账号' };
+    // Confirm email
+    var updateResult = await adminClient.auth.admin.updateUserById(targetUser.id, { email_confirm: true });
+    if (updateResult.error) return { success: false, error: updateResult.error.message };
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+});
+
+// IPC: Admin create user with email confirmed (register + confirm in one call)
+ipcMain.handle('auth:adminCreateUser', async (_e, { email, password, displayName }) => {
+  try {
+    var { createClient } = require('@supabase/supabase-js');
+    var { get: vaultGet } = require('./services/secrets');
+    var serviceKey = vaultGet('supabase_service_role');
+    var adminClient = createClient('https://spwishxhydvgqbfchjgj.supabase.co', serviceKey, { auth: { autoRefreshToken: false, persistSession: false } });
+    // Create user with email already confirmed
+    var createResult = await adminClient.auth.admin.createUser({
+      email: email,
+      password: password,
+      email_confirm: true,
+      user_metadata: { display_name: displayName || email.split('@')[0] },
+    });
+    if (createResult.error) {
+      // If user already exists, just confirm them
+      if (createResult.error.message && createResult.error.message.includes('already')) {
+        // Find and confirm
+        var listR = await adminClient.auth.admin.listUsers();
+        var users = listR.data?.users || [];
+        var found = users.find(function(u) { return u.email === email; });
+        if (found) {
+          var cfmR = await adminClient.auth.admin.updateUserById(found.id, { email_confirm: true });
+          if (cfmR.error) return { success: false, error: cfmR.error.message };
+          return { success: true, userId: found.id };
+        }
+      }
+      return { success: false, error: createResult.error.message };
+    }
+    return { success: true, userId: createResult.data.user?.id };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+});
+
 // IPC: Window
 ipcMain.handle('window:minimize', function() { if (win) win.minimize(); });
 ipcMain.handle('window:maximize', function() { if (win) { if (win.isMaximized()) win.restore(); else win.maximize(); } });

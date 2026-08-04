@@ -49,12 +49,12 @@ export const LoginModal: React.FC = () => {
   };
 
   /* ── Send code (register or forgot) ── */
-    /* Send code (register or forgot) */
   const sendCode = async (mode: 'register'|'forgot') => {
     var now = Date.now();
     if (now - rl.current.lastSend < 60000) { setVError('请 ' + Math.ceil((60000-(now-rl.current.lastSend))/1000) + ' 秒后再试'); return; }
     if (rl.current.sendCount >= 5) { setVError('发送次数已达上限'); return; }
     if (!email.includes('@')) { setVError('请输入有效的邮箱地址'); return; }
+    if (mode === 'register' && (!password || password.length < 6)) { setVError('密码至少需要 6 位字符'); return; }
     var api = window.electronAPI;
     if (!api) { setVError('请在 Electron 环境中使用'); return; }
     setBusy(true); setVError('');
@@ -62,33 +62,19 @@ export const LoginModal: React.FC = () => {
     try {
       var r;
       if (mode === 'register') {
-        // Try signUp directly — Supabase returns error if already registered
-        var signUpResult = await supabase.auth.signUp({ email, password, options: { data: { display_name: name || email.split('@')[0] } } });
-        if (signUpResult.error) {
-          if (signUpResult.error.message && signUpResult.error.message.includes('already registered')) {
-            setVError('该邮箱已注册，请直接登录。如果忘记密码，请点击"忘记密码"重置。');
-          } else if (signUpResult.error.message && (signUpResult.error.message.includes('Password') || signUpResult.error.message.includes('password'))) {
-            setVError('密码至少需要 6 位字符');
-          } else {
-            setVError(signUpResult.error.message);
-          }
-          setBusy(false); rl.current.sendCount -= 1; return;
-        }
-        if (signUpResult.data.session) {
-          // Auto-logged in (email confirm is OFF)
-          var user = await getCurrentUser();
-          if (user && api) await api.authUnlock(user.id);
-          d(loginUser({ email, password }));
-          d(closeLoginModal());
-          setBusy(false); return;
-        }
-        // No session = email confirm is ON
-        setVError('注册请求已提交。请在 Supabase Dashboard 中关闭"Confirm email"，或等待确认邮件。');
-        setBusy(false); rl.current.sendCount -= 1; return;
+        // Send verification code via SMTP (not Supabase signUp)
+        r = await api.emailSendCode(email);
+        if (!r || !r.success || !r.code) { setVError(r?.error || '发送失败，请检查邮箱地址'); setBusy(false); return; }
+        (window as any).__pol_code = r.code;
+        (window as any).__pol_pwd = password;
+        (window as any).__pol_name = name;
+        setVEmail(email); setVMode('register'); setVStage('code'); setBusy(false);
+        setTimeout(function(){ vRefs.current[0]?.focus(); }, 100);
+        return;
       }
+      // Forgot password: send code via SMTP
       r = await api.emailForgotPassword(email);
-      if (!r) { setVError('服务器无响应，请重试'); setBusy(false); return; }
-      if (!r.success || !r.code) { setVError(r.error || '发送失败'); setBusy(false); return; }
+      if (!r || !r.success || !r.code) { setVError(r?.error || '发送失败'); setBusy(false); return; }
       (window as any).__pol_code = r.code;
       setVEmail(email); setVMode(mode); setVStage('code'); setBusy(false);
       setTimeout(function(){ vRefs.current[0]?.focus(); }, 100);
@@ -107,32 +93,47 @@ export const LoginModal: React.FC = () => {
   const doVerify = async () => {
     var inCode = vCode.join('');
     if (inCode.length < 6) { setVError('请输入完整验证码'); return; }
-    if (inCode !== (window as any).__pol_code) { setVError('验证码不正确'); return; }
-    setVError('');
+    var storedCode = (window as any).__pol_code;
+    if (inCode !== storedCode) { setVError('验证码不正确'); return; }
+    setVError(''); setBusy(true);
     var api = window.electronAPI;
+    if (!api) { setVError('请在 Electron 环境中使用'); setBusy(false); return; }
 
-    if (vMode === 'forgot') {
-      // Code correct → show new password form
-      setResetEmail(vEmail);
-      setVStage('input');
-      setResetStage('setPwd');
-      delete (window as any).__pol_code;
-      return;
+    if (vMode === 'register') {
+      // Code verified → create user via admin API (email_confirmed=true)
+      var pwd = (window as any).__pol_pwd || password;
+      var dname = (window as any).__pol_name || name || email.split('@')[0];
+      try {
+        var createResult = await api.authAdminCreateUser(email, pwd, dname);
+        if (!createResult.success) {
+          setVError(createResult.error || '账号创建失败，请重试');
+          setBusy(false); return;
+        }
+        // Now login with created credentials
+        var signInResult = await supabase.auth.signInWithPassword({ email, password: pwd });
+        if (signInResult.error) {
+          setVError('账号已创建但登录失败: ' + signInResult.error.message);
+          setBusy(false); return;
+        }
+        var user = await getCurrentUser();
+        if (user && api) {
+          await api.authUnlock(user.id);
+          api.emailSendWelcome(email, dname).catch(function(){});
+        }
+        var upResult = await d(loginUser({ email, password: pwd }));
+        d(closeLoginModal());
+        setVStage('input'); setBusy(false);
+        delete (window as any).__pol_code; delete (window as any).__pol_pwd; delete (window as any).__pol_name;
+        return;
+      } catch(e: any) { setVError(e.message || '注册失败'); setBusy(false); return; }
     }
 
-    // Register mode: sign up + auto login
-    var r = await supabase.auth.signUp({ email: vEmail, password, options: { data: { display_name: name || vEmail.split('@')[0] } } });
-    if (r.error) { setVError(translate(r.error.message)); return; }
-    if (r.data.session) {
-      var user = await getCurrentUser();
-      if (user && api) {
-        await api.authUnlock(user.id);
-        d({ type: 'auth/login/fulfilled' as any, payload: user } as any);
-      }
-      if (api) api.emailSendWelcome(vEmail, name || '').catch(function(){});
-    }
-    setVStage('input'); setMsg('注册成功！'); setTimeout(function(){ setMsg(''); }, 2000);
+    // Forgot password: code correct → show new password form
+    setResetEmail(vEmail);
+    setVStage('input');
+    setResetStage('setPwd');
     delete (window as any).__pol_code;
+    setBusy(false);
   };
 
   /* ── Set new password after forgot-password verification ── */
@@ -158,18 +159,34 @@ export const LoginModal: React.FC = () => {
   /* ── Handle login ── */
   const doLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email.includes('@') || password.length < 6) return;
+    if (!email.includes('@') || password.length < 6) { setVError('请输入正确的邮箱和密码（至少 6 位）'); return; }
     var now = Date.now();
     if (now - rl.current.lastLogin < 3000) return;
     rl.current.lastLogin = now;
-    // Try login
-    var result = await d(loginUser({ email, password }));
-    // After login, unlock API key
-    var user = await getCurrentUser();
-    if (user) {
-      var api = window.electronAPI;
-      if (api) api.authUnlock(user.id);
-    }
+    setBusy(true); setVError(''); setMsg('');
+    try {
+      await d(loginUser({ email, password }));
+      // On success, showLoginModal goes false → modal closes
+      var user = await getCurrentUser();
+      if (user && window.electronAPI) window.electronAPI.authUnlock(user.id).catch(function(){});
+    } catch {}
+    setBusy(false);
+  };
+
+  /* ── Retry login after admin confirm ── */
+  const retryAfterConfirm = async () => {
+    var api = window.electronAPI;
+    if (!api) return;
+    setBusy(true); setVError(''); setMsg('');
+    try {
+      var cfm = await api.authAdminConfirmUser(email);
+      if (!cfm.success) { setVError('自动确认失败: ' + (cfm.error || '未知错误')); setBusy(false); return; }
+      // Retry login
+      await d(loginUser({ email, password }));
+      var user = await getCurrentUser();
+      if (user && api) api.authUnlock(user.id).catch(function(){});
+    } catch(e: any) { setVError(e.message || '重试失败'); }
+    setBusy(false);
   };
 
   /* ── Handle register ── */
@@ -261,7 +278,14 @@ export const LoginModal: React.FC = () => {
             <p className="text-xs text-muted-foreground mt-1">{tab==='login'?'登录 BitWool 账号':tab==='register'?'注册并验证邮箱':'重置密码'}</p>
           </div>
 
-          {error && <div className="rounded-lg bg-destructive/10 border border-destructive/20 px-3 py-2 text-xs text-destructive">{translate(error)}</div>}
+          {error && <div className="rounded-lg bg-destructive/10 border border-destructive/20 px-3 py-2 text-xs text-destructive">
+            <p>{translate(error)}</p>
+            {(tab === 'login' && (error.includes('Email not confirmed') || error.includes('422'))) && (
+              <button type="button" className="mt-2 text-primary hover:underline text-[11px] font-medium" onClick={retryAfterConfirm}>
+                {busy ? '处理中...' : '→ 一键确认邮箱并登录'}
+              </button>
+            )}
+          </div>}
           {vError && <div className="rounded-lg bg-destructive/10 border border-destructive/20 px-3 py-2 text-xs text-destructive">{vError}</div>}
           {msg && <div className="rounded-lg bg-emerald-500/10 border border-emerald-500/20 px-3 py-2 text-xs text-emerald-600">{msg}</div>}
 

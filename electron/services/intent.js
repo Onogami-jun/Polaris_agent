@@ -49,7 +49,7 @@ async function classifyIntent(userMessage) {
       hostname: 'api.deepseek.com', path: '/chat/completions', method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': 'Bearer ' + DEFAULT_KEY,
+        'Authorization': 'Bearer ' + getKey(),
         'Content-Length': Buffer.byteLength(body),
       },
       timeout: 8000,
