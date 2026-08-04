@@ -10,8 +10,9 @@ import{Onboarding,ONBOARDING_KEY}from'./components/Onboarding';
 import{AuthBanner}from'./components/AuthBanner';
 import{Mascot}from'./components/Mascot';
 import{Button}from'./components/ui/button';
+import{Separator}from'./components/ui/separator';
 import{ScrollArea}from'./components/ui/scroll-area';
-import{Conversation,MessageInput,WebSearchButton}from'./components/ai';
+import{Conversation,MessageList,MessageInput,WebSearchButton}from'./components/ai';
 
 if(typeof window!=='undefined')(window).copyCode=function(btn){var pre=btn.closest('.code-block')?.querySelector('pre code');var text=pre?.textContent||'';navigator.clipboard.writeText(text).then(function(){btn.textContent='已复制';setTimeout(function(){btn.textContent='复制'},1500)}).catch(function(){})};
 
