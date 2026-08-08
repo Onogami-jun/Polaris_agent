@@ -31,14 +31,21 @@ export function StandaloneLab({ onClose }: { onClose: () => void }) {
   const [execLog, setExecLog] = useState<any[]>([]);
   const [verifLog, setVerifLog] = useState<any[]>([]);
 
+  const labLabels: any = {
+    'zh-CN': { dashboard:'仪表盘', diagnostics:'自诊断', benchmark:'跑分台', experiments:'实验历史', sandbox:'沙箱', memory:'记忆库', logs:'日志' },
+    'en':     { dashboard:'Dashboard', diagnostics:'Diagnostics', benchmark:'Benchmark', experiments:'Experiments', sandbox:'Sandbox', memory:'Memory', logs:'Logs' },
+    'ja':     { dashboard:'ダッシュボード', diagnostics:'診断', benchmark:'ベンチマーク', experiments:'実験履歴', sandbox:'サンドボックス', memory:'メモリ', logs:'ログ' },
+    'fr':     { dashboard:'Tableau', diagnostics:'Diagnostic', benchmark:'Benchmark', experiments:'Experiences', sandbox:'Sandbox', memory:'Memoire', logs:'Journaux' },
+  };
+  const labL = labLabels[lang] || labLabels['zh-CN'];
   const sections = [
-    { id: 'dashboard', label: 'Dashboard', icon: '📊' },
-    { id: 'diagnostics', label: 'Diagnostics', icon: '🧠' },
-    { id: 'benchmark', label: 'Benchmark', icon: '⚡' },
-    { id: 'experiments', label: 'Experiments', icon: '🔬' },
-    { id: 'sandbox', label: 'Sandbox', icon: '🐍' },
-    { id: 'memory', label: 'Memory', icon: '📝' },
-    { id: 'logs', label: 'Logs', icon: '📋' },
+    { id: 'dashboard',   label: labL.dashboard,     icon: '📊' },
+    { id: 'diagnostics', label: labL.diagnostics,    icon: '🧠' },
+    { id: 'benchmark',   label: labL.benchmark,      icon: '⚡' },
+    { id: 'experiments', label: labL.experiments,    icon: '🔬' },
+    { id: 'sandbox',     label: labL.sandbox,        icon: '🐍' },
+    { id: 'memory',      label: labL.memory,         icon: '📝' },
+    { id: 'logs',        label: labL.logs,            icon: '📋' },
   ];
 
   useEffect(() => {

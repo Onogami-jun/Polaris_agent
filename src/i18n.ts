@@ -18,7 +18,7 @@ const DICT: any = {
       about: { title:'关于 Polaris Solver', subtitle:'运筹优化科研助手', author:'作者', authorVal:'BitWool Studio', email:'邮箱', license:'许可证', licenseVal:'MIT License' },
     },
     chat: {
-      emptyTitle:'描述你的优化问题', emptyDesc:'试试：「背包容量50，价值60 100 120，重量10 20 30」', placeholder:'描述优化问题... Enter 发送，Shift+Enter 换行', thinking:'思考中...', fast:'快速', quality:'优质', expert:'专家', footer:'Enter 发送 · Shift+Enter 换行',
+      emptyTitle:'描述你的优化问题', emptyDesc:'试试：「背包容量50，价值60 100 120，重量10 20 30」', placeholder:'描述优化问题... Enter 发送，Shift+Enter 换行', thinking:'思考中...', fast:'快速', quality:'优质', expert:'专家', footer:'Enter 发送 · Shift+Enter 换行', newSession:'新对话',
     },
     sidebar: { sessions:'会话', settings:'设置', lab:'实验 Lab', login:'登录 BitWool', logout:'登出' },
     userMenu: { switchAccount:'切换账号', logout:'退出登录' },
@@ -39,7 +39,7 @@ const DICT: any = {
       about: { title:'About Polaris Solver', subtitle:'Optimization Research Agent', author:'Author', authorVal:'BitWool Studio', email:'Email', license:'License', licenseVal:'MIT License' },
     },
     chat: {
-      emptyTitle:'Describe your optimization problem', emptyDesc:'Try: "Knapsack capacity 50, values 60 100 120, weights 10 20 30"', placeholder:'Describe optimization problem... Enter to send, Shift+Enter for newline', thinking:'Thinking...', fast:'Fast', quality:'Quality', expert:'Expert', footer:'Enter to send · Shift+Enter for newline',
+      emptyTitle:'Describe your optimization problem', emptyDesc:'Try: "Knapsack capacity 50, values 60 100 120, weights 10 20 30"', placeholder:'Describe optimization problem... Enter to send, Shift+Enter for newline', thinking:'Thinking...', fast:'Fast', quality:'Quality', expert:'Expert', footer:'Enter to send · Shift+Enter for newline', newSession:'New Chat',
     },
     sidebar: { sessions:'Sessions', settings:'Settings', lab:'Lab', login:'Sign In', logout:'Logout' },
     userMenu: { switchAccount:'Switch Account', logout:'Logout' },
@@ -60,7 +60,7 @@ const DICT: any = {
       about: { title:'Polaris Solver について', subtitle:'最適化研究アシスタント', author:'作者', authorVal:'BitWool Studio', email:'メール', license:'ライセンス', licenseVal:'MIT License' },
     },
     chat: {
-      emptyTitle:'最適化問題を記述してください', emptyDesc:'例：「ナップサック容量50、価値60 100 120、重量10 20 30」', placeholder:'最適化問題を記述... Enterで送信、Shift+Enterで改行', thinking:'考え中...', fast:'高速', quality:'品質', expert:'専門家', footer:'Enterで送信 · Shift+Enterで改行',
+      emptyTitle:'最適化問題を記述してください', emptyDesc:'例：「ナップサック容量50、価値60 100 120、重量10 20 30」', placeholder:'最適化問題を記述... Enterで送信、Shift+Enterで改行', thinking:'考え中...', fast:'高速', quality:'品質', expert:'専門家', footer:'Enterで送信 · Shift+Enterで改行', newSession:'新規チャット',
     },
     sidebar: { sessions:'セッション', settings:'設定', lab:'実験', login:'ログイン', logout:'ログアウト' },
     userMenu: { switchAccount:'アカウント切替', logout:'ログアウト' },
@@ -81,7 +81,7 @@ const DICT: any = {
       about: { title:'A propos', subtitle:'Assistant de recherche en optimisation', author:'Auteur', authorVal:'BitWool Studio', email:'Email', license:'Licence', licenseVal:'MIT License' },
     },
     chat: {
-      emptyTitle:'Decrivez votre probleme', emptyDesc:'Essayez: "Sac a dos capacite 50, valeurs 60 100 120, poids 10 20 30"', placeholder:'Decrivez le probleme... Entree pour envoyer', thinking:'Reflexion...', fast:'Rapide', quality:'Qualite', expert:'Expert', footer:'Entree pour envoyer · Maj+Entree pour nouvelle ligne',
+      emptyTitle:'Decrivez votre probleme', emptyDesc:'Essayez: "Sac a dos capacite 50, valeurs 60 100 120, poids 10 20 30"', placeholder:'Decrivez le probleme... Entree pour envoyer', thinking:'Reflexion...', fast:'Rapide', quality:'Qualite', expert:'Expert', footer:'Entree pour envoyer · Maj+Entree pour nouvelle ligne', newSession:'Nouveau chat',
     },
     sidebar: { sessions:'Sessions', settings:'Parametres', lab:'Labo', login:'Connexion', logout:'Deconnexion' },
     userMenu: { switchAccount:'Changer compte', logout:'Deconnexion' },

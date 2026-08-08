@@ -336,7 +336,7 @@ async function runAgentLoop(userMessage, apiKey, onExec, onTodo, onStreamChunk, 
             agentTemp = currentAgent.temperature || activeSkill.temperature || temp;
             tools = buildToolDeclarations([...new Set([...activeSkill.tools, ...currentAgent.tools])]);
             messages[0] = { role: 'system', content: agentPrompt };
-            messages.push({ role: 'assistant', content: `[交接至 ${currentAgent.name}]` });
+            messages.push({ role: 'assistant', content: `[Handoff to ${currentAgent.name}]` });
             messages.push({ role: 'user', content: '上一步结果：\n' + bestResponse + '\n\n请基于此继续处理。' });
             continue; // Continue loop with new agent
           }
@@ -360,12 +360,12 @@ async function runAgentLoop(userMessage, apiKey, onExec, onTodo, onStreamChunk, 
     // ── Tool calls present → execute them ──
     toolsUsed = true;
     const toolCalls = choice.message.tool_calls;
-    messages.push({ role: 'assistant', content: choice.message.content || '调用工具...', tool_calls: toolCalls });
+    messages.push({ role: 'assistant', content: choice.message.content || 'Calling tools...', tool_calls: toolCalls });
 
     for (const tc of toolCalls) {
       var args = {};
       try { args = JSON.parse(tc.function.arguments); } catch { args = { prompt: userMessage }; }
-      if (onStreamChunk) onStreamChunk({ type: 'thinking', text: '调用 ' + tc.function.name + '...' });
+      if (onStreamChunk) onStreamChunk({ type: 'thinking', text: 'Calling ' + tc.function.name + '...' });
       const result = await executeTool(tc.function.name, args, onExec);
       // ── Claude Code-style: if tool needs user permission, ask first ──
       if (result.confirmation_required) {
@@ -408,7 +408,7 @@ async function runAgentLoop(userMessage, apiKey, onExec, onTodo, onStreamChunk, 
       agentTemp = currentAgent.temperature || activeSkill.temperature || temp;
       tools = buildToolDeclarations([...new Set([...activeSkill.tools, ...currentAgent.tools])]);
       messages[0] = { role: 'system', content: agentPrompt };
-      messages.push({ role: 'assistant', content: '[交接至 ' + currentAgent.name + ']' });
+      messages.push({ role: 'assistant', content: '[Handoff to ' + currentAgent.name + ']' });
     }
   }
 
@@ -449,7 +449,7 @@ async function runAgentLoop(userMessage, apiKey, onExec, onTodo, onStreamChunk, 
   }
 
   if (bestResponse) return bestResponse;
-  return 'Polaris 引擎已尝试求解，但未能得出结果。请提供更详细的问题数据。';
+  return 'Polaris engine could not solve this problem. Please provide more details.';
 }
 
 /** ── Map skill name to best starting agent ── */

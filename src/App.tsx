@@ -197,7 +197,7 @@ function LeftSidebar({sessions,activeId,onSelect,onNew,onDelete,onOpenSettings,o
       <ScrollArea className="flex-1 px-2 py-1">
         {sessions.slice().reverse().map((s:any)=>
           <div key={s.id} className={'flex items-center gap-2 px-2.5 py-2 rounded-lg cursor-pointer text-xs transition-colors group '+ (s.id===activeId?'bg-primary/10 text-primary font-medium':'text-muted-foreground hover:bg-muted hover:text-foreground')} onClick={()=>onSelect(s.id)}>
-            <span className="flex-1 truncate">{s.name||'新会话'}</span>
+            <span className="flex-1 truncate">{s.name==='新对话'?t(lang,'chat.newSession'):s.name||t(lang,'chat.newSession')}</span>
             <span className="text-[8px] text-muted-foreground font-mono opacity-0 group-hover:opacity-40 shrink-0">{new Date(s.createdAt).toLocaleDateString('en-US',{month:'short',day:'numeric'})}</span>
             <button className="opacity-0 group-hover:opacity-100 text-destructive text-[10px] px-1 rounded hover:bg-destructive/10 shrink-0" onClick={e=>{e.stopPropagation();onDelete(s.id)}}>×</button>
           </div>
