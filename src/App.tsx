@@ -7,6 +7,8 @@ import{saveSessions,loadSettings as loadSet,saveSettings as saveSet,loadSessions
 import SettingsPanel from'./components/SettingsPanel';
 import{LoginModal}from'./components/LoginModal';
 import{Onboarding,ONBOARDING_KEY}from'./components/Onboarding';
+import{StandaloneLab}from'./components/AgentLab';
+import{t}from'./i18n';
 import{AuthBanner}from'./components/AuthBanner';
 import{Mascot}from'./components/Mascot';
 import{Button}from'./components/ui/button';
@@ -178,8 +180,9 @@ function WorkflowView({plan,planProg,planId,execLog,todoSteps,onStopPlan}:any){
 /* ─────────────────────────────────────────────────
    LEFT SIDEBAR — conversations + token
    ───────────────────────────────────────────────── */
-function LeftSidebar({sessions,activeId,pct,onSelect,onNew,onDelete,onOpenSettings,width}:any){
+function LeftSidebar({sessions,activeId,onSelect,onNew,onDelete,onOpenSettings,onOpenLab,width}:any){
   const auth = useAppSelector(s=>s.auth);
+  const lang = useAppSelector(s=>s.chat.settings.language);
   const d = useAppDispatch();
   const[proOpen,setProOpen]=useState(false);
   const proRef=useRef<HTMLDivElement>(null);
@@ -187,7 +190,7 @@ function LeftSidebar({sessions,activeId,pct,onSelect,onNew,onDelete,onOpenSettin
   return(
     <div style={{width:width}} className="shrink-0 bg-card border-r border-border flex flex-col h-full overflow-hidden">
       <div className="flex items-center justify-between px-3 py-3">
-        <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider font-mono">会话</span>
+        <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider font-mono">{t(lang,'sidebar.sessions')}</span>
         <Button variant="ghost" size="icon" className="h-5 w-5 text-muted-foreground hover:text-foreground" onClick={onNew} title="新建会话">+</Button>
       </div>
       <Separator/>
@@ -201,19 +204,16 @@ function LeftSidebar({sessions,activeId,pct,onSelect,onNew,onDelete,onOpenSettin
         )}
       </ScrollArea>
       <Separator/>
-      {/* Token usage */}
-      <div className="flex items-center gap-2 px-3 py-2 text-[9px] text-muted-foreground font-mono">
-        <div className="flex-1 h-1 bg-muted rounded-full overflow-hidden"><div className="h-full bg-primary rounded-full transition-all duration-500"style={{width:pct+'%'}}/></div>
-      </div>
+      <Separator/>
       {/* Settings + Lab + Login buttons */}
       <div className="px-2 py-1.5 space-y-1 border-t border-border">
         <button onClick={onOpenSettings} className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs text-muted-foreground hover:text-foreground hover:bg-muted transition-all">
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="8" cy="8" r="2.5"/><path d="M8 1v2m0 10v2M1 8h2m10 0h2"/></svg>
-          <span>设置</span>
+          <span>{t(lang,'sidebar.settings')}</span>
         </button>
-        <button onClick={() => { onOpenSettings(); setTimeout(() => { var el = document.querySelector('[data-tab="lab"]'); if (el) (el as HTMLElement).click(); }, 100); }} className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs text-muted-foreground hover:text-foreground hover:bg-muted transition-all">
+        <button onClick={onOpenLab} className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs text-muted-foreground hover:text-foreground hover:bg-muted transition-all">
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M5 2v6l-3 4h12l-3-4V2"/><line x1="8" y1="11" x2="8" y2="14"/><line x1="3" y1="12" x2="13" y2="12"/></svg>
-          <span>实验 Lab</span>
+          <span>{t(lang,'sidebar.lab')}</span>
         </button>
         {auth.user ? (
           <div className="relative" ref={proRef}>
@@ -239,11 +239,11 @@ function LeftSidebar({sessions,activeId,pct,onSelect,onNew,onDelete,onOpenSettin
                 <div className="px-2 py-1">
                   <button onClick={()=>{d(openLoginModal());setProOpen(false)}} className="w-full px-3 py-2 rounded-lg text-left text-xs text-muted-foreground hover:text-foreground hover:bg-muted transition-colors flex items-center gap-2">
                     <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M8 8a3 3 0 100-6 3 3 0 000 6zM2 14s2-4 6-4 6 4 6 4"/></svg>
-                    切换账号
+                    {t(lang,'userMenu.switchAccount')}
                   </button>
                   <button onClick={()=>{d(logoutUser());setProOpen(false)}} className="w-full px-3 py-2 rounded-lg text-left text-xs text-destructive hover:bg-destructive/5 transition-colors flex items-center gap-2">
                     <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M6 14H3a1 1 0 01-1-1V3a1 1 0 011-1h3M11 11l3-3-3-3M14 8H7"/></svg>
-                    退出登录
+                    {t(lang,'userMenu.logout')}
                   </button>
                 </div>
               </div>
@@ -252,7 +252,7 @@ function LeftSidebar({sessions,activeId,pct,onSelect,onNew,onDelete,onOpenSettin
         ) : (
           <button onClick={() => d(openLoginModal())} className="polaris-login-trigger w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs text-muted-foreground hover:text-foreground hover:bg-muted transition-all">
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="8" cy="5" r="3"/><path d="M2 14c0-3.3 2.7-6 6-6s6 2.7 6 6"/></svg>
-            <span>登录 BitWool</span>
+            <span>{t(lang,'sidebar.login')}</span>
           </button>
         )}
       </div>
@@ -297,6 +297,7 @@ const App:React.FC=()=>{
   const[todoSteps,setTodoSteps]=useState<{id:string;status:'pending'|'running'|'done';label:string}[]>([]);
   const[interventions,setInterventions]=useState<any[]>([]);
   const[plan,setPlan]=useState<any>(null);const[planProg,setPlanProg]=useState<any>(null);const[planId,setPlanId]=useState('');
+  const[labOpen,setLabOpen]=useState(false);
 
   // Panel widths (px) & visibility
   const[leftW,setLeftW]=useState(220);const[leftOpen,setLeftOpen]=useState(true);
@@ -305,7 +306,6 @@ const App:React.FC=()=>{
   const dispatchRef=useRef(d);useEffect(()=>{dispatchRef.current=d},[d]);
   const stop=useRef(false);
   const act=useMemo(()=>sessions.find(s=>s.id===activeSessionId),[sessions,activeSessionId]);
-  const pct=contextTokens.total>0?Math.min(Math.round(contextTokens.used/Math.max(contextTokens.total,1)*100),100):0;
 
   // ── Init (auto sandbox) ──
   useEffect(()=>{const api=window.electronAPI;if(!api)return;
@@ -377,14 +377,10 @@ const App:React.FC=()=>{
   // Health check
   api.healthCheck().then((r:any)=>{if(Array.isArray(r)){const s={python:false,polaris:false,highs:false,deepseek:false};r.forEach((x:any)=>{if(x.service==='Python')s.python=x.ok;if(x.service==='Polaris Engine')s.polaris=x.ok;if(x.service==='HiGHS Solver')s.highs=x.ok;if(x.service==='DeepSeek API')s.deepseek=x.ok;});d(setEngineStatus(s))}}).catch(()=>{});
   let kc=0;const onKb=()=>{kc++;if(kc%30===0)api.monitorUpdate({count:kc,lastPress:Date.now(),window:document.title})};window.addEventListener('keydown',onKb);return()=>window.removeEventListener('keydown',onKb)},[]);
-  // i18n map for visible text
-  var i18n=useMemo(function(){var l=settings.language;
-    if(l==='zh-CN')return{placeholder:'描述优化问题... Enter 发送，Shift+Enter 换行',emptyTitle:'描述你的优化问题',emptyDesc:'试试：「背包容量50，价值60 100 120，重量10 20 30」',fast:'快速',quality:'优质',expert:'专家',thinking:'思考中...'};
-    if(l==='ja')return{placeholder:'最適化問題を記述... Enterで送信、Shift+Enterで改行',emptyTitle:'最適化問題を入力してください',emptyDesc:'例：「ナップサック容量50、価値60 100 120、重量10 20 30」',fast:'高速',quality:'品質',expert:'専門家',thinking:'考え中...'};
-    if(l==='fr')return{placeholder:'Decrivez un probleme d\'optimisation... Entree pour envoyer',emptyTitle:'Decrivez votre probleme',emptyDesc:'Essayez: "Sac a dos capacite 50, valeurs 60 100 120, poids 10 20 30"',fast:'Rapide',quality:'Qualite',expert:'Expert',thinking:'Reflexion...'};
-    return{placeholder:'Describe optimization problem... Enter to send, Shift+Enter for newline',emptyTitle:'Describe your optimization problem',emptyDesc:'Try: "Knapsack capacity 50, values 60 100 120, weights 10 20 30"',fast:'Fast',quality:'Quality',expert:'Expert',thinking:'Thinking...'};
-  },[settings.language]);
-  useEffect(function(){document.documentElement.classList.toggle('dark',settings.theme==='dark');document.documentElement.classList.toggle('light',settings.theme==='light');document.documentElement.style.fontSize=settings.fontSize+'px';document.documentElement.lang=settings.language},[settings.theme,settings.fontSize,settings.language]);
+  var lang = settings.language;
+  useEffect(function(){document.documentElement.classList.toggle('dark',settings.theme==='dark');document.documentElement.classList.toggle('light',settings.theme==='light');document.documentElement.style.fontSize=settings.fontSize+'px';document.documentElement.lang=lang},[settings.theme,settings.fontSize,lang]);
+  // ── Auto usage tracker (background, writes to localStorage) ──
+  useEffect(function(){try{var d=JSON.parse(localStorage.getItem('polaris_usage_stats')||'{}');d.calls=(d.calls||0)+(sc.contextTokens.used>0?1:0);d.totalTokens=(d.totalTokens||0)+sc.contextTokens.used;d.lastUpdate=new Date().toISOString();localStorage.setItem('polaris_usage_stats',JSON.stringify(d));}catch{}},[sc.contextTokens.used]);
 
   // ── Helpers ──
   const addExecLog=(tool:string,status:'running'|'done'|'error',detail='')=>{const id=Date.now()+Math.random().toString(36);setExecLog(p=>[...p.slice(-30),{id,time:new Date().toLocaleTimeString(),tool,status,detail}]);if(status!=='running'){setTimeout(()=>setExecLog(p=>p.filter(e=>e.id!==id||e.status==='running'||p.slice(-3).some(x=>x.id===id))),8000)}};
@@ -446,7 +442,7 @@ const App:React.FC=()=>{
         }, timeoutMs);
       };
       resetSafety();
-      await streamApi.queryStream({text:ctx,strategy,apiKeys:settings.apiKeys});
+      await streamApi.queryStream({text:ctx,strategy,apiKeys:settings.apiKeys,language:settings.language});
       if (safetyTimer) clearTimeout(safetyTimer);
     }catch(e){showToast('连接失败: '+(e.message||'未知错误'),'error');d(setStreaming(false));setThinking('');setThk('');}
 
@@ -478,11 +474,12 @@ const App:React.FC=()=>{
     leftPanel = <div key="left" style={{display:'flex',flexShrink:0}}>
       <LeftSidebar
         width={leftW}
-        sessions={sessions} activeId={activeSessionId} pct={pct}
+        sessions={sessions} activeId={activeSessionId}
         onSelect={(id:any)=>d(setActiveSession(id))}
         onNew={()=>d(ns())}
         onDelete={(id)=>d(deleteSession(id))}
         onOpenSettings={()=>d(toggleSettings())}
+        onOpenLab={()=>setLabOpen(true)}
       />
       <div onMouseDown={resizeLeft} style={{width:4,cursor:'ew-resize',flexShrink:0}}/>
     </div>;
@@ -510,7 +507,7 @@ const App:React.FC=()=>{
   // Precompute messages
   var msgList = null;
   if (!act || act.messages.length===0) {
-    msgList = <div className="empty-state"><div className="empty-state-icon">✦</div><div className="empty-state-title">{i18n.emptyTitle}</div><div className="empty-state-desc">{i18n.emptyDesc}</div></div>;
+    msgList = <div className="empty-state"><div className="empty-state-icon">✦</div><div className="empty-state-title">{t(lang,'chat.emptyTitle')}</div><div className="empty-state-desc">{t(lang,'chat.emptyDesc')}</div></div>;
   } else {
     msgList = act.messages.map((m:any,i:number)=>{
       var isLast=i===act.messages.length-1;
@@ -534,7 +531,7 @@ const App:React.FC=()=>{
     });
   }
 
-  var thinkingEl=(thk||thinking)?<div className="think-indicator"><div className="think-dots"><span/><span/><span/></div>{thinking||thk||i18n.thinking}</div>:null;
+  var thinkingEl=(thk||thinking)?<div className="think-indicator"><div className="think-dots"><span/><span/><span/></div>{thinking||thk||t(lang,'chat.thinking')}</div>:null;
 
   return <div>
     {toastEl}
@@ -569,7 +566,7 @@ const App:React.FC=()=>{
             <div className="px-4 pb-6 pt-2">
               <MessageInput
                 value={inp} onChange={setInp} onSubmit={send}
-                placeholder={i18n.placeholder}
+                placeholder={t(lang,'chat.placeholder')}
                 disabled={streaming} isStreaming={streaming}
                 onStop={()=>{stop.current=true;d(setStreaming(false));setThk('')}}
                 onCommand={()=>setCmd(true)}
@@ -584,6 +581,7 @@ const App:React.FC=()=>{
     </div>
     {settingsEl}
     {cmdEl}
+    {labOpen && <StandaloneLab onClose={()=>setLabOpen(false)}/>}
     <LoginModal/>
     {/* ── Claude Code-style Permission Dialog ── */}
     {permReq&&<div className="perm-dialog" onClick={()=>{var api=window.electronAPI;if(api)api.rejectPermission(permReq.id);setPermReq(null)}}>

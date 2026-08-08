@@ -229,9 +229,17 @@ function getAgentById(id) {
 }
 
 // ── Build system prompt for a specific agent ──
-function buildAgentPrompt(agentId, effectiveSkillPrompt, envNote) {
+function buildAgentPrompt(lang, agentId, effectiveSkillPrompt, envNote) {
+  var ln = lang || 'zh-CN';
   const agent = getAgentById(agentId);
-  return POLARIS_PERSONA + '\n\n' + agent.prompt + '\n\n' + effectiveSkillPrompt + '\n\n' + envNote;
+  var li = `\n\n[LANGUAGE] Reply in ${langName(ln)} only. All responses must be in ${langName(ln)}.`;
+  return POLARIS_PERSONA + '\n\n' + agent.prompt + '\n\n' + li + '\n\n' + effectiveSkillPrompt + '\n\n' + envNote;
+}
+
+/** ── Map lang code to English name for the prompt ── */
+function langName(code) {
+  var m = { 'zh-CN': 'Chinese (Simplified)', 'en': 'English', 'ja': 'Japanese', 'fr': 'French' };
+  return m[code] || 'Chinese (Simplified)';
 }
 
 // ── Check if content signals completion ──
@@ -245,10 +253,11 @@ function isContentComplete(content) {
 async function runAgentLoop(userMessage, apiKey, onExec, onTodo, onStreamChunk, strategyConfig) {
   var maxTok = (strategyConfig && strategyConfig.maxTokens) || 4096;
   var temp = (strategyConfig && strategyConfig.temperature != null) ? strategyConfig.temperature : 0.3;
+  var lang = (strategyConfig && strategyConfig.language) || 'zh-CN'; // ★ Language from frontend
   const effectivePrompt = await skillManager.getEffectivePrompt(userMessage);
   const activeSkill = skillManager.getActive();
   const skillName = activeSkill.name;
-  logger.info('Skill active', { skill: skillName });
+  logger.info('Skill active', { skill: skillName, lang: lang });
 
   const hcResults = await healthCheckCache();
   const envNote = buildAgentCapabilityNote(hcResults);
@@ -257,7 +266,7 @@ async function runAgentLoop(userMessage, apiKey, onExec, onTodo, onStreamChunk, 
   if (skillName === '对话模式' || skillName === '讨论模式' || skillName === 'chat' || skillName === 'discuss') {
     if (onExec) onExec({ tool: skillName, status: 'running', detail: '正在思考...' });
     if (onStreamChunk) onStreamChunk({ type: 'thinking', text: '正在分析你的问题...' });
-    const agentPrompt = buildAgentPrompt('chat', effectivePrompt, envNote);
+    const agentPrompt = buildAgentPrompt(lang,'chat', effectivePrompt, envNote);
     var content = '';
     try {
       var resp = await callDeepSeekStream(
@@ -286,7 +295,7 @@ async function runAgentLoop(userMessage, apiKey, onExec, onTodo, onStreamChunk, 
   // Start with the agent that best matches the skill
   var currentAgentId = mapSkillToAgent(skillName);
   var currentAgent = getAgentById(currentAgentId);
-  var agentPrompt = buildAgentPrompt(currentAgentId, effectivePrompt, envNote);
+  var agentPrompt = buildAgentPrompt(lang,currentAgentId, effectivePrompt, envNote);
   var tools = buildToolDeclarations([...new Set([...activeSkill.tools, ...currentAgent.tools])]); // union of skill+agent tools
   var agentTemp = currentAgent.temperature || activeSkill.temperature || temp;
 
@@ -323,7 +332,7 @@ async function runAgentLoop(userMessage, apiKey, onExec, onTodo, onStreamChunk, 
           if (nextAgent && nextAgent !== currentAgentId) {
             logger.info('Handoff triggered', { from: currentAgentId, to: nextAgent });
             currentAgentId = nextAgent; currentAgent = getAgentById(currentAgentId);
-            agentPrompt = buildAgentPrompt(currentAgentId, effectivePrompt, envNote);
+            agentPrompt = buildAgentPrompt(lang,currentAgentId, effectivePrompt, envNote);
             agentTemp = currentAgent.temperature || activeSkill.temperature || temp;
             tools = buildToolDeclarations([...new Set([...activeSkill.tools, ...currentAgent.tools])]);
             messages[0] = { role: 'system', content: agentPrompt };
@@ -395,7 +404,7 @@ async function runAgentLoop(userMessage, apiKey, onExec, onTodo, onStreamChunk, 
     if (nextAgent && nextAgent !== currentAgentId) {
       logger.info('Handoff after tools', { from: currentAgentId, to: nextAgent });
       currentAgentId = nextAgent; currentAgent = getAgentById(currentAgentId);
-      agentPrompt = buildAgentPrompt(currentAgentId, effectivePrompt, envNote);
+      agentPrompt = buildAgentPrompt(lang,currentAgentId, effectivePrompt, envNote);
       agentTemp = currentAgent.temperature || activeSkill.temperature || temp;
       tools = buildToolDeclarations([...new Set([...activeSkill.tools, ...currentAgent.tools])]);
       messages[0] = { role: 'system', content: agentPrompt };
@@ -518,6 +527,7 @@ async function executeQuery(text, strategy, systemPrompt, images, onStreamChunk,
     // Strategy → token/temperature mapping
     var strategyConfig = { best_quality: { maxTokens: 4096, temperature: 0.3 }, cost_optimized: { maxTokens: 1024, temperature: 0.2 }, ensemble: { maxTokens: 8192, temperature: 0.5 } };
     var stratCfg = strategyConfig[strategy] || strategyConfig.best_quality;
+    stratCfg.language = apiKeys.language || 'zh-CN'; // ★ Thread language through
     const content = await runAgentLoop(text, apiKey, onExec, onTodo, onStreamChunk, stratCfg);
     const elapsed = Date.now() - startTime;
     logger.info('Request completed', { tid, ms: elapsed });

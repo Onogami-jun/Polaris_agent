@@ -131,7 +131,7 @@ ipcMain.handle('polaris:query', async (_e, { text, strategy, systemPrompt, image
     return { routing:{strategy:'error',top_intent:'error',selected_models:[],rationale:e.message}, responses:[{model_id:'error',model_display:'Error',content:'处理出错：'+e.message}], total_latency_ms:0 };
   }
 });
-ipcMain.handle('polaris:queryStream', async (event, { text, strategy, systemPrompt, images, apiKeys }) => {
+ipcMain.handle('polaris:queryStream', async (event, { text, strategy, systemPrompt, images, apiKeys, language }) => {
   var key = getKey();
   if (!key) {
     var locked = { routing:{strategy:'locked',top_intent:'locked',selected_models:[],rationale:'auth required'}, responses:[{model_id:'locked',model_display:'Locked',content:'<div style="text-align:center;padding:20px"><div style="font-size:48px;margin-bottom:12px">🔐</div><p style="font-size:14px;color:hsl(var(--foreground));margin-bottom:8px">Polaris 需要登录才能使用</p><p style="font-size:12px;color:hsl(var(--muted-foreground));margin-bottom:16px">登录 BitWool 账号后解锁全部 AI 功能。点击左侧栏底部的<b style="color:hsl(var(--primary))">登录 BitWool</b>按钮。</p></div>'}], total_latency_ms:0 };
@@ -140,7 +140,7 @@ ipcMain.handle('polaris:queryStream', async (event, { text, strategy, systemProm
   }
   var oc = function(data) { if (win && !win.isDestroyed()) win.webContents.send('polaris:stream-chunk', data); };
   try {
-    var r = await executeQuery(text, strategy, systemPrompt, images, oc, { deepseek:key });
+    var r = await executeQuery(text, strategy, systemPrompt, images, oc, { deepseek:key, language:language || 'zh-CN' });
     if (win && !win.isDestroyed()) win.webContents.send('polaris:stream-end', r);
     return r;
   } catch (e) {

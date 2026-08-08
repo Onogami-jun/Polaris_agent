@@ -5,13 +5,11 @@ import { loginUser, logoutUser } from '../store/authSlice';
 import { AgentLab } from './AgentLab';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
+import { t } from '../i18n';
 
 /* ── i18n labels ── */
 const LANG_LABELS: Record<Language, string> = {
-  'zh-CN': '中文（简体）',
-  'en': 'English',
-  'ja': '日本語',
-  'fr': 'Français',
+  'zh-CN': '中文（简体）', 'en': 'English', 'ja': '日本語', 'fr': 'Français',
 };
 function langLabel(lang: Language): string { return LANG_LABELS[lang] || lang; }
 
@@ -100,7 +98,7 @@ const SettingsPanel: React.FC = () => {
         {/* ── Sidebar ── */}
         <div className="w-[180px] shrink-0 bg-muted/50 border-r border-border flex flex-col">
           <div className="px-4 pt-5 pb-3">
-            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">设置</span>
+            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t(s.language,'sidebar.settings')}</span>
           </div>
           <div className="flex-1 px-2 py-1 space-y-0.5">
             {TABS.map(tb => (
@@ -111,7 +109,7 @@ const SettingsPanel: React.FC = () => {
                 className={'w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all ' + (tab === tb.id ? 'bg-primary/10 text-primary font-medium' : 'text-muted-foreground hover:text-foreground hover:bg-muted')}
               >
                 <span className="shrink-0">{tb.icon}</span>
-                <span>{tb.label}</span>
+                <span>{t(s.language,'settings.tabs.'+tb.id)}</span>
               </button>
             ))}
           </div>
@@ -127,21 +125,18 @@ const SettingsPanel: React.FC = () => {
             {/* ── General ── */}
             {tab === 'general' && (
               <div className="space-y-6">
-                <h3 className="text-base font-semibold text-foreground pb-3 border-b border-border">通用</h3>
-                <Row label="主题" hint={s.theme === 'dark' ? '深色模式' : '浅色模式'}>
+                <h3 className="text-base font-semibold text-foreground pb-3 border-b border-border">{t(s.language,'settings.general.title')}</h3>
+                <Row label={t(s.language,'settings.general.theme')} hint={s.theme==='dark'?t(s.language,'settings.general.themeHint2'):t(s.language,'settings.general.themeHint1')}>
                   <select value={s.theme} onChange={e => dispatch(setTheme(e.target.value as Theme))} className="rounded-lg border border-border bg-muted px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring">
-                    <option value="light">浅色</option><option value="dark">深色</option>
+                    <option value="light">{t(s.language,'settings.general.themeLight')}</option><option value="dark">{t(s.language,'settings.general.themeDark')}</option>
                   </select>
                 </Row>
-                <Row label="语言" hint={langLabel(s.language)}>
+                <Row label={t(s.language,'settings.general.language')} hint={langLabel(s.language)}>
                   <select value={s.language} onChange={e => dispatch(setLanguage(e.target.value as Language))} className="rounded-lg border border-border bg-muted px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring">
-                    <option value="zh-CN">中文 (简体)</option>
-                    <option value="en">English</option>
-                    <option value="ja">日本語</option>
-                    <option value="fr">Français</option>
+                    <option value="zh-CN">中文 (简体)</option><option value="en">English</option><option value="ja">日本語</option><option value="fr">Français</option>
                   </select>
                 </Row>
-                <Row label="字体大小" hint={`${s.fontSize}px`}>
+                <Row label={t(s.language,'settings.general.fontSize')} hint={`${s.fontSize}px`}>
                   <div className="flex items-center gap-3">
                     <span className="text-xs text-muted-foreground">12</span>
                     <input type="range" min="12" max="22" value={s.fontSize} onChange={e => dispatch(setFontSize(Number(e.target.value)))} className="w-28 accent-primary" />
@@ -149,34 +144,25 @@ const SettingsPanel: React.FC = () => {
                     <span className="text-xs text-muted-foreground">22</span>
                   </div>
                 </Row>
-                <Row label="自动执行" hint="Agent 生成计划后自动执行">
+                <Row label={t(s.language,'settings.general.autoExecute')} hint={t(s.language,'settings.general.autoExecuteHint')}>
                   <Toggle on={s.agent.autoExecute} onClick={() => dispatch(updateAgentConfig({ autoExecute: !s.agent.autoExecute }))} />
                 </Row>
-                <Row label="上下文记忆" hint="跨对话记住用户偏好">
+                <Row label={t(s.language,'settings.general.contextMemory')} hint={t(s.language,'settings.general.contextMemoryHint')}>
                   <Toggle on={s.memory.enabled} onClick={() => dispatch(updateAgentConfig({ webSearch: !s.agent.webSearch }))} />
                 </Row>
-                <Row label="显示引导页" hint="重新显示首次启动引导">
-                  <Button variant="outline" size="sm" className="h-7 text-[10px]" onClick={() => {
-                    localStorage.removeItem('polaris_onboarding_done');
-                    try{localStorage.setItem('ps_set',JSON.stringify(s));}catch(e){}
-                    window.location.reload();
-                  }}>重新引导</Button>
+                <Row label={t(s.language,'settings.general.showGuide')} hint={t(s.language,'settings.general.showGuideHint')}>
+                  <Button variant="outline" size="sm" className="h-7 text-[10px]" onClick={() => {localStorage.removeItem('polaris_onboarding_done');try{localStorage.setItem('ps_set',JSON.stringify(s));}catch(e){}window.location.reload()}}>{t(s.language,'settings.general.showGuideBtn')}</Button>
                 </Row>
-
                 <div className="pt-4 border-t border-border mt-4">
-                  <h4 className="text-sm font-semibold text-foreground mb-3">🎨 吉祥物 Pola</h4>
-                  <Row label="显示吉祥物" hint="在聊天区显示啵啦吉祥物">
-                    <Toggle on={s.mascot.enabled} onClick={() => dispatch(setMascotSettings({ enabled: !s.mascot.enabled }))} />
-                  </Row>
-                  <Row label="点击互动" hint="点击吉祥物时播放动画">
-                    <Toggle on={s.mascot.clickReactions} onClick={() => dispatch(setMascotSettings({ clickReactions: !s.mascot.clickReactions }))} />
-                  </Row>
-                  <Row label="自动闲逛" hint="长时间不用时自动在聊天区移动">
-                    <Toggle on={s.mascot.autoWander} onClick={() => dispatch(setMascotSettings({ autoWander: !s.mascot.autoWander }))} />
-                  </Row>
-                  <Row label="犯困动画" hint="超长时间不理它会打瞌睡">
-                    <Toggle on={s.mascot.showWhenSleepy} onClick={() => dispatch(setMascotSettings({ showWhenSleepy: !s.mascot.showWhenSleepy }))} />
-                  </Row>
+                  <h4 className="text-sm font-semibold text-foreground mb-3">Pola</h4>
+                  <Row label={t(s.language,'settings.general.mascotShow')} hint={t(s.language,'settings.general.mascotShowHint')}>
+                    <Toggle on={s.mascot.enabled} onClick={() => dispatch(setMascotSettings({ enabled: !s.mascot.enabled }))} /></Row>
+                  <Row label={t(s.language,'settings.general.mascotClick')} hint={t(s.language,'settings.general.mascotClickHint')}>
+                    <Toggle on={s.mascot.clickReactions} onClick={() => dispatch(setMascotSettings({ clickReactions: !s.mascot.clickReactions }))} /></Row>
+                  <Row label={t(s.language,'settings.general.mascotWander')} hint={t(s.language,'settings.general.mascotWanderHint')}>
+                    <Toggle on={s.mascot.autoWander} onClick={() => dispatch(setMascotSettings({ autoWander: !s.mascot.autoWander }))} /></Row>
+                  <Row label={t(s.language,'settings.general.mascotSleepy')} hint={t(s.language,'settings.general.mascotSleepyHint')}>
+                    <Toggle on={s.mascot.showWhenSleepy} onClick={() => dispatch(setMascotSettings({ showWhenSleepy: !s.mascot.showWhenSleepy }))} /></Row>
                 </div>
               </div>
             )}
@@ -184,26 +170,20 @@ const SettingsPanel: React.FC = () => {
             {/* ── Models ── */}
             {tab === 'models' && (
               <div className="space-y-6">
-                <h3 className="text-base font-semibold text-foreground pb-3 border-b border-border">模型 API</h3>
-                <p className="text-xs text-muted-foreground -mt-4">内置 DeepSeek 免费密钥已包含。添加你自己的 API Key 以解锁更多模型。</p>
+                <h3 className="text-base font-semibold text-foreground pb-3 border-b border-border">{t(s.language,'settings.models.title')}</h3>
+                <p className="text-xs text-muted-foreground -mt-4">{t(s.language,'settings.models.desc')}</p>
                 {[
-                  { id: 'deepseek', label: 'DeepSeek', note: 'V3 / R1 模型' },
-                  { id: 'anthropic', label: 'Anthropic', note: 'Claude Sonnet / Opus' },
-                  { id: 'openai', label: 'OpenAI', note: 'GPT-4o / o1' },
-                  { id: 'serper', label: 'Serper', note: '联网搜索 API' },
+                  { id: 'deepseek', label: 'DeepSeek', noteK: 'deepseekNote' },
+                  { id: 'anthropic', label: 'Anthropic', noteK: 'anthropicNote' },
+                  { id: 'openai', label: 'OpenAI', noteK: 'openaiNote' },
+                  { id: 'serper', label: 'Serper', noteK: 'serperNote' },
                 ].map(p => (
                   <div key={p.id} className="space-y-1">
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-medium text-foreground">{p.label}</span>
-                      <span className="text-[10px] text-muted-foreground">{p.note}</span>
+                      <span className="text-[10px] text-muted-foreground">{t(s.language,'settings.models.'+p.noteK)}</span>
                     </div>
-                    <Input
-                      type="password"
-                      value={(s.apiKeys as any)[p.id]}
-                      onChange={e => dispatch(setApiKey({ provider: p.id, key: e.target.value }))}
-                      placeholder={p.id === 'deepseek' ? '已内置 · 可覆盖' : 'sk-...'}
-                      className="h-9 text-xs font-mono"
-                    />
+                    <Input type="password" value={(s.apiKeys as any)[p.id]} onChange={e => dispatch(setApiKey({ provider: p.id, key: e.target.value }))} placeholder={p.id==='deepseek'?t(s.language,'settings.models.deepseekPlaceholder'):'sk-...'} className="h-9 text-xs font-mono"/>
                   </div>
                 ))}
               </div>
@@ -212,22 +192,22 @@ const SettingsPanel: React.FC = () => {
             {/* ── Agent ── */}
             {tab === 'agent' && (
               <div className="space-y-6">
-                <h3 className="text-base font-semibold text-foreground pb-3 border-b border-border">代理配置</h3>
-                <Row label="代理名称" hint="显示给用户的名字">
+                <h3 className="text-base font-semibold text-foreground pb-3 border-b border-border">{t(s.language,'settings.agent.title')}</h3>
+                <Row label={t(s.language,'settings.agent.name')} hint={t(s.language,'settings.agent.nameHint')}>
                   <Input value={s.agent.name} onChange={e => dispatch(updateAgentConfig({ name: e.target.value }))} className="h-9 w-40 text-sm" />
                 </Row>
-                <Row label="系统提示词" hint="定义 Agent 的行为风格">
+                <Row label={t(s.language,'settings.agent.systemPrompt')} hint={t(s.language,'settings.agent.systemPromptHint')}>
                   <textarea value={s.agent.systemPrompt} onChange={e => dispatch(updateAgentConfig({ systemPrompt: e.target.value }))} className="w-64 h-20 rounded-lg border border-border bg-muted p-3 text-xs outline-none focus:ring-2 focus:ring-ring resize-y" />
                 </Row>
-                <Row label="推理风格">
+                <Row label={t(s.language,'settings.agent.reasoningStyle')}>
                   <select value={s.agent.reasoningStyle} onChange={e => dispatch(updateAgentConfig({ reasoningStyle: e.target.value as any }))} className="rounded-lg border border-border bg-muted px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring">
-                    <option value="concise">简洁</option><option value="detailed">详细</option><option value="creative">创意</option>
+                    <option value="concise">{t(s.language,'settings.agent.concise')}</option><option value="detailed">{t(s.language,'settings.agent.detailed')}</option><option value="creative">{t(s.language,'settings.agent.creative')}</option>
                   </select>
                 </Row>
-                <Row label="最大 Token" hint={`${s.agent.maxTokens}`}>
+                <Row label={t(s.language,'settings.agent.maxTokens')} hint={`${s.agent.maxTokens}`}>
                   <input type="number" value={s.agent.maxTokens} onChange={e => dispatch(updateAgentConfig({ maxTokens: Number(e.target.value) }))} min={512} max={16384} className="w-24 rounded-lg border border-border bg-muted px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring" />
                 </Row>
-                <Row label="温度" hint={`${s.agent.temperature}`}>
+                <Row label={t(s.language,'settings.agent.temperature')} hint={`${s.agent.temperature}`}>
                   <input type="range" min="0" max="2" step="0.1" value={s.agent.temperature} onChange={e => dispatch(updateAgentConfig({ temperature: Number(e.target.value) }))} className="w-28 accent-primary" />
                 </Row>
               </div>
@@ -236,7 +216,7 @@ const SettingsPanel: React.FC = () => {
             {/* ── Plugins ── */}
             {tab === 'plugins' && (
               <div className="space-y-6">
-                <h3 className="text-base font-semibold text-foreground pb-3 border-b border-border">已安装插件</h3>
+                <h3 className="text-base font-semibold text-foreground pb-3 border-b border-border">{t(s.language,'settings.plugins.title')}</h3>
                 {s.plugins.map(p => (
                   <div key={p.id} className="flex items-center justify-between py-3 px-4 rounded-xl border border-border/50 bg-muted/30">
                     <div>
@@ -247,7 +227,7 @@ const SettingsPanel: React.FC = () => {
                   </div>
                 ))}
                 <div className="flex items-center justify-center py-5 rounded-xl border-2 border-dashed border-border/50 cursor-pointer hover:border-primary/30 hover:bg-primary/5 transition-all">
-                  <span className="text-xs text-muted-foreground">+ 从 MCP 注册表安装插件</span>
+                  <span className="text-xs text-muted-foreground">{t(s.language,'settings.plugins.empty')}</span>
                 </div>
               </div>
             )}
@@ -255,25 +235,25 @@ const SettingsPanel: React.FC = () => {
             {/* ── Data & Export ── */}
             {tab === 'data' && (
               <div className="space-y-6">
-                <h3 className="text-base font-semibold text-foreground pb-3 border-b border-border">数据与导出</h3>
-                <Row label="导出对话" hint="将所有对话导出为 JSON 文件">
-                  <Button variant="outline" size="sm" onClick={exportData}>导出 JSON</Button>
+                <h3 className="text-base font-semibold text-foreground pb-3 border-b border-border">{t(s.language,'settings.data.title')}</h3>
+                <Row label={t(s.language,'settings.data.exportJson')} hint={t(s.language,'settings.data.exportJsonHint')}>
+                  <Button variant="outline" size="sm" onClick={exportData}>{t(s.language,'settings.data.exportJsonBtn')}</Button>
                 </Row>
-                <Row label="导出当前对话" hint="导出当前会话为 Markdown">
+                <Row label={t(s.language,'settings.data.exportMd')} hint={t(s.language,'settings.data.exportMdHint')}>
                   <Button variant="outline" size="sm" onClick={() => {
                     const act = chat.sessions.find(x => x.id === chat.activeSessionId);
                     const md = act ? act.messages.map((m: any) => `### ${m.role === 'user' ? 'User' : 'Assistant'}\n\n${m.content}\n`).join('\n---\n') : '';
                     const blob = new Blob([md], { type: 'text/markdown' });
                     const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'polaris-export.md'; a.click();
-                  }}>导出 Markdown</Button>
+                  }}>{t(s.language,'settings.data.exportMdBtn')}</Button>
                 </Row>
-                <Row label="同步设置" hint="登录 BitWool 后自动同步">
-                  <span className="text-xs text-muted-foreground">{auth.user ? '已登录 · 云端同步已启用' : '未登录 · 仅本地存储'}</span>
+                <Row label={t(s.language,'settings.data.sync')} hint={t(s.language,'settings.data.syncHint')}>
+                  <span className="text-xs text-muted-foreground">{auth.user ? t(s.language,'settings.data.syncLogged') : t(s.language,'settings.data.syncUnlogged')}</span>
                 </Row>
                 <div className="pt-4 border-t border-border">
-                  <h4 className="text-sm font-semibold text-destructive mb-3">危险区域</h4>
-                  <Row label="清除所有数据" hint="删除所有对话和本地设置">
-                    <Button variant="destructive" size="sm" onClick={resetAll}>重置</Button>
+                  <h4 className="text-sm font-semibold text-destructive mb-3">{t(s.language,'settings.data.dangerTitle')}</h4>
+                  <Row label={t(s.language,'settings.data.reset')} hint={t(s.language,'settings.data.resetHint')}>
+                    <Button variant="destructive" size="sm" onClick={resetAll}>{t(s.language,'settings.data.resetBtn')}</Button>
                   </Row>
                 </div>
               </div>
@@ -282,7 +262,7 @@ const SettingsPanel: React.FC = () => {
             {/* ── Account ── */}
             {tab === 'account' && (
               <div className="space-y-6">
-                <h3 className="text-base font-semibold text-foreground pb-3 border-b border-border">BitWool 账号</h3>
+                <h3 className="text-base font-semibold text-foreground pb-3 border-b border-border">{t(s.language,'settings.account.title')}</h3>
                 {auth.user ? (
                   <div className="contents">
                     <div className="flex items-center gap-4 p-4 rounded-xl bg-muted/30 border border-border/50">
@@ -292,14 +272,14 @@ const SettingsPanel: React.FC = () => {
                       <div className="flex-1">
                         <div className="text-sm font-semibold text-foreground">{auth.user.displayName}</div>
                         <div className="text-xs text-muted-foreground">{auth.user.email}</div>
-                        <div className="text-[10px] text-muted-foreground mt-1 font-mono">计划: {auth.user.plan} · ID: {auth.user.id?.slice(0, 12)}…</div>
+                        <div className="text-[10px] text-muted-foreground mt-1 font-mono">{t(s.language,'settings.account.plan')}: {auth.user.plan} · ID: {auth.user.id?.slice(0, 12)}…</div>
                       </div>
                     </div>
-                    <Row label="创建时间" hint={auth.user.createdAt ? new Date(auth.user.createdAt).toLocaleDateString('zh-CN') : '-'}>
+                    <Row label={t(s.language,'settings.account.createdAt')} hint={auth.user.createdAt ? new Date(auth.user.createdAt).toLocaleDateString('zh-CN') : '-'}>
                       <span className="text-sm text-muted-foreground">{auth.user.createdAt ? new Date(auth.user.createdAt).toLocaleDateString('zh-CN') : '-'}</span>
                     </Row>
                     <div className="pt-2">
-                      <Button variant="outline" className="w-full" onClick={() => dispatch(logoutUser())}>退出登录</Button>
+                      <Button variant="outline" className="w-full" onClick={() => dispatch(logoutUser())}>{t(s.language,'settings.account.logout')}</Button>
                     </div>
                   </div>
                 ) : (
@@ -309,15 +289,15 @@ const SettingsPanel: React.FC = () => {
                         <circle cx="8" cy="5" r="3" /><path d="M2 14c0-3.3 2.7-6 6-6s6 2.7 6 6" />
                       </svg>
                     </div>
-                    <p className="text-sm text-muted-foreground">登录 BitWool 账号以启用云端同步</p>
+                    <p className="text-sm text-muted-foreground">{t(s.language,'settings.account.loginTitle')}</p>
                     <div className="flex flex-col gap-2 max-w-[240px] mx-auto">
-                      <Input placeholder="邮箱" className="h-9 text-sm" id="login-email" />
-                      <Input type="password" placeholder="密码" className="h-9 text-sm" id="login-pwd" />
+                      <Input placeholder={t(s.language,'settings.account.email')} className="h-9 text-sm" id="login-email" />
+                      <Input type="password" placeholder={t(s.language,'settings.account.password')} className="h-9 text-sm" id="login-pwd" />
                       <Button size="sm" onClick={() => {
                         const email = (document.getElementById('login-email') as HTMLInputElement)?.value;
                         const pwd = (document.getElementById('login-pwd') as HTMLInputElement)?.value;
                         if (email && pwd) dispatch(loginUser({ email, password: pwd }));
-                      }}>登录</Button>
+                      }}>{t(s.language,'settings.account.loginBtn')}</Button>
                     </div>
                   </div>
                 )}
@@ -333,10 +313,10 @@ const SettingsPanel: React.FC = () => {
             {/* ── About ── */}
             {tab === 'about' && (
               <div className="space-y-6">
-                <h3 className="text-base font-semibold text-foreground pb-3 border-b border-border">关于 Polaris Solver</h3>
+                <h3 className="text-base font-semibold text-foreground pb-3 border-b border-border">{t(s.language,'settings.about.title')}</h3>
                 <div className="text-center py-4 space-y-3">
                   <div className="text-3xl font-bold font-mono text-primary">POLARIS</div>
-                  <div className="text-sm text-muted-foreground">运筹优化科研助手 · v3.0</div>
+                  <div className="text-sm text-muted-foreground">{t(s.language,'settings.about.subtitle')} · v4.0</div>
                   <div className="flex flex-wrap gap-2 justify-center pt-2">
                     <span className="rounded-full bg-muted px-3 py-1 text-[11px] text-muted-foreground font-mono">Electron 31</span>
                     <span className="rounded-full bg-muted px-3 py-1 text-[11px] text-muted-foreground font-mono">React 18</span>
@@ -347,14 +327,14 @@ const SettingsPanel: React.FC = () => {
                   </div>
                 </div>
                 <div className="space-y-2 pt-2">
-                  <Row label="作者" hint="BitWool Studio">
+                  <Row label={t(s.language,'settings.about.author')} hint={t(s.language,'settings.about.authorVal')}>
                     <a href="https://bitwool.cn" target="_blank" rel="noopener" className="text-sm text-primary hover:underline">bitwool.cn</a>
                   </Row>
-                  <Row label="邮箱" hint="联系我们">
+                  <Row label={t(s.language,'settings.about.email')} hint="bitwool@163.com">
                     <span className="text-sm text-muted-foreground font-mono">bitwool@163.com</span>
                   </Row>
-                  <Row label="许可证">
-                    <span className="text-sm text-muted-foreground">MIT License</span>
+                  <Row label={t(s.language,'settings.about.license')}>
+                    <span className="text-sm text-muted-foreground">{t(s.language,'settings.about.licenseVal')}</span>
                   </Row>
                 </div>
               </div>
@@ -369,6 +349,7 @@ const SettingsPanel: React.FC = () => {
 
 /* ── Sandbox Settings Tab ── */
 function SandboxSettings() {
+  const s = useAppSelector(st => st.chat.settings);
   const [ready, setReady] = useState(false);
   const [polarisOk, setPolarisOk] = useState(false);
   const [pythonVer, setPythonVer] = useState('');
@@ -422,14 +403,12 @@ function SandboxSettings() {
 
   return (
     <div className="space-y-6">
-      <h3 className="text-base font-semibold text-foreground pb-3 border-b border-border">Python 沙箱</h3>
-      <p className="text-xs text-muted-foreground -mt-4">自动下载并配置便携 Python 环境，无需手动安装。polaris-opt 引擎从本地代码仓库自动链接。</p>
-
-      {/* Status */}
+      <h3 className="text-base font-semibold text-foreground pb-3 border-b border-border">{t(s.language,'settings.sandbox.title')}</h3>
+      <p className="text-xs text-muted-foreground -mt-4">{t(s.language,'settings.sandbox.desc')}</p>
       <div className="grid grid-cols-2 gap-3">
         {[
-          { label: 'Python 3.11', ok: ready, detail: pythonVer || (ready ? '已就绪' : '未安装') },
-          { label: 'polaris-opt', ok: polarisOk, detail: polarisOk ? '已安装' : '未安装' },
+          { label: 'Python 3.11', ok: ready, detail: pythonVer || (ready ? t(s.language,'settings.sandbox.ready') : t(s.language,'settings.sandbox.notReady')) },
+          { label: 'polaris-opt', ok: polarisOk, detail: polarisOk ? t(s.language,'settings.sandbox.installed') : t(s.language,'settings.sandbox.notInstalled') },
         ].map((item, i) => (
           <div key={i} className="flex items-center gap-3 p-3 rounded-xl border border-border/50 bg-muted/30">
             <span className={item.ok ? 'text-emerald-500 text-sm' : 'text-muted-foreground/40 text-sm'}>{item.ok ? '✓' : '✗'}</span>
@@ -445,11 +424,11 @@ function SandboxSettings() {
       <div className="flex gap-2">
         {!ready ? (
           <Button onClick={doSetup} disabled={installing} className="flex-1 h-9">
-            {installing ? '安装中...' : '一键安装沙箱'}
+            {installing ? t(s.language,'settings.sandbox.installing') : t(s.language,'settings.sandbox.installBtn')}
           </Button>
         ) : (
           <Button variant="outline" onClick={doRepair} disabled={installing} className="flex-1 h-9">
-            {installing ? '修复中...' : '修复沙箱'}
+            {installing ? t(s.language,'settings.sandbox.repairing') : t(s.language,'settings.sandbox.repairBtn')}
           </Button>
         )}
       </div>
@@ -475,9 +454,9 @@ function SandboxSettings() {
 
       {/* Info */}
       <div className="rounded-xl bg-muted/30 border border-border/50 p-4 text-xs text-muted-foreground space-y-1">
-        <p>Python 环境安装在 <span className="font-mono text-[10px]">AppData/Roaming/polaris-agent/sandbox/</span></p>
-        <p>polaris-opt 从 <span className="font-mono text-[10px]">Documents/GitHub/polaris/</span> 以 editable 模式安装</p>
-        <p>pip 镜像源已设为阿里云，下载更快</p>
+        <p>{t(s.language,'settings.sandbox.info1')} <span className="font-mono text-[10px]">AppData/Roaming/polaris-agent/sandbox/</span></p>
+        <p>{t(s.language,'settings.sandbox.info2')} <span className="font-mono text-[10px]">Documents/GitHub/polaris/</span></p>
+        <p>{t(s.language,'settings.sandbox.info3')}</p>
       </div>
     </div>
   );
