@@ -64,6 +64,10 @@ async function directSolve(userMessage, onExec) {
   return reliableSolve(userMessage, onExec, python);
 }
 
+/* ── Shared tool executor (single instance for confirms) ── */
+const { ToolExecutor } = require('./tools');
+const toolExec = new ToolExecutor();
+
 /* ── Tool executor ──────────────────────────────────────── */
 async function executeTool(name, args, onExec) {
   if (onExec) onExec({ tool: name, status: 'running', detail: JSON.stringify(args).slice(0, 100) });
@@ -71,8 +75,8 @@ async function executeTool(name, args, onExec) {
   if (name === 'polaris_solve' || name === 'polaris_opt') {
     const python = resolvePython();
     if (!python) {
-      if (onExec) onExec({ tool: name, status: 'error', detail: '引擎未安装' });
-      return { success: false, error: '引擎未安装。可在设置→沙箱中一键部署。' };
+      if (onExec) onExec({ tool: name, status: 'error', detail: 'Engine not installed' });
+      return { success: false, error: 'Engine not installed. Deploy from Settings > Sandbox.' };
     }
     const result = await reliableSolve(args.prompt || args.text || '', onExec, python);
     if (onExec) onExec({ tool: name, status: result.success ? 'done' : 'error', detail: (result.result || result.error || '').slice(0, 120) });
@@ -82,8 +86,8 @@ async function executeTool(name, args, onExec) {
   if (name === 'polaris_analyze') {
     const python = resolvePython();
     if (!python) {
-      if (onExec) onExec({ tool: name, status: 'error', detail: '引擎未安装' });
-      return { success: false, error: '引擎未安装。' };
+      if (onExec) onExec({ tool: name, status: 'error', detail: 'Engine not installed' });
+      return { success: false, error: 'Engine not installed.' };
     }
     const { spawnSync: sp } = require('child_process');
     const n = JSON.stringify(args.prompt || '');
@@ -97,11 +101,12 @@ async function executeTool(name, args, onExec) {
   const tool = TOOLS[name];
   if (!tool) {
     if (onExec) onExec({ tool: name, status: 'error', detail: 'Tool not found' });
-    return { success: false, error: `未知工具: ${name}` };
+    return { success: false, error: 'Unknown tool: ' + name };
   }
+  // ★ Use shared ToolExecutor so confirms work across calls
   try {
-    const result = await tool.execute(args);
-    if (onExec) onExec({ tool: name, status: result.success ? 'done' : 'error', detail: (result.result || result.error || '').slice(0, 120) });
+    const result = await toolExec.execute(name, args);
+    if (onExec) onExec({ tool: name, status: result.confirmation_required ? 'running' : (result.success ? 'done' : 'error'), detail: result.confirmation_required ? 'Waiting for user approval...' : ((result.result || result.error || '').slice(0, 120)) });
     return result;
   } catch (e) {
     if (onExec) onExec({ tool: name, status: 'error', detail: e.message.slice(0, 120) });
@@ -367,27 +372,30 @@ async function runAgentLoop(userMessage, apiKey, onExec, onTodo, onStreamChunk, 
       try { args = JSON.parse(tc.function.arguments); } catch { args = { prompt: userMessage }; }
       if (onStreamChunk) onStreamChunk({ type: 'thinking', text: 'Calling ' + tc.function.name + '...' });
       const result = await executeTool(tc.function.name, args, onExec);
-      // ── Claude Code-style: if tool needs user permission, ask first ──
+      // ── Claude Code-style: tool needs user permission ──
       if (result.confirmation_required) {
         const toolDef = TOOLS[tc.function.name];
         const displayName = toolDef ? toolDef.name : tc.function.name;
+        if (onExec) onExec({ tool: tc.function.name, status: 'running', detail: 'Asking for permission...' });
         const userApproved = await requestPermission(tc.function.name, args, displayName);
         if (!userApproved) {
-          messages.push({ role: 'tool', tool_call_id: tc.id, content: '用户拒绝了此操作。' });
-          break; // Skip remaining tool calls in this round
+          messages.push({ role: 'tool', tool_call_id: tc.id, content: 'User denied this operation.' });
+          if (onExec) onExec({ tool: tc.function.name, status: 'error', detail: 'User denied' });
+          break;
         }
-        // User approved → execute with autoConfirm
-        const approved = await new Promise((resolve) => {
-          const te = new (require('./tools').ToolExecutor)();
-          te.confirmAndExecute(result.confirmation_id).then(resolve).catch(() => resolve({ success: false, error: '确认执行失败' }));
-        });
-        const approvedResult = approved.success
-          ? (approved.result || approved.stdout || '已完成')
-          : '工具 ' + tc.function.name + ' 返回：' + (approved.error || '失败');
-        messages.push({ role: 'tool', tool_call_id: tc.id, content: '用户已授权此操作。\n' + String(approvedResult).slice(0, 4000) });
-        if (approved.success && (approved.result || approved.stdout)) {
+        // User approved → execute via shared ToolExecutor
+        const approved = await toolExec.confirmAndExecute(result.confirmation_id);
+        if (!approved || !approved.success) {
+          messages.push({ role: 'tool', tool_call_id: tc.id, content: 'Execution failed: ' + ((approved && approved.error) || 'unknown') });
+          if (onExec) onExec({ tool: tc.function.name, status: 'error', detail: (approved && approved.error) || 'Execution failed' });
+          break;
+        }
+        var apResult = approved.result || approved.stdout || 'Done';
+        messages.push({ role: 'tool', tool_call_id: tc.id, content: 'User approved. Result:\n' + String(apResult).slice(0, 4000) });
+        if (approved.result || approved.stdout) {
           bestResponse = (approved.result || approved.stdout || '').slice(0, 8000);
         }
+        if (onExec) onExec({ tool: tc.function.name, status: 'done', detail: String(apResult).slice(0, 120) });
         continue;
       }
       const toolResult = result.success
