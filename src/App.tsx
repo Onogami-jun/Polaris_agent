@@ -189,13 +189,15 @@ function LeftSidebar({sessions,activeId,onSelect,onNew,onDelete,onOpenSettings,o
   useEffect(()=>{function click(e:MouseEvent){if(proRef.current&&!proRef.current.contains(e.target as Node))setProOpen(false)};document.addEventListener('mousedown',click);return()=>document.removeEventListener('mousedown',click)},[]);
   return(
     <div style={{width:width}} className="shrink-0 bg-card border-r border-border flex flex-col h-full overflow-hidden">
-      {/* ── Sessions + Git button ── */}
+      {/* ── Git bar ── */}
+      <button onClick={onOpenGit} className="w-full flex items-center gap-2 px-3 py-2 hover:bg-muted/50 transition-colors border-b border-border">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3"><path d="M8 2v2.5M8 4.5a2 2 0 100 4 2 2 0 000-4zM4 11v2.5M12 11v2.5M8 8.5v4"/><circle cx="4" cy="13.5" r="1.3"/><circle cx="12" cy="13.5" r="1.3"/><path d="M4 11c0-1.5 1-2.5 1.5-2.5M12 11c0-1.5-1-2.5-1.5-2.5"/></svg>
+        <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider font-mono">Git</span>
+      </button>
+      {/* ── Sessions ── */}
       <div className="flex items-center justify-between px-3 py-2">
         <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider font-mono">{t(lang,'sidebar.sessions')}</span>
-        <div className="flex items-center gap-1">
-                    <button onClick={onOpenGit} className="h-5 w-5 text-muted-foreground hover:text-foreground flex items-center justify-center" title="Git"><svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><path fillRule="evenodd" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg></button>
-          <Button variant="ghost" size="icon" className="h-5 w-5 text-muted-foreground hover:text-foreground" onClick={onNew} title="New Session">+</Button>
-        </div>
+        <Button variant="ghost" size="icon" className="h-5 w-5 text-muted-foreground hover:text-foreground" onClick={onNew} title="New Session">+</Button>
       </div>
       <Separator/>
       <ScrollArea className="flex-1 px-2 py-1">
@@ -273,7 +275,6 @@ function GitPopup({onClose}:{onClose:()=>void}){
   const [showCommit, setShowCommit] = useState(false);
   const [statusMsg, setStatusMsg] = useState('');
   const [pushMsg, setPushMsg] = useState('');
-  const [activeTab, setActiveTab] = useState(repoDir?'status':'clone');
 
   const refreshStatus = useCallback(() => {
     if (!repoDir) return;
@@ -292,19 +293,20 @@ function GitPopup({onClose}:{onClose:()=>void}){
     setLoading(true);
     const api = window.electronAPI; if (!api) return;
     const r = await api.toolsExecute({tool:'git_clone', params:{url:cloneUrl}});
-    if (r.success && r.dir) { setRepoDir(r.dir); localStorage.setItem('polaris_git_dir', r.dir); setCloneUrl(''); setActiveTab('status'); refreshStatus(); }
+    if (r.success && r.dir) { setRepoDir(r.dir); localStorage.setItem('polaris_git_dir', r.dir); setCloneUrl(''); refreshStatus(); }
     else { setStatusMsg(r.error||'Clone failed'); }
     setLoading(false);
   };
 
   const handlePush = async () => {
-    setLoading(true); setPushMsg('Pushing...');
+    setLoading(true); setPushMsg('');
     const api = window.electronAPI; if (!api) return;
     const r = await api.toolsExecute({tool:'git_push', params:{dir:repoDir}});
-    if (r.success) { setPushMsg('Pushed! Creating PR...');
+    if (r.success) {
+      setPushMsg('Push OK. Creating PR...');
       const pr = await api.toolsExecute({tool:'git_create_pr', params:{dir:repoDir, title:'Polaris Agent Update', body:'Changes made via Polaris Solver.'}});
-      if (pr.success) { setPushMsg('PR: ' + (pr.pr_url||'Done')); }
-      else { setPushMsg(pr.error||'Push OK, PR creation skipped.'); }
+      if (pr.success) { setPushMsg(pr.pr_url||'PR created'); }
+      else { setPushMsg('Push OK. PR: ' + (pr.error||'skipped')); }
     } else { setPushMsg(r.error||'Push failed'); }
     setLoading(false); refreshStatus();
   };
@@ -319,70 +321,73 @@ function GitPopup({onClose}:{onClose:()=>void}){
     setLoading(false);
   };
 
-  const tabs = lang==='zh-CN'?{clone:'克隆仓库',status:'仓库状态',branch:'分支',push:'推送&PR'}
-    :lang==='ja'?{clone:'クローン',status:'ステータス',branch:'ブランチ',push:'プッシュ&PR'}
-    :{clone:'Clone',status:'Status',branch:'Branch',push:'Push & PR'};
-
   return(
     <div className="fixed inset-0 z-[300] bg-black/30 flex items-center justify-center animate-fade-in" onClick={onClose}>
-      <div className="w-[520px] max-w-[94vw] max-h-[85vh] rounded-2xl border border-border bg-card shadow-2xl overflow-hidden flex flex-col animate-scale-in" onClick={e=>e.stopPropagation()}>
+      <div className="w-[480px] max-w-[94vw] max-h-[80vh] rounded-2xl border border-border bg-card shadow-2xl overflow-hidden flex flex-col" onClick={e=>e.stopPropagation()}>
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-border">
-          <div className="flex items-center gap-3">
-            <svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor" className="text-foreground"><path fillRule="evenodd" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
-            <div>
-              <div className="text-sm font-semibold text-foreground">Git Manager</div>
-              {repoDir&&<div className="text-[10px] text-muted-foreground font-mono truncate max-w-[300px]">{repoDir}</div>}
-            </div>
+        <div className="flex items-center justify-between px-5 py-3.5 border-b border-border">
+          <div className="flex items-center gap-2.5">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M8 2v2.5M8 4.5a2 2 0 100 4 2 2 0 000-4zM4 11v2.5M12 11v2.5M8 8.5v4"/><circle cx="4" cy="13.5" r="1.3"/><circle cx="12" cy="13.5" r="1.3"/><path d="M4 11c0-1.5 1-2.5 1.5-2.5M12 11c0-1.5-1-2.5-1.5-2.5"/></svg>
+            <span className="text-sm font-semibold text-foreground font-mono">git</span>
           </div>
-          <button onClick={onClose} className="text-muted-foreground hover:text-foreground text-base">✕</button>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground text-sm">Close</button>
         </div>
-        {/* Tabs */}
-        <div className="flex border-b border-border px-5">
-          {Object.keys(tabs).map(k=><button key={k} onClick={()=>setActiveTab(k)} className={'px-4 py-2.5 text-xs font-medium transition-colors '+(activeTab===k?'text-foreground border-b-2 border-primary':'text-muted-foreground hover:text-foreground')}>{tabs[k as keyof typeof tabs]}</button>)}
-        </div>
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto p-5 space-y-4 min-h-[300px]">
-          {activeTab==='clone'&&<div className="space-y-3">
-            <p className="text-xs text-muted-foreground">Clone a GitHub repository to work with it locally.</p>
-            <div className="flex gap-2">
-              <input className="flex-1 bg-muted/50 border border-border rounded-lg px-3 py-2 text-xs font-mono outline-none focus:border-primary/50" placeholder="https://github.com/user/repo.git" value={cloneUrl} onChange={e=>setCloneUrl(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')handleClone()}}/>
-              <button className="px-4 py-2 rounded-lg bg-primary/10 hover:bg-primary/20 text-xs text-primary font-mono transition-colors" onClick={handleClone} disabled={loading||!cloneUrl.includes('github')}>{loading?'Cloning...':'Clone'}</button>
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto p-5 space-y-4 min-h-[260px]">
+          {/* Clone input */}
+          {!repoDir ? (
+            <div className="space-y-3">
+              <p className="text-xs text-muted-foreground">Clone a repository to enable version control.</p>
+              <div className="flex gap-2">
+                <input className="flex-1 bg-muted border border-border rounded-lg px-3 py-2.5 text-xs font-mono outline-none focus:border-primary/50" placeholder="https://github.com/user/repo.git" value={cloneUrl} onChange={e=>setCloneUrl(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')handleClone()}}/>
+                <button className="px-4 py-2.5 rounded-lg bg-primary hover:bg-primary/90 text-xs text-primary-foreground font-medium transition-colors shrink-0" onClick={handleClone} disabled={loading||!cloneUrl.includes('github')}>{loading?'...':'Clone'}</button>
+              </div>
             </div>
-          </div>}
-          {activeTab==='status'&&repoDir&&<div className="space-y-3">
-            <div className="flex items-center gap-3 text-sm">
-              <span className={branch?'text-emerald-500 font-mono font-bold':'text-muted-foreground font-mono'}>{branch||'No branch'}</span>
-              {files.length>0&&<span className="text-amber-500 text-xs font-mono ml-auto">{files.length} changed</span>}
-              <button onClick={refreshStatus} className="text-xs text-muted-foreground hover:text-foreground font-mono" disabled={loading}>↻</button>
+          ) : (
+            <div className="space-y-4">
+              {/* Branch + status bar */}
+              <div className="flex items-center gap-2 text-xs">
+                <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M8 2v2.5M8 4.5a2 2 0 100 4 2 2 0 000-4zM4 11v2.5M12 11v2.5M8 8.5v4"/><circle cx="4" cy="13.5" r="1.3"/><circle cx="12" cy="13.5" r="1.3"/><path d="M4 11c0-1.5 1-2.5 1.5-2.5M12 11c0-1.5-1-2.5-1.5-2.5"/></svg>
+                <span className="font-mono text-emerald-400">{branch||'main'}</span>
+                <span className="text-muted-foreground/50 mx-1">/</span>
+                <span className="font-mono text-muted-foreground">{files.length} file{(files.length!==1?'s':'')}</span>
+                <button onClick={refreshStatus} className="ml-auto text-muted-foreground hover:text-foreground text-xs font-mono" disabled={loading}>{loading?'...':'Refresh'}</button>
+              </div>
+
+              {/* Changed files */}
+              {files.length>0 && (
+                <div className="rounded-lg bg-muted/30 border border-border/50 overflow-hidden">
+                  <div className="px-3 py-1.5 bg-muted/50 border-b border-border/50 text-[10px] font-mono text-muted-foreground uppercase tracking-wider">Staged Changes</div>
+                  <div className="max-h-[140px] overflow-y-auto p-2 space-y-0.5">
+                    {files.map((f,i)=><div key={i} className="text-[10px] font-mono text-foreground/80 px-2 py-0.5 rounded hover:bg-muted/50">{f.trim()}</div>)}
+                  </div>
+                </div>
+              )}
+              {files.length===0&&!loading&&<div className="text-center py-6 text-muted-foreground text-xs font-mono">Working tree clean</div>}
+
+              {/* Commit input */}
+              {files.length>0 && (showCommit ? (
+                <div className="space-y-2">
+                  <input className="w-full bg-muted border border-border rounded-lg px-3 py-2.5 text-xs font-mono outline-none focus:border-primary/50" placeholder="Commit message" value={commitMsg} onChange={e=>setCommitMsg(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')handleCommit()}} autoFocus/>
+                  <div className="flex gap-2">
+                    <button className="flex-1 py-2 rounded-lg bg-muted hover:bg-muted/70 text-xs text-muted-foreground font-mono transition-colors" onClick={()=>setShowCommit(false)}>Cancel</button>
+                    <button className="flex-1 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-xs text-white font-medium transition-colors" onClick={handleCommit} disabled={loading||!commitMsg.trim()}>{loading?'Committing...':'Commit'}</button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex gap-2">
+                  <button className="flex-1 py-2.5 rounded-lg bg-primary/10 hover:bg-primary/20 text-xs text-primary font-medium transition-colors" onClick={()=>setShowCommit(true)}>Commit</button>
+                  <button className="flex-1 py-2.5 rounded-lg bg-muted hover:bg-muted/70 text-xs text-muted-foreground font-medium transition-colors" onClick={handlePush} disabled={loading}>{loading?'...':'Push & PR'}</button>
+                </div>
+              ))}
+
+              {/* Push result */}
+              {pushMsg && (
+                <div className="text-[10px] font-mono p-2.5 rounded-lg bg-muted/30 border border-border/50 text-muted-foreground truncate">{pushMsg}</div>
+              )}
+              {statusMsg && <div className="text-[10px] text-red-400 font-mono">{statusMsg}</div>}
             </div>
-            {files.length>0&&<div className="rounded-lg bg-muted/20 border border-border/50 p-3 max-h-[180px] overflow-y-auto space-y-0.5">
-              {files.map((f,i)=><div key={i} className="text-[10px] font-mono text-muted-foreground">{f.trim()}</div>)}
-            </div>}
-            {files.length===0&&!loading&&<div className="text-center py-8 text-muted-foreground text-xs">Working tree clean — nothing to commit.</div>}
-            {loading&&<div className="text-center py-4 text-muted-foreground text-xs animate-pulse">Refreshing...</div>}
-            {statusMsg&&<div className="text-[10px] text-red-400 font-mono">{statusMsg}</div>}
-            {files.length>0&&<button className="w-full py-2 rounded-lg bg-primary/10 hover:bg-primary/20 text-xs text-primary font-mono transition-colors" onClick={()=>setShowCommit(!showCommit)}>{showCommit?'Cancel Commit':'Commit Changes'}</button>}
-            {showCommit&&<div className="space-y-2">
-              <input className="w-full bg-muted/50 border border-border rounded-lg px-3 py-2 text-xs font-mono outline-none focus:border-primary/50" placeholder="Commit message" value={commitMsg} onChange={e=>setCommitMsg(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')handleCommit()}}/>
-              <button className="w-full py-2 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-xs text-emerald-500 font-mono transition-colors" onClick={handleCommit} disabled={loading||!commitMsg.trim()}>{loading?'Committing...':'git add . && git commit -m'}</button>
-            </div>}
-          </div>}
-          {activeTab==='branch'&&repoDir&&<div className="space-y-3">
-            <p className="text-xs text-muted-foreground">Current branch:</p>
-            <div className="px-3 py-2 rounded-lg bg-muted/20 text-sm font-mono text-emerald-500 font-bold">{branch||'unknown'}</div>
-            <p className="text-[10px] text-muted-foreground">Create a new branch (via Agent): ask the Agent to run "git branch" for you.</p>
-          </div>}
-          {activeTab==='push'&&repoDir&&<div className="space-y-3">
-            <p className="text-xs text-muted-foreground">Push your committed changes and optionally create a Pull Request.</p>
-            <button className="w-full py-2.5 rounded-lg bg-primary hover:bg-primary/90 text-sm text-primary-foreground font-semibold transition-colors" onClick={handlePush} disabled={loading}>{loading?'Pushing...':'Push to GitHub & Create PR'}</button>
-            {pushMsg&&<div className={'text-xs font-mono p-3 rounded-lg '+(pushMsg.indexOf('PR:')>=0?'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20':pushMsg.indexOf('failed')>=0?'bg-red-500/10 text-red-400 border border-red-500/20':'bg-muted/20 text-muted-foreground border border-border/50')}>{pushMsg}</div>}
-          </div>}
-          {!repoDir&&activeTab!=='clone'&&<div className="text-center py-12 text-muted-foreground">
-            <div className="text-4xl mb-3 text-muted-foreground/30">~/</div>
-            <p className="text-sm">No repository cloned yet.</p>
-            <p className="text-xs mt-1 opacity-60">Go to Clone tab to clone a GitHub repository.</p>
-          </div>}
+          )}
         </div>
       </div>
     </div>
