@@ -149,6 +149,128 @@ ipcMain.handle('polaris:queryStream', async (event, { text, strategy, systemProm
   }
 });
 
+// IPC: GitHub OAuth loopback login (RFC 8252 — auto browser, no manual codes)
+ipcMain.handle('auth:githubLoginLoopback', (_e, { clientId }) => {
+  return new Promise((resolve, reject) => {
+    const http = require('http');
+    const cid = clientId || 'Ov23li6E6u2dnn2YqFNz';
+    let port = 9876;
+
+    // Fire-and-forget: try the first port, on EADDRINUSE try another
+    const tryPort = (p) => {
+      const server = http.createServer((req, res) => {
+        try {
+          const u = new URL(req.url || '/', 'http://localhost');
+          const code = u.searchParams.get('code');
+          const err = u.searchParams.get('error');
+          if (err) {
+            res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+            res.end('<html><body style="font-family:sans-serif;text-align:center;padding:40px"><h2>Authorization Failed</h2><p>' + err + '</p></body></html>');
+            server.close();
+            reject(new Error(err));
+          } else if (code) {
+            res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+            res.end('<html><body style="font-family:sans-serif;text-align:center;padding:40px;background:#0d0d12;color:#e8e4dd"><h2 style="color:#c8a96e">Authorization Complete</h2><p>You may close this window.</p></body></html>');
+            server.close();
+            // Exchange code for token
+            exchangeCodeForToken(code, cid).then(resolve).catch(reject);
+          } else {
+            res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+            res.end('<html><body style="font-family:sans-serif;text-align:center;padding:40px;background:#0d0d12;color:#e8e4dd"><h2>Polaris OAuth</h2><p style="color:#8a8794">Waiting for GitHub authorization...</p></body></html>');
+          }
+        } catch (e) { reject(e); }
+      });
+
+      server.on('error', (e) => {
+        if (e.code === 'EADDRINUSE') { tryPort(p + 1); }
+        else { reject(e); }
+      });
+
+      server.listen(p, '127.0.0.1', () => {
+        port = p;
+        const authorizeUrl = 'https://github.com/login/oauth/authorize?' +
+          'client_id=' + encodeURIComponent(cid) +
+          '&redirect_uri=' + encodeURIComponent('http://127.0.0.1:' + port + '/callback') +
+          '&scope=' + encodeURIComponent('repo,user,read:org');
+        shell.openExternal(authorizeUrl);
+
+        // Timeout after 120s
+        setTimeout(() => { try { server.close(); } catch {} reject(new Error('Authorization timed out')); }, 120000);
+      });
+    };
+
+    tryPort(port);
+  });
+});
+
+// ── Helper: exchange OAuth code for GitHub access token ──
+function exchangeCodeForToken(code, clientId) {
+  return new Promise((resolve, reject) => {
+    const https = require('https');
+    const body = JSON.stringify({
+      client_id: clientId,
+      client_secret: '', // Not needed for public OAuth app with loopback
+      code: code,
+      redirect_uri: '', // Can be empty if the same as registered
+    });
+    const req = https.request({
+      hostname: 'github.com', path: '/login/oauth/access_token',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'Content-Length': Buffer.byteLength(body),
+      },
+      timeout: 15000,
+    }, resp => {
+      let d = '';
+      resp.on('data', c => d += c.toString());
+      resp.on('end', () => {
+        try {
+          const data = JSON.parse(d);
+          if (data.access_token) {
+            // Fetch user info
+            const ur = https.request({
+              hostname: 'api.github.com', path: '/user',
+              method: 'GET',
+              headers: { 'Authorization': 'Bearer ' + data.access_token, 'Accept': 'application/json', 'User-Agent': 'Polaris-Solver/1.0' },
+              timeout: 10000,
+            }, urResp => {
+              let ud = '';
+              urResp.on('data', c => ud += c.toString());
+              urResp.on('end', () => {
+                try {
+                  const udata = JSON.parse(ud);
+                  resolve({
+                    success: true,
+                    token: data.access_token,
+                    user: {
+                      id: 'gh_' + udata.id,
+                      login: udata.login,
+                      email: (udata.email || udata.login + '@github'),
+                      displayName: udata.name || udata.login,
+                      avatar: udata.avatar_url,
+                    },
+                  });
+                } catch { resolve({ success: true, token: data.access_token, user: { id: 'gh_unknown', login: 'unknown', email: 'unknown@github', displayName: 'GitHub User', avatar: '' } }); }
+              });
+            });
+            urReq.on('error', () => resolve({ success: true, token: data.access_token }));
+            urReq.end();
+          } else if (data.error) {
+            resolve({ success: false, error: data.error_description || data.error });
+          } else {
+            resolve({ success: false, error: 'No access token returned' });
+          }
+        } catch { resolve({ success: false, error: 'Failed to parse token response' }); }
+      });
+    });
+    req.on('error', e => reject(e));
+    req.on('timeout', () => { req.destroy(); reject(new Error('Token exchange timeout')); });
+    req.write(body); req.end();
+  });
+}
+
 // IPC: Auth — unlock/lock API key + session token
 ipcMain.handle('auth:unlock', async (_e, { userId }) => {
   await refreshApiKey(userId);

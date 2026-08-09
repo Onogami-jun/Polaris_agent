@@ -197,69 +197,20 @@ export const LoginModal: React.FC = () => {
     sendCode('register');
   };
 
-  /* ── Handle GitHub Device Flow ── */
+  /* ── Handle GitHub Loopback OAuth (RFC 8252) ── */
   const doGithubLogin = async () => {
     var api = window.electronAPI;
-    setBusy(true); setMsg('正在生成设备码...'); setVError('');
+    if (!api) { setVError('Please use the Electron app for this feature.'); return; }
+    setBusy(true); setMsg('Opening browser for GitHub authorization...'); setVError('');
     try {
-      // Step 1: Request device code from GitHub
-      var resp = await fetch('https://github.com/login/device/code', {
-        method: 'POST',
-        headers: {'Accept':'application/json','Content-Type':'application/json'},
-        body: JSON.stringify({client_id:'Iv23lio2IsEJbRXXMfH0', scope:'repo,user,read:org'}),
-      });
-      var data = await resp.json();
-      if (data.error) { setVError(data.error_description||data.error); setBusy(false); return; }
-
-      var deviceCode = data.device_code;
-      var userCode = data.user_code;
-      var verifyUri = data.verification_uri;
-      var interval = data.interval || 5;
-
-      // Auto-open browser with the device activation page
-      if (api) { api.openExternal(verifyUri).catch(function(){}); }
-      setMsg('浏览器已自动打开。请在打开的页面中输入验证码: ' + userCode + '\n\n若浏览器未自动打开，请手动访问: ' + verifyUri);
-      (window as any).__gh_device = {deviceCode, interval};
-
-      // Step 2: Poll for token
-      var attempts = 0;
-      var maxAttempts = 60;
-      var poll = async function() {
-        if (attempts >= maxAttempts) { setVError('登录超时，请重试'); setBusy(false); return; }
-        attempts++;
-        try {
-          var pr = await fetch('https://github.com/login/oauth/access_token', {
-            method: 'POST',
-            headers: {'Accept':'application/json','Content-Type':'application/json'},
-            body: JSON.stringify({client_id:'Iv23lio2IsEJbRXXMfH0', device_code:deviceCode, grant_type:'urn:ietf:params:oauth:grant-type:device_code'}),
-          });
-          var pd = await pr.json();
-          if (pd.access_token) {
-            // Got the token → fetch user info
-            var ur = await fetch('https://api.github.com/user', {headers:{'Authorization':'Bearer '+pd.access_token,'Accept':'application/json'}});
-            var userData = await ur.json();
-            setBusy(false); setMsg('');
-
-            // Login via authSlice with GitHub user
-            var api = window.electronAPI;
-            if (api) {
-              await api.authGithubLogin({token: pd.access_token, user: {id:'gh_'+userData.id, email:userData.login+'@github', displayName:userData.name||userData.login, avatar:userData.avatar_url, login:userData.login}});
-            }
-            // Update Redux store with GitHub user
-            d(githubLogin({ token: pd.access_token, user: { id: 'gh_' + userData.id, email: userData.login + '@github', displayName: userData.name || userData.login, avatar: userData.avatar_url, login: userData.login } }));
-            d(closeLoginModal());
-            return;
-          }
-          if (pd.error === 'authorization_pending') {
-            setTimeout(poll, interval * 1000);
-          } else {
-            setVError(pd.error_description||pd.error||'Token request failed');
-            setBusy(false);
-          }
-        } catch(e) { setTimeout(poll, interval * 1000); }
-      };
-      setTimeout(poll, interval * 1000);
-    } catch(e:any) { setVError(e.message||'网络错误'); setBusy(false); }
+      var r = await api.authGithubLoginLoopback();
+      if (!r || !r.success) { setVError(r?.error || 'Login failed'); setBusy(false); return; }
+      // Login via Redux thunk
+      d(githubLogin({ token: r.token, user: r.user }));
+      // Save token via main process for git operations
+      if (api) { api.authGithubLogin({ token: r.token, user: r.user }).catch(function(){}); }
+      d(closeLoginModal());
+    } catch(e: any) { setVError(e.message || 'Login failed'); setBusy(false); }
   };
 
   /* ── Handle forgot ── */
