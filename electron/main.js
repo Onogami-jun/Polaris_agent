@@ -469,11 +469,12 @@ const { ToolExecutor } = require('./services/tools');
 var _mainGhToken = '';
 const te = new ToolExecutor();
 ipcMain.handle('tools:list', () => te.listTools());
-ipcMain.handle('tools:execute', (_e, { tool, params }) => {
+ipcMain.handle('tools:execute', (_e, { tool, params, ghToken }) => {
   const { TOOLS } = require('./services/tools');
   const td = TOOLS[tool];
   if (td && td.category === 'git') {
-    return Promise.resolve().then(() => td.execute(params, _mainGhToken || ''));
+    var t = ghToken || _mainGhToken || '';
+    return Promise.resolve().then(() => td.execute(params, t));
   }
   return te.execute(tool, params);
 });
