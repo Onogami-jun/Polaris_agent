@@ -320,11 +320,11 @@ function GitPopup({onClose}:{onClose:()=>void}){
     const api = window.electronAPI; if (!api) return;
     const r = await api.toolsExecute({tool:'git_push', params:{dir:repoDir}});
     if (r.success) {
-      setPushMsg('{t(lang,'git.pushOk')}');
+      setPushMsg(t(lang,'git.pushOk'));
       const pr = await api.toolsExecute({tool:'git_create_pr', params:{dir:repoDir, title:'Polaris Agent Update', body:'Changes made via Polaris Solver.'}});
       if (pr.success) { setPushMsg(pr.pr_url||'PR created'); }
       else { setPushMsg('Push OK. PR: ' + (pr.error||'skipped')); }
-    } else { setPushMsg(r.error||'{t(lang,'git.pushFail')}'); }
+    } else { setPushMsg(r.error||t(lang,'git.pushFail')); }
     setLoading(false); refreshStatus();
   };
 
