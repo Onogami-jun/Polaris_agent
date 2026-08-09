@@ -124,13 +124,13 @@ export function StandaloneLab({ onClose }: { onClose: () => void }) {
 
         {/* ── Content ── */}
         <div className="flex-1 overflow-y-auto p-8">
-          {activeSection === 'dashboard' && <DashboardSection usageStats={usageStats} engine={engine} chat={chat} diag={diag} />}
-          {activeSection === 'diagnostics' && <DiagnosticsSection diag={diag} onRefresh={runDiagnostics} />}
-          {activeSection === 'benchmark' && <BenchmarkSection benchResults={benchResults} benchRunning={benchRunning} onRun={runBenchmark} />}
-          {activeSection === 'experiments' && <ExperimentsSection expHistory={expHistory} onRefresh={loadExperimentHistory} />}
-          {activeSection === 'sandbox' && <SandboxSection health={sandboxHealth} pkgs={pkgs} onRefresh={refreshSandbox} />}
-          {activeSection === 'memory' && <MemorySection memEntries={chat.settings.memory.entries} />}
-          {activeSection === 'logs' && <LogsSection />}
+          {activeSection === 'dashboard' && <DashboardSection lang={lang} usageStats={usageStats} engine={engine} chat={chat} diag={diag} />}
+          {activeSection === 'diagnostics' && <DiagnosticsSection lang={lang} diag={diag} onRefresh={runDiagnostics} />}
+          {activeSection === 'benchmark' && <BenchmarkSection lang={lang} benchResults={benchResults} benchRunning={benchRunning} onRun={runBenchmark} />}
+          {activeSection === 'experiments' && <ExperimentsSection lang={lang} expHistory={expHistory} onRefresh={loadExperimentHistory} />}
+          {activeSection === 'sandbox' && <SandboxSection lang={lang} health={sandboxHealth} pkgs={pkgs} onRefresh={refreshSandbox} />}
+          {activeSection === 'memory' && <MemorySection lang={lang} memEntries={chat.settings.memory.entries} />}
+          {activeSection === 'logs' && <LogsSection lang={lang} />}
         </div>
       </div>
     </div>
@@ -138,18 +138,18 @@ export function StandaloneLab({ onClose }: { onClose: () => void }) {
 }
 
 /* ── Dashboard ── */
-function DashboardSection({ usageStats, engine, chat, diag }: any) {
+function DashboardSection({ lang, usageStats, engine, chat, diag }: any) {
   const passCount = (diag || []).filter((d: any) => d.ok).length;
   const totalCount = (diag || []).length;
   return (
     <div className="space-y-6">
-      <h3 className="text-lg font-bold text-foreground">Dashboard</h3>
+      <h3 className="text-lg font-bold text-foreground">{t(lang,'lab.dashboard')}</h3>
       <div className="grid grid-cols-4 gap-3">
         {[
-          { v: usageStats.calls, l: 'API Calls', c: 'text-blue-400' },
-          { v: (usageStats.tokens / 1000).toFixed(1) + 'K', l: 'Tokens Used', c: 'text-amber-400' },
-          { v: usageStats.sessions, l: 'Sessions', c: 'text-emerald-400' },
-          { v: passCount + '/' + totalCount, l: 'Health Checks', c: passCount === totalCount ? 'text-emerald-400' : 'text-red-400' },
+          { v: usageStats.calls, l: t(lang,'lab.dashCalls'), c: 'text-blue-400' },
+          { v: (usageStats.tokens / 1000).toFixed(1) + 'K', l: t(lang,'lab.dashTokens'), c: 'text-amber-400' },
+          { v: usageStats.sessions, l: t(lang,'lab.dashSessions'), c: 'text-emerald-400' },
+          { v: passCount + '/' + totalCount, l: t(lang,'lab.dashHealth'), c: passCount === totalCount ? 'text-emerald-400' : 'text-red-400' },
         ].map((item, i) => (
           <div key={i} className="p-4 rounded-xl bg-muted/20 border border-border/50">
             <div className={'text-2xl font-bold font-mono ' + item.c}>{item.v}</div>
@@ -178,12 +178,12 @@ function DashboardSection({ usageStats, engine, chat, diag }: any) {
 }
 
 /* ── Diagnostics ── */
-function DiagnosticsSection({ diag, onRefresh }: any) {
+function DiagnosticsSection({ lang, diag, onRefresh }: any) {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h3 className="text-lg font-bold text-foreground">System Diagnostics</h3>
-        <Button size="sm" className="h-7 text-[10px]" onClick={onRefresh}>Refresh</Button>
+        <h3 className="text-lg font-bold text-foreground">{t(lang,'lab.diagTitle')}</h3>
+        <Button size="sm" className="h-7 text-[10px]" onClick={onRefresh}>{t(lang,'lab.diagRefresh')}</Button>
       </div>
       {diag ? (
         <div className="grid grid-cols-1 gap-2">
@@ -198,28 +198,28 @@ function DiagnosticsSection({ diag, onRefresh }: any) {
             </div>
           ))}
         </div>
-      ) : <p className="text-sm text-muted-foreground">Click Refresh to run diagnostics.</p>}
+      ) : <p className="text-sm text-muted-foreground">{t(lang,'lab.diagClick')}</p>}
     </div>
   );
 }
 
 /* ── Benchmark ── */
-function BenchmarkSection({ benchResults, benchRunning, onRun }: any) {
+function BenchmarkSection({ lang, benchResults, benchRunning, onRun }: any) {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h3 className="text-lg font-bold text-foreground">Benchmark Suite</h3>
-        <Button size="sm" className="h-7 text-[10px]" onClick={onRun} disabled={benchRunning}>{benchRunning ? 'Running...' : 'Run All'}</Button>
+        <h3 className="text-lg font-bold text-foreground">{t(lang,'lab.benchTitle')}</h3>
+        <Button size="sm" className="h-7 text-[10px]" onClick={onRun} disabled={benchRunning}>{benchRunning ? t(lang,'lab.benchRunning') : t(lang,'lab.benchRun')}</Button>
       </div>
-      <p className="text-xs text-muted-foreground -mt-4">3 standard optimization problems. Measures accuracy and response time.</p>
+      <p className="text-xs text-muted-foreground -mt-4">{t(lang,'lab.benchDesc')}</p>
       {benchResults.length > 0 && (
         <div className="rounded-xl border border-border overflow-hidden">
           <table className="w-full text-sm">
             <thead className="bg-muted/50"><tr>
-              <th className="px-4 py-2.5 text-left font-medium">Problem</th>
-              <th className="px-4 py-2.5 text-left font-medium">Latency</th>
-              <th className="px-4 py-2.5 text-left font-medium">Status</th>
-              <th className="px-4 py-2.5 text-left font-medium">Output</th>
+              <th className="px-4 py-2.5 text-left font-medium">{BENCHMARKS[0] ? 'Problem' : t(lang,'lab.benchStatus')}</th>
+              <th className="px-4 py-2.5 text-left font-medium">{t(lang,'lab.benchLatency')}</th>
+              <th className="px-4 py-2.5 text-left font-medium">{t(lang,'lab.benchStatus')}</th>
+              <th className="px-4 py-2.5 text-left font-medium">{t(lang,'lab.benchOutput')}</th>
             </tr></thead>
             <tbody>
               {benchResults.map((br: any, i: number) => (
@@ -239,12 +239,12 @@ function BenchmarkSection({ benchResults, benchRunning, onRun }: any) {
 }
 
 /* ── Experiments ── */
-function ExperimentsSection({ expHistory, onRefresh }: any) {
+function ExperimentsSection({ lang, expHistory, onRefresh }: any) {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h3 className="text-lg font-bold text-foreground">Experiment History</h3>
-        <Button size="sm" className="h-7 text-[10px]" onClick={onRefresh}>Refresh</Button>
+        <h3 className="text-lg font-bold text-foreground">{t(lang,'lab.expTitle')}</h3>
+        <Button size="sm" className="h-7 text-[10px]" onClick={onRefresh}>{t(lang,'lab.expRefresh')}</Button>
       </div>
       {expHistory.length > 0 ? (
         <div className="space-y-2">
@@ -263,8 +263,8 @@ function ExperimentsSection({ expHistory, onRefresh }: any) {
       ) : (
         <div className="text-center py-12 text-muted-foreground">
           <div className="text-3xl mb-3 text-muted-foreground/30">—</div>
-          <p className="text-sm">No experiments yet.</p>
-          <p className="text-xs mt-1 opacity-60">Run batch experiments in the chat to see results here.</p>
+          <p className="text-sm">{t(lang,'lab.expEmpty')}</p>
+          <p className="text-xs mt-1 opacity-60">{t(lang,'lab.expEmptyDesc')}</p>
         </div>
       )}
     </div>
@@ -272,7 +272,7 @@ function ExperimentsSection({ expHistory, onRefresh }: any) {
 }
 
 /* ── Sandbox ── */
-function SandboxSection({ health, pkgs, onRefresh }: any) {
+function SandboxSection({ lang, health, pkgs, onRefresh }: any) {
   const [pkgInput, setPkgInput] = useState('');
   const [installing, setInstalling] = useState(false);
   const installPkg = () => {
@@ -284,8 +284,8 @@ function SandboxSection({ health, pkgs, onRefresh }: any) {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h3 className="text-lg font-bold text-foreground">Python Sandbox</h3>
-        <Button size="sm" className="h-7 text-[10px]" onClick={onRefresh}>Refresh</Button>
+        <h3 className="text-lg font-bold text-foreground">{t(lang,'lab.sandTitle')}</h3>
+        <Button size="sm" className="h-7 text-[10px]" onClick={onRefresh}>{t(lang,'lab.sandRefresh')}</Button>
       </div>
       {health && (
         <div className="grid grid-cols-2 gap-3">
@@ -302,8 +302,8 @@ function SandboxSection({ health, pkgs, onRefresh }: any) {
         </div>
       )}
       <div className="flex gap-2">
-        <Input placeholder="Package name (e.g. numpy)" value={pkgInput} onChange={e => setPkgInput(e.target.value)} className="h-9 text-sm flex-1" />
-        <Button size="sm" className="h-9 text-xs" onClick={installPkg} disabled={installing}>{installing ? 'Installing...' : 'Install'}</Button>
+        <Input placeholder={t(lang,'lab.sandPkg')} value={pkgInput} onChange={e => setPkgInput(e.target.value)} className="h-9 text-sm flex-1" />
+        <Button size="sm" className="h-9 text-xs" onClick={installPkg} disabled={installing}>{installing ? t(lang,'lab.sandInstalling') : t(lang,'lab.sandInstall')}</Button>
       </div>
       {pkgs.length > 0 && (
         <div className="rounded-xl border border-border overflow-hidden max-h-[300px] overflow-y-auto">
@@ -320,16 +320,16 @@ function SandboxSection({ health, pkgs, onRefresh }: any) {
 }
 
 /* ── Memory ── */
-function MemorySection({ memEntries }: any) {
+function MemorySection({ lang, memEntries }: any) {
   const [input, setInput] = useState('');
   const [entries, setEntries] = useState<any[]>(memEntries || []);
   return (
     <div className="space-y-6">
-      <h3 className="text-lg font-bold text-foreground">Agent Memory Bank</h3>
-      <p className="text-xs text-muted-foreground -mt-4">Agent learns preferences from conversations. Add manual instructions here.</p>
+      <h3 className="text-lg font-bold text-foreground">{t(lang,'lab.memTitle')}</h3>
+      <p className="text-xs text-muted-foreground -mt-4">{t(lang,'lab.memDesc')}</p>
       <div className="flex gap-2">
-        <Input placeholder='e.g. "Prefer Gurobi syntax"' value={input} onChange={e => setInput(e.target.value)} className="h-9 text-sm flex-1" />
-        <Button size="sm" className="h-9 text-xs" onClick={() => { if (input.trim()) { setEntries((p: any) => [...p, { key: 'manual', value: input, timestamp: Date.now() }]); setInput(''); } }}>Add</Button>
+        <Input placeholder={t(lang,'lab.memPlaceholder')} value={input} onChange={e => setInput(e.target.value)} className="h-9 text-sm flex-1" />
+        <Button size="sm" className="h-9 text-xs" onClick={() => { if (input.trim()) { setEntries((p: any) => [...p, { key: 'manual', value: input, timestamp: Date.now() }]); setInput(''); } }}>{t(lang,'lab.memAdd')}</Button>
       </div>
       {entries.length > 0 ? (
         <div className="space-y-1">
@@ -341,14 +341,14 @@ function MemorySection({ memEntries }: any) {
           ))}
         </div>
       ) : (
-        <div className="text-center py-8 text-muted-foreground text-sm">No memories. Agent auto-learns from conversations.</div>
+        <div className="text-center py-8 text-muted-foreground text-sm">{t(lang,'lab.memEmpty')}</div>
       )}
     </div>
   );
 }
 
 /* ── Logs ── */
-function LogsSection() {
+function LogsSection({ lang }: any) {
   const [logs] = useState<string[]>([
     '[08:00:01] Agent engine initialized',
     '[08:00:03] Python sandbox: Python 3.11.9 detected',
@@ -358,7 +358,7 @@ function LogsSection() {
   ]);
   return (
     <div className="space-y-6">
-      <h3 className="text-lg font-bold text-foreground">System Logs</h3>
+      <h3 className="text-lg font-bold text-foreground">{t(lang,'lab.logTitle')}</h3>
       <div className="rounded-xl bg-muted/20 border border-border/50 p-4 font-mono text-xs text-muted-foreground space-y-0.5 max-h-[500px] overflow-y-auto">
         {logs.map((l, i) => <div key={i} className="hover:text-foreground transition-colors">{l}</div>)}
       </div>

@@ -142,6 +142,7 @@ ipcMain.handle('polaris:queryStream', async (event, { text, strategy, systemProm
   // Notify Git panel when Agent performs git operations
   var onGitOp = function(data) { if (win && !win.isDestroyed()) win.webContents.send('polaris:git-update', data); };
   try {
+    _mainGhToken = (apiKeys && apiKeys.github) || '';
     var r = await executeQuery(text, strategy, systemPrompt, images, oc, { deepseek:key, language:language || 'zh-CN', github:(apiKeys && apiKeys.github) || '', onGitOp:onGitOp });
     if (win && !win.isDestroyed()) win.webContents.send('polaris:stream-end', r);
     return r;
@@ -464,9 +465,17 @@ ipcMain.handle('mcp:list', () => [...mcpProcesses.entries()].map(([id, p]) => ({
 
 // IPC: Tools
 const { ToolExecutor } = require('./services/tools');
+var _mainGhToken = '';
 const te = new ToolExecutor();
 ipcMain.handle('tools:list', () => te.listTools());
-ipcMain.handle('tools:execute', (_e, { tool, params }) => te.execute(tool, params));
+ipcMain.handle('tools:execute', (_e, { tool, params }) => {
+  const { TOOLS } = require('./services/tools');
+  const td = TOOLS[tool];
+  if (td && td.category === 'git') {
+    return Promise.resolve().then(() => td.execute(params, _mainGhToken || ''));
+  }
+  return te.execute(tool, params);
+});
 ipcMain.handle('tools:confirm', (_e, { confirmId }) => te.confirmAndExecute(confirmId));
 ipcMain.handle('tools:reject', (_e, { confirmId }) => te.rejectConfirmation(confirmId));
 
