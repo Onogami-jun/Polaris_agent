@@ -372,18 +372,18 @@ export const LoginModal: React.FC = () => {
           {tab !== 'github' && <div className="space-y-1.5">
             <label className="text-xs font-medium text-muted-foreground">邮箱</label>
             <Input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com" className="h-10" autoFocus />
-          </div>
+          </div>}
 
-          {tab !== 'forgot' && (
+          {tab !== 'github' && tab !== 'forgot' && (
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-muted-foreground">密码</label>
               <Input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="至少 6 位" className="h-10" />
             </div>
           )}
 
-          <Button type="submit" className="h-10 w-full mt-1" disabled={!email.includes('@') || (tab!=='forgot'&&password.length<6) || (tab==='register'&&!name.trim()) || busy}>
+          {tab !== 'github' && <Button type="submit" className="h-10 w-full mt-1" disabled={!email.includes('@') || (tab!=='forgot'&&password.length<6) || (tab==='register'&&!name.trim()) || busy}>
             {busy?'发送中...':tab==='login'?'登录':tab==='register'?'发送验证码':'发送重置验证码'}
-          </Button>
+          </Button>}
 
           <p className="text-[10px] text-muted-foreground text-center">
             {tab === 'login' && <><span>还没有账号？</span><button type="button" className="text-primary hover:underline ml-1" onClick={()=>{setTab('register');d(clearLoginError());setMsg('');setVError('');}}>立即注册</button></>}
