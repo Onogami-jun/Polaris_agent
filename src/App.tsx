@@ -166,7 +166,7 @@ function WorkflowView({plan,planProg,planId,execLog,todoSteps,onStopPlan}:any){
         </div>}
         {/* ── Idle state ── */}
         {!hasContent&&<div style={{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:'40px 20px',gap:12,textAlign:'center'}}>
-          <div style={{width:40,height:40,borderRadius:12,background:'var(--p-surface-hover)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:18,color:'var(--p-text-muted)'}}>✦</div>
+          <div style={{width:40,height:40,borderRadius:12,background:'var(--p-surface-hover)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:16,fontWeight:700,color:'var(--p-text-muted)'}}>P</div>
           <p style={{fontSize:11,color:'var(--p-text-muted)',fontFamily:'var(--font-mono)'}}>Waiting for task</p>
         </div>}
       </div>
@@ -178,9 +178,9 @@ function WorkflowView({plan,planProg,planId,execLog,todoSteps,onStopPlan}:any){
 }
 
 /* ─────────────────────────────────────────────────
-   LEFT SIDEBAR — conversations + token
+   LEFT SIDEBAR — Git panel + Sessions
    ───────────────────────────────────────────────── */
-function LeftSidebar({sessions,activeId,onSelect,onNew,onDelete,onOpenSettings,onOpenLab,width}:any){
+function LeftSidebar({sessions,activeId,onSelect,onNew,onDelete,onOpenSettings,onOpenLab,onOpenGit,width}:any){
   const auth = useAppSelector(s=>s.auth);
   const lang = useAppSelector(s=>s.chat.settings.language);
   const d = useAppDispatch();
@@ -189,9 +189,13 @@ function LeftSidebar({sessions,activeId,onSelect,onNew,onDelete,onOpenSettings,o
   useEffect(()=>{function click(e:MouseEvent){if(proRef.current&&!proRef.current.contains(e.target as Node))setProOpen(false)};document.addEventListener('mousedown',click);return()=>document.removeEventListener('mousedown',click)},[]);
   return(
     <div style={{width:width}} className="shrink-0 bg-card border-r border-border flex flex-col h-full overflow-hidden">
-      <div className="flex items-center justify-between px-3 py-3">
+      {/* ── Sessions + Git button ── */}
+      <div className="flex items-center justify-between px-3 py-2">
         <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider font-mono">{t(lang,'sidebar.sessions')}</span>
-        <Button variant="ghost" size="icon" className="h-5 w-5 text-muted-foreground hover:text-foreground" onClick={onNew} title="新建会话">+</Button>
+        <div className="flex items-center gap-1">
+          {ghToken && <button onClick={onOpenGit} className="h-5 w-5 text-muted-foreground hover:text-foreground flex items-center justify-center" title="Git"><svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><path fillRule="evenodd" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg></button>}
+          <Button variant="ghost" size="icon" className="h-5 w-5 text-muted-foreground hover:text-foreground" onClick={onNew} title="New Session">+</Button>
+        </div>
       </div>
       <Separator/>
       <ScrollArea className="flex-1 px-2 py-1">
@@ -203,7 +207,6 @@ function LeftSidebar({sessions,activeId,onSelect,onNew,onDelete,onOpenSettings,o
           </div>
         )}
       </ScrollArea>
-      <Separator/>
       <Separator/>
       {/* Settings + Lab + Login buttons */}
       <div className="px-2 py-1.5 space-y-1 border-t border-border">
@@ -218,7 +221,8 @@ function LeftSidebar({sessions,activeId,onSelect,onNew,onDelete,onOpenSettings,o
         {auth.user ? (
           <div className="relative" ref={proRef}>
             <button onClick={()=>setProOpen(!proOpen)} className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs text-muted-foreground hover:text-foreground hover:bg-muted transition-all">
-              <div className="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold text-white shrink-0" style={{background:auth.user.avatar}}>{auth.user.displayName.slice(0,1).toUpperCase()}</div>
+              <img src={auth.user.avatar} className="w-5 h-5 rounded-full shrink-0" onError={e=>{(e.target as HTMLImageElement).style.display='none'}}/>
+              <div className="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold text-white shrink-0" style={{background:auth.user.avatar||'#6366f1'}}>{auth.user.displayName.slice(0,1).toUpperCase()}</div>
               <span className="truncate">{auth.user.displayName}</span>
               <span className="ml-auto text-[9px] text-muted-foreground/50">▾</span>
             </button>
@@ -226,21 +230,17 @@ function LeftSidebar({sessions,activeId,onSelect,onNew,onDelete,onOpenSettings,o
               <div className="absolute bottom-full left-0 mb-1 w-52 rounded-xl border border-border bg-card shadow-2xl overflow-hidden animate-fade-in z-[200]">
                 <div className="px-3.5 py-3 border-b border-border bg-muted/30">
                   <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0" style={{background:auth.user.avatar}}>{auth.user.displayName.slice(0,1).toUpperCase()}</div>
+                    <div className="w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0" style={{background:auth.user.avatar||'#6366f1'}}>{auth.user.displayName.slice(0,1).toUpperCase()}</div>
                     <div className="min-w-0">
                       <div className="text-sm font-semibold text-foreground truncate">{auth.user.displayName}</div>
                       <div className="text-[10px] text-muted-foreground truncate">{auth.user.email}</div>
                     </div>
                   </div>
-                  <div className="mt-1.5">
-                    <span className="text-[9px] text-muted-foreground/50 font-mono">ID: {auth.user.id?.slice(0,10)}…</span>
+                  <div className="mt-1.5 flex items-center gap-2">
+                    <span className="text-[9px] font-mono px-1.5 py-0.5 rounded-full bg-primary/10 text-primary">{auth.user.loginMethod}</span>
                   </div>
                 </div>
                 <div className="px-2 py-1">
-                  <button onClick={()=>{d(openLoginModal());setProOpen(false)}} className="w-full px-3 py-2 rounded-lg text-left text-xs text-muted-foreground hover:text-foreground hover:bg-muted transition-colors flex items-center gap-2">
-                    <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M8 8a3 3 0 100-6 3 3 0 000 6zM2 14s2-4 6-4 6 4 6 4"/></svg>
-                    {t(lang,'userMenu.switchAccount')}
-                  </button>
                   <button onClick={()=>{d(logoutUser());setProOpen(false)}} className="w-full px-3 py-2 rounded-lg text-left text-xs text-destructive hover:bg-destructive/5 transition-colors flex items-center gap-2">
                     <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M6 14H3a1 1 0 01-1-1V3a1 1 0 011-1h3M11 11l3-3-3-3M14 8H7"/></svg>
                     {t(lang,'userMenu.logout')}
@@ -255,6 +255,135 @@ function LeftSidebar({sessions,activeId,onSelect,onNew,onDelete,onOpenSettings,o
             <span>{t(lang,'sidebar.login')}</span>
           </button>
         )}
+      </div>
+    </div>
+  );
+}
+
+/* ── Git Panel (collapsible mini-UI inside left sidebar) ── */
+/* ── Git Popup (standalone modal, opened from sidebar Git button) ── */
+function GitPopup({onClose}:{onClose:()=>void}){
+  const lang = useAppSelector(s=>s.chat.settings.language);
+  const [repoDir, setRepoDir] = useState(localStorage.getItem('polaris_git_dir')||'');
+  const [branch, setBranch] = useState('');
+  const [files, setFiles] = useState<string[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [cloneUrl, setCloneUrl] = useState('');
+  const [commitMsg, setCommitMsg] = useState('');
+  const [showCommit, setShowCommit] = useState(false);
+  const [statusMsg, setStatusMsg] = useState('');
+  const [pushMsg, setPushMsg] = useState('');
+  const [activeTab, setActiveTab] = useState(repoDir?'status':'clone');
+
+  const refreshStatus = useCallback(() => {
+    if (!repoDir) return;
+    setLoading(true);
+    const api = window.electronAPI; if (!api) { setLoading(false); return; }
+    api.toolsExecute({tool:'git_status', params:{dir:repoDir}}).then((r:any) => {
+      if (r.success) { setBranch(r.branch||''); setFiles(r.files||[]); setStatusMsg(''); }
+      else { setBranch(''); setFiles([]); setStatusMsg(r.error||'Failed'); }
+    }).catch(() => setStatusMsg('Error')).finally(() => setLoading(false));
+  }, [repoDir]);
+
+  useEffect(() => { refreshStatus(); const t = setInterval(refreshStatus, 30000); return () => clearInterval(t); }, [refreshStatus]);
+
+  const handleClone = async () => {
+    if (!cloneUrl.includes('github.com')) return;
+    setLoading(true);
+    const api = window.electronAPI; if (!api) return;
+    const r = await api.toolsExecute({tool:'git_clone', params:{url:cloneUrl}});
+    if (r.success && r.dir) { setRepoDir(r.dir); localStorage.setItem('polaris_git_dir', r.dir); setCloneUrl(''); setActiveTab('status'); refreshStatus(); }
+    else { setStatusMsg(r.error||'Clone failed'); }
+    setLoading(false);
+  };
+
+  const handlePush = async () => {
+    setLoading(true); setPushMsg('Pushing...');
+    const api = window.electronAPI; if (!api) return;
+    const r = await api.toolsExecute({tool:'git_push', params:{dir:repoDir}});
+    if (r.success) { setPushMsg('Pushed! Creating PR...');
+      const pr = await api.toolsExecute({tool:'git_create_pr', params:{dir:repoDir, title:'Polaris Agent Update', body:'Changes made via Polaris Solver.'}});
+      if (pr.success) { setPushMsg('PR: ' + (pr.pr_url||'Done')); }
+      else { setPushMsg(pr.error||'Push OK, PR creation skipped.'); }
+    } else { setPushMsg(r.error||'Push failed'); }
+    setLoading(false); refreshStatus();
+  };
+
+  const handleCommit = async () => {
+    if (!commitMsg.trim()) return;
+    setLoading(true);
+    const api = window.electronAPI; if (!api) return;
+    const r = await api.toolsExecute({tool:'git_commit', params:{dir:repoDir, message:commitMsg}});
+    if (r.success) { setCommitMsg(''); setShowCommit(false); refreshStatus(); }
+    else { setStatusMsg(r.error||'Commit failed'); }
+    setLoading(false);
+  };
+
+  const tabs = lang==='zh-CN'?{clone:'克隆仓库',status:'仓库状态',branch:'分支',push:'推送&PR'}
+    :lang==='ja'?{clone:'クローン',status:'ステータス',branch:'ブランチ',push:'プッシュ&PR'}
+    :{clone:'Clone',status:'Status',branch:'Branch',push:'Push & PR'};
+
+  return(
+    <div className="fixed inset-0 z-[300] bg-black/30 flex items-center justify-center animate-fade-in" onClick={onClose}>
+      <div className="w-[520px] max-w-[94vw] max-h-[85vh] rounded-2xl border border-border bg-card shadow-2xl overflow-hidden flex flex-col animate-scale-in" onClick={e=>e.stopPropagation()}>
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border">
+          <div className="flex items-center gap-3">
+            <svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor" className="text-foreground"><path fillRule="evenodd" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+            <div>
+              <div className="text-sm font-semibold text-foreground">Git Manager</div>
+              {repoDir&&<div className="text-[10px] text-muted-foreground font-mono truncate max-w-[300px]">{repoDir}</div>}
+            </div>
+          </div>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground text-base">✕</button>
+        </div>
+        {/* Tabs */}
+        <div className="flex border-b border-border px-5">
+          {Object.keys(tabs).map(k=><button key={k} onClick={()=>setActiveTab(k)} className={'px-4 py-2.5 text-xs font-medium transition-colors '+(activeTab===k?'text-foreground border-b-2 border-primary':'text-muted-foreground hover:text-foreground')}>{tabs[k as keyof typeof tabs]}</button>)}
+        </div>
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto p-5 space-y-4 min-h-[300px]">
+          {activeTab==='clone'&&<div className="space-y-3">
+            <p className="text-xs text-muted-foreground">Clone a GitHub repository to work with it locally.</p>
+            <div className="flex gap-2">
+              <input className="flex-1 bg-muted/50 border border-border rounded-lg px-3 py-2 text-xs font-mono outline-none focus:border-primary/50" placeholder="https://github.com/user/repo.git" value={cloneUrl} onChange={e=>setCloneUrl(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')handleClone()}}/>
+              <button className="px-4 py-2 rounded-lg bg-primary/10 hover:bg-primary/20 text-xs text-primary font-mono transition-colors" onClick={handleClone} disabled={loading||!cloneUrl.includes('github')}>{loading?'Cloning...':'Clone'}</button>
+            </div>
+          </div>}
+          {activeTab==='status'&&repoDir&&<div className="space-y-3">
+            <div className="flex items-center gap-3 text-sm">
+              <span className={branch?'text-emerald-500 font-mono font-bold':'text-muted-foreground font-mono'}>{branch||'No branch'}</span>
+              {files.length>0&&<span className="text-amber-500 text-xs font-mono ml-auto">{files.length} changed</span>}
+              <button onClick={refreshStatus} className="text-xs text-muted-foreground hover:text-foreground font-mono" disabled={loading}>↻</button>
+            </div>
+            {files.length>0&&<div className="rounded-lg bg-muted/20 border border-border/50 p-3 max-h-[180px] overflow-y-auto space-y-0.5">
+              {files.map((f,i)=><div key={i} className="text-[10px] font-mono text-muted-foreground">{f.trim()}</div>)}
+            </div>}
+            {files.length===0&&!loading&&<div className="text-center py-8 text-muted-foreground text-xs">Working tree clean — nothing to commit.</div>}
+            {loading&&<div className="text-center py-4 text-muted-foreground text-xs animate-pulse">Refreshing...</div>}
+            {statusMsg&&<div className="text-[10px] text-red-400 font-mono">{statusMsg}</div>}
+            {files.length>0&&<button className="w-full py-2 rounded-lg bg-primary/10 hover:bg-primary/20 text-xs text-primary font-mono transition-colors" onClick={()=>setShowCommit(!showCommit)}>{showCommit?'Cancel Commit':'Commit Changes'}</button>}
+            {showCommit&&<div className="space-y-2">
+              <input className="w-full bg-muted/50 border border-border rounded-lg px-3 py-2 text-xs font-mono outline-none focus:border-primary/50" placeholder="Commit message" value={commitMsg} onChange={e=>setCommitMsg(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')handleCommit()}}/>
+              <button className="w-full py-2 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-xs text-emerald-500 font-mono transition-colors" onClick={handleCommit} disabled={loading||!commitMsg.trim()}>{loading?'Committing...':'git add . && git commit -m'}</button>
+            </div>}
+          </div>}
+          {activeTab==='branch'&&repoDir&&<div className="space-y-3">
+            <p className="text-xs text-muted-foreground">Current branch:</p>
+            <div className="px-3 py-2 rounded-lg bg-muted/20 text-sm font-mono text-emerald-500 font-bold">{branch||'unknown'}</div>
+            <p className="text-[10px] text-muted-foreground">Create a new branch (via Agent): ask the Agent to run "git branch" for you.</p>
+          </div>}
+          {activeTab==='push'&&repoDir&&<div className="space-y-3">
+            <p className="text-xs text-muted-foreground">Push your committed changes and optionally create a Pull Request.</p>
+            <button className="w-full py-2.5 rounded-lg bg-primary hover:bg-primary/90 text-sm text-primary-foreground font-semibold transition-colors" onClick={handlePush} disabled={loading}>{loading?'Pushing...':'Push to GitHub & Create PR'}</button>
+            {pushMsg&&<div className={'text-xs font-mono p-3 rounded-lg '+(pushMsg.includes('PR:')?'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20':'pushMsg.includes('failed')?'bg-red-500/10 text-red-400 border border-red-500/20':'bg-muted/20 text-muted-foreground border border-border/50')}>{pushMsg}</div>}
+          </div>}
+          {!repoDir&&activeTab!=='clone'&&<div className="text-center py-12 text-muted-foreground">
+            <div className="text-4xl mb-3 text-muted-foreground/30">~/</div>
+            <p className="text-sm">No repository cloned yet.</p>
+            <p className="text-xs mt-1 opacity-60">Go to Clone tab to clone a GitHub repository.</p>
+          </div>}
+        </div>
       </div>
     </div>
   );
@@ -298,6 +427,7 @@ const App:React.FC=()=>{
   const[interventions,setInterventions]=useState<any[]>([]);
   const[plan,setPlan]=useState<any>(null);const[planProg,setPlanProg]=useState<any>(null);const[planId,setPlanId]=useState('');
   const[labOpen,setLabOpen]=useState(false);
+  const[gitOpen,setGitOpen]=useState(false);
 
   // Panel widths (px) & visibility
   const[leftW,setLeftW]=useState(220);const[leftOpen,setLeftOpen]=useState(true);
@@ -480,6 +610,7 @@ const App:React.FC=()=>{
         onDelete={(id)=>d(deleteSession(id))}
         onOpenSettings={()=>d(toggleSettings())}
         onOpenLab={()=>setLabOpen(true)}
+        onOpenGit={()=>setGitOpen(true)}
       />
       <div onMouseDown={resizeLeft} style={{width:4,cursor:'ew-resize',flexShrink:0}}/>
     </div>;
@@ -507,7 +638,7 @@ const App:React.FC=()=>{
   // Precompute messages
   var msgList = null;
   if (!act || act.messages.length===0) {
-    msgList = <div className="empty-state"><div className="empty-state-icon">✦</div><div className="empty-state-title">{t(lang,'chat.emptyTitle')}</div><div className="empty-state-desc">{t(lang,'chat.emptyDesc')}</div></div>;
+    msgList = <div className="empty-state"><div className="empty-state-icon">P</div><div className="empty-state-title">{t(lang,'chat.emptyTitle')}</div><div className="empty-state-desc">{t(lang,'chat.emptyDesc')}</div></div>;
   } else {
     msgList = act.messages.map((m:any,i:number)=>{
       var isLast=i===act.messages.length-1;
@@ -523,7 +654,7 @@ const App:React.FC=()=>{
         <div dangerouslySetInnerHTML={{__html:md(m.content)}}/>
         {dlEl}
         {isLast&&<div className="msg-actions">
-          <button className="msg-act-btn" title="Copy" onClick={()=>cp(m.content)}>{cid===m.content.slice(0,20)?'✓':'⧉'}</button>
+          <button className="msg-act-btn" title="Copy" onClick={()=>cp(m.content)}>{cid===m.content.slice(0,20)?'OK':'Copy'}</button>
           <button className="msg-act-btn" title="Retry" onClick={rg}>↻</button>
           <button className="msg-act-btn" title="Branch" onClick={br}>⑂</button>
         </div>}
@@ -582,6 +713,7 @@ const App:React.FC=()=>{
     {settingsEl}
     {cmdEl}
     {labOpen && <StandaloneLab onClose={()=>setLabOpen(false)}/>}
+    {gitOpen && <GitPopup onClose={()=>setGitOpen(false)}/>}
     <LoginModal/>
     {/* ── Claude Code-style Permission Dialog ── */}
     {permReq&&<div className="perm-dialog" onClick={()=>{var api=window.electronAPI;if(api)api.rejectPermission(permReq.id);setPermReq(null)}}>

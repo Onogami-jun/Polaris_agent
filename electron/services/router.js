@@ -103,6 +103,14 @@ async function executeTool(name, args, onExec) {
     if (onExec) onExec({ tool: name, status: 'error', detail: 'Tool not found' });
     return { success: false, error: 'Unknown tool: ' + name };
   }
+  // ★ Thread GitHub token to git tools
+  if (tool.category === 'git') {
+    try {
+      const result = await tool.execute(args, _ghToken || '');
+      if (onExec) onExec({ tool: name, status: result.confirmation_required ? 'running' : (result.success ? 'done' : 'error'), detail: result.confirmation_required ? 'Waiting for user approval...' : ((result.result || result.error || '').slice(0, 120)) });
+      return result;
+    } catch (e) { return { success: false, error: e.message }; }
+  }
   // ★ Use shared ToolExecutor so confirms work across calls
   try {
     const result = await toolExec.execute(name, args);
@@ -522,9 +530,12 @@ async function qualityCheck(userMessage, messages, bestResponse, latestContent, 
    CORE: executeQuery
    ══════════════════════════════════════════════════════════ */
 
+var _ghToken = '';
+
 async function executeQuery(text, strategy, systemPrompt, images, onStreamChunk, apiKeys = {}) {
   const startTime = Date.now();
   const apiKey = apiKeys.deepseek || apiKeys.anthropic || getApiKey();
+  _ghToken = apiKeys.github || '';
   const tid = logger.newTraceId();
   logger.info('Request received', { tid, text: text.slice(0, 80) });
 

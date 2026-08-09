@@ -140,7 +140,7 @@ ipcMain.handle('polaris:queryStream', async (event, { text, strategy, systemProm
   }
   var oc = function(data) { if (win && !win.isDestroyed()) win.webContents.send('polaris:stream-chunk', data); };
   try {
-    var r = await executeQuery(text, strategy, systemPrompt, images, oc, { deepseek:key, language:language || 'zh-CN' });
+    var r = await executeQuery(text, strategy, systemPrompt, images, oc, { deepseek:key, language:language || 'zh-CN', github:(apiKeys && apiKeys.github) || '' });
     if (win && !win.isDestroyed()) win.webContents.send('polaris:stream-end', r);
     return r;
   } catch (e) {
@@ -156,6 +156,27 @@ ipcMain.handle('auth:unlock', async (_e, { userId }) => {
   security.auditLog('auth', 'unlock', 'User: ' + userId);
   return { success: !!getKey() };
 });
+// IPC: GitHub OAuth login (device flow)
+ipcMain.handle('auth:githubLogin', async (_e, { token, user }) => {
+  try {
+    _authUserId = user.id;
+    // Store the GitHub token in settings for git ops
+    if (win && !win.isDestroyed()) {
+      win.webContents.send('polaris:github-token', { token, user });
+    }
+    // Use built-in key as fallback for AI features
+    var vaultGet = require('./services/secrets').get;
+    var builtinKey = vaultGet('deepseek_api_key');
+    if (builtinKey) setKey(builtinKey);
+    security.createAuthSession(user.id);
+    security.auditLog('auth', 'githubLogin', 'User: ' + user.login);
+    console.log('[Auth] GitHub login:', user.login);
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+});
+
 ipcMain.handle('auth:lock', () => {
   _authUserId = null; setKey(null);
   security.destroyAuthSession();

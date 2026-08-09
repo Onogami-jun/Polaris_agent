@@ -53,6 +53,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   emailForgotPassword: (email) => ipcRenderer.invoke('email:forgotPassword', { email }),
   authUnlock: (userId) => ipcRenderer.invoke('auth:unlock', { userId }),
   authLock: () => ipcRenderer.invoke('auth:lock'),
+  authGithubLogin: (data) => ipcRenderer.invoke('auth:githubLogin', data),
   authAdminResetPassword: (email, newPassword) => ipcRenderer.invoke('auth:adminResetPassword', { email, newPassword }),
   authAdminConfirmUser: (email) => ipcRenderer.invoke('auth:adminConfirmUser', { email }),
   authAdminCreateUser: (email, password, displayName) => ipcRenderer.invoke('auth:adminCreateUser', { email, password, displayName }),

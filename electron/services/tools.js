@@ -367,7 +367,6 @@ except Exception as e:
       try {
         const fs = require('fs');
         const path = require('path');
-        // Safety: refuse to write to system directories
         const unsafe = /^(\/etc|\/bin|\/sbin|\/usr\/bin|\/usr\/sbin|\/boot|C:\\Windows|C:\\Program Files)/i;
         if (unsafe.test(filepath)) return { success: false, error: '安全限制：不能写入系统目录' };
         const dir = path.dirname(filepath);
@@ -375,6 +374,78 @@ except Exception as e:
         fs.writeFileSync(filepath, content);
         return { success: true, result: '已写入: ' + filepath, path: filepath, bytes: Buffer.byteLength(content, 'utf8') };
       } catch (e) { return { success: false, error: e.message }; }
+    }
+  },
+
+  // ── Git / GitHub tools (PR workflow) ──
+  git_clone: {
+    name: 'Git Clone',
+    description: '克隆GitHub仓库到本地。参数: url, branch(可选), targetDir(可选)',
+    requires_confirm: false,
+    category: 'git',
+    execute: async (params, ghToken) => {
+      const { gitOps } = require('./git_ops');
+      return gitOps.clone(params, ghToken);
+    }
+  },
+  git_status: {
+    name: 'Git Status',
+    description: '查看仓库当前状态。参数: dir（仓库路径）',
+    requires_confirm: false,
+    category: 'git',
+    execute: async (params) => {
+      const { gitOps } = require('./git_ops');
+      return gitOps.status(params);
+    }
+  },
+  git_branch: {
+    name: 'Git Branch',
+    description: '创建并切换到新分支。参数: dir, name（分支名）',
+    requires_confirm: false,
+    category: 'git',
+    execute: async (params) => {
+      const { gitOps } = require('./git_ops');
+      return gitOps.branch(params);
+    }
+  },
+  git_commit: {
+    name: 'Git Commit',
+    description: '暂存并提交更改。参数: dir, message（提交信息）, files(可选，默认所有文件)',
+    requires_confirm: true,
+    category: 'git',
+    execute: async (params) => {
+      const { gitOps } = require('./git_ops');
+      return gitOps.commit(params);
+    }
+  },
+  git_push: {
+    name: 'Git Push',
+    description: '推送分支到远程仓库。参数: dir, branch(可选)',
+    requires_confirm: true,
+    category: 'git',
+    execute: async (params, ghToken) => {
+      const { gitOps } = require('./git_ops');
+      return gitOps.push(params, ghToken);
+    }
+  },
+  git_create_pr: {
+    name: 'Create Pull Request',
+    description: '创建GitHub Pull Request。参数: dir, title, body(可选), base(可选), head(可选)',
+    requires_confirm: true,
+    category: 'git',
+    execute: async (params, ghToken) => {
+      const { gitOps } = require('./git_ops');
+      return gitOps.createPR(params, ghToken);
+    }
+  },
+  git_pull: {
+    name: 'Git Pull',
+    description: '拉取远程仓库最新更改。参数: dir',
+    requires_confirm: false,
+    category: 'git',
+    execute: async (params) => {
+      const { gitOps } = require('./git_ops');
+      return gitOps.pull(params);
     }
   },
 };

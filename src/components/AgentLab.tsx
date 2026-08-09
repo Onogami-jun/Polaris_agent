@@ -39,13 +39,13 @@ export function StandaloneLab({ onClose }: { onClose: () => void }) {
   };
   const labL = labLabels[lang] || labLabels['zh-CN'];
   const sections = [
-    { id: 'dashboard',   label: labL.dashboard,     icon: '📊' },
-    { id: 'diagnostics', label: labL.diagnostics,    icon: '🧠' },
-    { id: 'benchmark',   label: labL.benchmark,      icon: '⚡' },
-    { id: 'experiments', label: labL.experiments,    icon: '🔬' },
-    { id: 'sandbox',     label: labL.sandbox,        icon: '🐍' },
-    { id: 'memory',      label: labL.memory,         icon: '📝' },
-    { id: 'logs',        label: labL.logs,            icon: '📋' },
+    { id: 'dashboard',   label: labL.dashboard },
+    { id: 'diagnostics', label: labL.diagnostics },
+    { id: 'benchmark',   label: labL.benchmark },
+    { id: 'experiments', label: labL.experiments },
+    { id: 'sandbox',     label: labL.sandbox },
+    { id: 'memory',      label: labL.memory },
+    { id: 'logs',        label: labL.logs },
   ];
 
   useEffect(() => {
@@ -113,7 +113,7 @@ export function StandaloneLab({ onClose }: { onClose: () => void }) {
               <button key={sec.id} onClick={() => setActiveSection(sec.id)}
                 className={'w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all ' +
                   (activeSection === sec.id ? 'bg-primary/10 text-primary font-medium' : 'text-muted-foreground hover:text-foreground hover:bg-muted')}>
-                <span>{sec.icon}</span><span>{sec.label}</span>
+                <span>{sec.label}</span>
               </button>
             ))}
           </div>
@@ -262,7 +262,7 @@ function ExperimentsSection({ expHistory, onRefresh }: any) {
         </div>
       ) : (
         <div className="text-center py-12 text-muted-foreground">
-          <div className="text-3xl mb-3">🔬</div>
+          <div className="text-3xl mb-3 text-muted-foreground/30">—</div>
           <p className="text-sm">No experiments yet.</p>
           <p className="text-xs mt-1 opacity-60">Run batch experiments in the chat to see results here.</p>
         </div>

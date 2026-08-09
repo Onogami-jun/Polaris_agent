@@ -8,6 +8,7 @@ export interface PolarUser {
   displayName: string;
   avatar: string;
   plan: 'free' | 'pro' | 'enterprise';
+  loginMethod: string;
   createdAt: string;
   lastSignIn: string | null;
 }
@@ -75,6 +76,23 @@ export const registerUser = createAsyncThunk('auth/register', async ({ email, pa
   return getCurrentUser();
 });
 
+export const githubLogin = createAsyncThunk('auth/githubLogin', async ({ token, user: ghUser }: { token: string; user: { id: string; email: string; displayName: string; avatar: string; login: string } }) => {
+  if (typeof window !== 'undefined' && (window as any).electronAPI) {
+    await (window as any).electronAPI.authGithubLogin({ token, user: { id: ghUser.id, email: ghUser.email, displayName: ghUser.displayName, avatar: ghUser.avatar, login: ghUser.login } });
+  }
+  localStorage.setItem('polaris_github_user', JSON.stringify({ id: ghUser.id, login: ghUser.login, avatar: ghUser.avatar, displayName: ghUser.displayName }));
+  return {
+    id: ghUser.id,
+    email: ghUser.email,
+    displayName: ghUser.displayName,
+    avatar: ghUser.avatar,
+    loginMethod: 'GitHub',
+    plan: 'free' as const,
+    createdAt: new Date().toISOString(),
+    lastSignIn: new Date().toISOString(),
+  };
+});
+
 export const logoutUser = createAsyncThunk('auth/logout', async () => {
   await supabase.auth.signOut();
   // Lock API key
@@ -125,13 +143,16 @@ const authSlice = createSlice({
     // Register
     builder.addCase(registerUser.pending, (s) => { s.loginError = null; });
     builder.addCase(registerUser.fulfilled, (s, a: PayloadAction<PolarUser | null>) => {
-      if (a.payload) {
-        s.user = a.payload; s.showLoginModal = false; s.tokenLimitReached = false;
-      } else {
-        s.loginError = '注册成功，但无法自动登录。如果收不到验证邮件，请在 Supabase Dashboard → Authentication → Settings 中关闭"Confirm email"。';
-      }
+      if (a.payload) { s.user = a.payload; s.showLoginModal = false; s.tokenLimitReached = false; }
+      else { s.loginError = '注册成功，但无法自动登录。'; }
     });
     builder.addCase(registerUser.rejected, (s, a) => { s.loginError = a.payload as string; });
+    // GitHub Login
+    builder.addCase(githubLogin.pending, (s) => { s.loginError = null; });
+    builder.addCase(githubLogin.fulfilled, (s, a: PayloadAction<PolarUser | null>) => {
+      if (a.payload) { s.user = a.payload; s.showLoginModal = false; s.tokenLimitReached = false; }
+    });
+    builder.addCase(githubLogin.rejected, (s, a) => { s.loginError = a.payload as string; });
     // Logout
     builder.addCase(logoutUser.fulfilled, (s) => { s.user = null; });
   },

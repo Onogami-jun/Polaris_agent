@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useAppDispatch, useAppSelector } from '../store';
-import { closeLoginModal, clearLoginError, loginUser } from '../store/authSlice';
+import { closeLoginModal, clearLoginError, loginUser, githubLogin } from '../store/authSlice';
 import { supabase, getCurrentUser } from '../lib/supabase';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -196,6 +196,68 @@ export const LoginModal: React.FC = () => {
     sendCode('register');
   };
 
+  /* ── Handle GitHub Device Flow ── */
+  const doGithubLogin = async () => {
+    setBusy(true); setMsg('正在生成设备码...'); setVError('');
+    try {
+      // Step 1: Request device code from GitHub
+      var resp = await fetch('https://github.com/login/device/code', {
+        method: 'POST',
+        headers: {'Accept':'application/json','Content-Type':'application/json'},
+        body: JSON.stringify({client_id:'Iv23lio2IsEJbRXXMfH0', scope:'repo,user,read:org'}),
+      });
+      var data = await resp.json();
+      if (data.error) { setVError(data.error_description||data.error); setBusy(false); return; }
+
+      var deviceCode = data.device_code;
+      var userCode = data.user_code;
+      var verifyUri = data.verification_uri;
+      var interval = data.interval || 5;
+
+      setMsg('请在浏览器中打开: ' + verifyUri + '\n输入设备码: ' + userCode);
+      (window as any).__gh_device = {deviceCode, interval};
+
+      // Step 2: Poll for token
+      var attempts = 0;
+      var maxAttempts = 60;
+      var poll = async function() {
+        if (attempts >= maxAttempts) { setVError('登录超时，请重试'); setBusy(false); return; }
+        attempts++;
+        try {
+          var pr = await fetch('https://github.com/login/oauth/access_token', {
+            method: 'POST',
+            headers: {'Accept':'application/json','Content-Type':'application/json'},
+            body: JSON.stringify({client_id:'Iv23lio2IsEJbRXXMfH0', device_code:deviceCode, grant_type:'urn:ietf:params:oauth:grant-type:device_code'}),
+          });
+          var pd = await pr.json();
+          if (pd.access_token) {
+            // Got the token → fetch user info
+            var ur = await fetch('https://api.github.com/user', {headers:{'Authorization':'Bearer '+pd.access_token,'Accept':'application/json'}});
+            var userData = await ur.json();
+            setBusy(false); setMsg('');
+
+            // Login via authSlice with GitHub user
+            var api = window.electronAPI;
+            if (api) {
+              await api.authGithubLogin({token: pd.access_token, user: {id:'gh_'+userData.id, email:userData.login+'@github', displayName:userData.name||userData.login, avatar:userData.avatar_url, login:userData.login}});
+            }
+            // Update Redux store with GitHub user
+            d(githubLogin({ token: pd.access_token, user: { id: 'gh_' + userData.id, email: userData.login + '@github', displayName: userData.name || userData.login, avatar: userData.avatar_url, login: userData.login } }));
+            d(closeLoginModal());
+            return;
+          }
+          if (pd.error === 'authorization_pending') {
+            setTimeout(poll, interval * 1000);
+          } else {
+            setVError(pd.error_description||pd.error||'Token request failed');
+            setBusy(false);
+          }
+        } catch(e) { setTimeout(poll, interval * 1000); }
+      };
+      setTimeout(poll, interval * 1000);
+    } catch(e:any) { setVError(e.message||'网络错误'); setBusy(false); }
+  };
+
   /* ── Handle forgot ── */
   const doForgot = (e: React.FormEvent) => {
     e.preventDefault();
@@ -270,6 +332,7 @@ export const LoginModal: React.FC = () => {
         <div className="flex border-b border-border">
           <button className={'flex-1 py-3.5 text-sm font-medium transition-colors ' + (tab==='login'?'text-foreground border-b-2 border-primary':'text-muted-foreground hover:text-foreground')} onClick={()=>{setTab('login');d(clearLoginError());setMsg('');setVError('');}}>登录</button>
           <button className={'flex-1 py-3.5 text-sm font-medium transition-colors ' + (tab==='register'?'text-foreground border-b-2 border-primary':'text-muted-foreground hover:text-foreground')} onClick={()=>{setTab('register');d(clearLoginError());setMsg('');setVError('');}}>注册</button>
+          <button className={'flex-1 py-3.5 text-sm font-medium transition-colors ' + (tab==='github'?'text-foreground border-b-2 border-primary':'text-muted-foreground hover:text-foreground')} onClick={()=>{setTab('github');d(clearLoginError());setMsg('');setVError('');}}>GitHub</button>
         </div>
 
         <form onSubmit={tab==='login'?doLogin:tab==='register'?doRegister:doForgot} className="p-6 flex flex-col gap-4">
@@ -296,7 +359,17 @@ export const LoginModal: React.FC = () => {
             </div>
           )}
 
-          <div className="space-y-1.5">
+          {tab === 'github' && (
+            <div className="text-center py-4 space-y-4">
+              <svg width="40" height="40" viewBox="0 0 16 16" fill="currentColor" className="mx-auto text-foreground"><path fillRule="evenodd" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+              <div className="text-sm font-medium text-foreground">GitHub 设备码登录</div>
+              <p className="text-[11px] text-muted-foreground">无需输入密码，使用 GitHub 账号授权登录。</p>
+              <p className="text-[10px] text-muted-foreground">登录后可使用 Git 仓库操作和创建 PR。</p>
+              <Button className="h-10 w-full" onClick={doGithubLogin} disabled={busy}>{busy?'正在等待授权...':'使用 GitHub 登录'}</Button>
+            </div>
+          )}
+
+          {tab !== 'github' && <div className="space-y-1.5">
             <label className="text-xs font-medium text-muted-foreground">邮箱</label>
             <Input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com" className="h-10" autoFocus />
           </div>
