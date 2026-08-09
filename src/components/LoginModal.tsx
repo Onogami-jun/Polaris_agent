@@ -199,6 +199,7 @@ export const LoginModal: React.FC = () => {
 
   /* ── Handle GitHub Device Flow ── */
   const doGithubLogin = async () => {
+    var api = window.electronAPI;
     setBusy(true); setMsg('正在生成设备码...'); setVError('');
     try {
       // Step 1: Request device code from GitHub
@@ -215,7 +216,9 @@ export const LoginModal: React.FC = () => {
       var verifyUri = data.verification_uri;
       var interval = data.interval || 5;
 
-      setMsg('请在浏览器中打开: ' + verifyUri + '\n输入设备码: ' + userCode);
+      // Auto-open browser with the device activation page
+      if (api) { api.openExternal(verifyUri).catch(function(){}); }
+      setMsg('浏览器已自动打开。请在打开的页面中输入验证码: ' + userCode + '\n\n若浏览器未自动打开，请手动访问: ' + verifyUri);
       (window as any).__gh_device = {deviceCode, interval};
 
       // Step 2: Poll for token

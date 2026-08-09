@@ -295,6 +295,9 @@ ipcMain.handle('auth:adminCreateUser', async (_e, { email, password, displayName
   }
 });
 
+// IPC: Open URL in browser
+ipcMain.handle('open-external', (_e, url) => { shell.openExternal(url); return true; });
+
 // IPC: Window
 ipcMain.handle('window:minimize', function() { if (win) win.minimize(); });
 ipcMain.handle('window:maximize', function() { if (win) { if (win.isMaximized()) win.restore(); else win.maximize(); } });

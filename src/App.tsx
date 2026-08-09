@@ -190,9 +190,12 @@ function LeftSidebar({sessions,activeId,onSelect,onNew,onDelete,onOpenSettings,o
   return(
     <div style={{width:width}} className="shrink-0 bg-card border-r border-border flex flex-col h-full overflow-hidden">
       {/* ── Git bar ── */}
-      <button onClick={onOpenGit} className="w-full flex items-center gap-2 px-3 py-2 hover:bg-muted/50 transition-colors border-b border-border">
-        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3"><path d="M8 2v2.5M8 4.5a2 2 0 100 4 2 2 0 000-4zM4 11v2.5M12 11v2.5M8 8.5v4"/><circle cx="4" cy="13.5" r="1.3"/><circle cx="12" cy="13.5" r="1.3"/><path d="M4 11c0-1.5 1-2.5 1.5-2.5M12 11c0-1.5-1-2.5-1.5-2.5"/></svg>
-        <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider font-mono">Git</span>
+      <button onClick={onOpenGit} className="w-full flex items-center justify-between px-3 py-2 hover:bg-muted/50 transition-colors border-b border-border">
+        <div className="flex items-center gap-2">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3"><path d="M8 2v2.5M8 4.5a2 2 0 100 4 2 2 0 000-4zM4 11v2.5M12 11v2.5M8 8.5v4"/><circle cx="4" cy="13.5" r="1.3"/><circle cx="12" cy="13.5" r="1.3"/><path d="M4 11c0-1.5 1-2.5 1.5-2.5M12 11c0-1.5-1-2.5-1.5-2.5"/></svg>
+          <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider font-mono">Git</span>
+        </div>
+        <span className="text-[8px] font-mono text-muted-foreground/40 uppercase tracking-wider">Open</span>
       </button>
       {/* ── Sessions ── */}
       <div className="flex items-center justify-between px-3 py-2">
@@ -265,7 +268,9 @@ function LeftSidebar({sessions,activeId,onSelect,onNew,onDelete,onOpenSettings,o
 /* ── Git Panel (collapsible mini-UI inside left sidebar) ── */
 /* ── Git Popup (standalone modal, opened from sidebar Git button) ── */
 function GitPopup({onClose}:{onClose:()=>void}){
+  const d = useAppDispatch();
   const lang = useAppSelector(s=>s.chat.settings.language);
+  const ghToken = useAppSelector(s=>s.chat.settings.apiKeys.github);
   const [repoDir, setRepoDir] = useState(localStorage.getItem('polaris_git_dir')||'');
   const [branch, setBranch] = useState('');
   const [files, setFiles] = useState<string[]>([]);
@@ -334,8 +339,17 @@ function GitPopup({onClose}:{onClose:()=>void}){
         </div>
         {/* Body */}
         <div className="flex-1 overflow-y-auto p-5 space-y-4 min-h-[260px]">
-          {/* Clone input */}
-          {!repoDir ? (
+          {/* No GitHub token → Connect GitHub prompt */}
+          {!ghToken ? (
+            <div className="text-center py-10 space-y-4">
+              <svg width="36" height="36" viewBox="0 0 16 16" fill="currentColor" className="mx-auto text-muted-foreground/30"><path fillRule="evenodd" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+              <div>
+                <p className="text-sm text-foreground font-medium">Connect GitHub Account</p>
+                <p className="text-[11px] text-muted-foreground mt-1">Use Device Flow — no password needed. A one-time code will be shown on screen for you to enter on github.com.</p>
+              </div>
+              <button className="px-6 py-2.5 rounded-lg bg-[#24292f] hover:bg-[#1b1f23] text-xs text-white font-medium transition-colors" onClick={()=>{onClose();d(openLoginModal());setTimeout(()=>{var el=document.querySelector('[data-tab="github"]');if(el)(el as HTMLElement).click()},100)}}>Connect GitHub Account</button>
+            </div>
+          ) : !repoDir ? (
             <div className="space-y-3">
               <p className="text-xs text-muted-foreground">Clone a repository to enable version control.</p>
               <div className="flex gap-2">
