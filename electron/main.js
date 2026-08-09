@@ -270,6 +270,7 @@ ipcMain.handle('auth:unlock', async (_e, { userId }) => {
 ipcMain.handle('auth:githubLogin', async (_e, { token, user }) => {
   try {
     _authUserId = user.id;
+    _mainGhToken = token;
     // Store the GitHub token in settings for git ops
     if (win && !win.isDestroyed()) {
       win.webContents.send('polaris:github-token', { token, user });

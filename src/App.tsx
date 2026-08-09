@@ -446,7 +446,7 @@ function GitPopup({onClose}:{onClose:()=>void}){
                 <div className="space-y-2">
                   <input className="w-full bg-muted border border-border rounded-lg px-3 py-2.5 text-xs font-mono outline-none focus:border-primary/50" placeholder="Commit message" value={commitMsg} onChange={e=>setCommitMsg(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')handleCommit()}} autoFocus/>
                   <div className="flex gap-2">
-                    <button className="flex-1 py-2 rounded-lg bg-muted hover:bg-muted/70 text-xs text-muted-foreground font-mono transition-colors" onClick={()=>setShowCommit(false)}>{t(lang,'git.cancel')}</button>
+                    <button className="flex-1 py-2 rounded-lg bg-muted hover:bg-muted/70 text-xs text-muted-foreground font-mono transition-colors" onClick={function(){setShowCommit(false)}}>{t(lang,'git.cancel')}</button>
                     <button className="flex-1 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-xs text-white font-medium transition-colors" onClick={handleCommit} disabled={loading||!commitMsg.trim()}>{loading?t(lang,'git.committing'):t(lang,'git.commit')}}</button>
                   </div>
                 </div>
