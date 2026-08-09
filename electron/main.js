@@ -212,7 +212,7 @@ function exchangeCodeForToken(code, clientId, port) {
     const https = require('https');
     const body = JSON.stringify({
       client_id: clientId,
-      client_secret: '', // Public OAuth App — empty is fine
+      client_secret: require('./services/secrets').get('github_client_secret') || '',
       code: code,
       redirect_uri: 'http://127.0.0.1:' + port + '/callback',
     });

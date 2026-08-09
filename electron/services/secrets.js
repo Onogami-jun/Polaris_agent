@@ -14,19 +14,24 @@ const VAULT_SEED = 'polaris_solver_bq7x_2026_agent_vault_k9';
 // To regenerate, change the keys below and run: node -e "require('./electron/services/secrets').encryptAll()"
 const VAULT = {
   deepseek_api_key: {
-    iv:   'dd92ccb9dac16038a7a8c626',
-    data: '3cf4a8818b97a4f1331bad787cdbfdc9e043bb15447f4120d792193a69a6287e742577',
-    tag:  'da7e70b62d65c351ea0eeba1284b0af7',
+    iv:   'fa4e5cbd781fb312cd268902',
+    data: '41b293f6f1d0a8df45b4e3c2b14dca455e0838f94af8a10ad5703cf04b9b662c74a4a5',
+    tag:  'd101ce30ba9e7438dc032ec3bc48501c',
   },
   supabase_service_role: {
-    iv:   '0747d60af59139471769ca60',
-    data: '4ff15280a0726cd6fa890c53dd7ded39104a9a57de279c33edf0922f9ea32c19669cf11be489be0982',
-    tag:  '11d65aad6640757703250f470cc43d54',
+    iv:   '8797ad8b19e7f9b2802af892',
+    data: '3f68051aa8ea7575f72d543ec54bf14a26815196f0d2c20fae624170673d737658ce56aae4d22fb162',
+    tag:  'b3fe5b7d2193bc61eb86ef1f03b77787',
   },
   smtp_password: {
-    iv:   '5dd003360cfe51c8b36c48eb',
-    data: '0efb6458d1533ef1642374b2debbb5a0',
-    tag:  'ab17bde1f322833caa2d57b8f4cbf2cd',
+    iv:   'c96e407b330b539be3785782',
+    data: '9b2be79ccf99e32c1acd7e0aec9bae94',
+    tag:  'd561033d6141aa10bdb4cba3d7f90eeb',
+  },
+  github_client_secret: {
+    iv:   '7039080ca78a42226d08f970',
+    data: '115c5eeb6b5aee913d1089da9bc47bf5b06ef8aebb3ed999f17eadd37a1570644e4e17429d590584',
+    tag:  '8581fdd5f9d920ea1daa572dcce819cb',
   },
 };
 
