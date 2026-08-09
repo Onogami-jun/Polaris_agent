@@ -431,22 +431,35 @@ except Exception as e:
   git_create_pr: {
     name: 'Create Pull Request',
     description: '创建GitHub Pull Request。参数: dir, title, body(可选), base(可选), head(可选)',
-    requires_confirm: true,
-    category: 'git',
-    execute: async (params, ghToken) => {
-      const { gitOps } = require('./git_ops');
-      return gitOps.createPR(params, ghToken);
-    }
+    requires_confirm: true, category: 'git',
+    execute: async (params, ghToken) => { const { gitOps } = require('./git_ops'); return gitOps.createPR(params, ghToken); }
   },
-  git_pull: {
-    name: 'Git Pull',
-    description: '拉取远程仓库最新更改。参数: dir',
-    requires_confirm: false,
-    category: 'git',
-    execute: async (params) => {
-      const { gitOps } = require('./git_ops');
-      return gitOps.pull(params);
-    }
+  git_pull: { name: 'Git Pull', description: '拉取远程仓库最新更改。参数: dir', requires_confirm: false, category: 'git',
+    execute: async (params) => { const { gitOps } = require('./git_ops'); return gitOps.pull(params); }
+  },
+  git_merge_pr: { name: 'Merge PR', description: '合并GitHub Pull Request。参数: dir, prNumber, method(可选: merge/squash/rebase)', requires_confirm: true, category: 'git',
+    execute: async (params, ghToken) => { const { gitOps } = require('./git_ops'); return gitOps.mergePR(params, ghToken); }
+  },
+  git_list_prs: { name: 'List PRs', description: '查看仓库Pull Request列表。参数: dir, state(可选: open/closed)', requires_confirm: false, category: 'git',
+    execute: async (params, ghToken) => { const { gitOps } = require('./git_ops'); return gitOps.listPRs(params, ghToken); }
+  },
+  git_diff: { name: 'Git Diff', description: '查看暂存和未暂存的diff。参数: dir', requires_confirm: false, category: 'git',
+    execute: async (params) => { const { gitOps } = require('./git_ops'); return gitOps.getDiff(params); }
+  },
+  git_pr_diff: { name: 'PR Diff', description: '查看Pull Request的代码差异。参数: dir, prNumber', requires_confirm: false, category: 'git',
+    execute: async (params, ghToken) => { const { gitOps } = require('./git_ops'); return gitOps.getPRDiff(params, ghToken); }
+  },
+  git_list_issues: { name: 'List Issues', description: '查看仓库Issue列表。参数: dir, state(可选), labels(可选)', requires_confirm: false, category: 'git',
+    execute: async (params, ghToken) => { const { gitOps } = require('./git_ops'); return gitOps.listIssues(params, ghToken); }
+  },
+  git_create_issue: { name: 'Create Issue', description: '创建GitHub Issue。参数: dir, title, body(可选), labels(可选)', requires_confirm: true, category: 'git',
+    execute: async (params, ghToken) => { const { gitOps } = require('./git_ops'); return gitOps.createIssue(params, ghToken); }
+  },
+  git_workflows: { name: 'CI Workflows', description: '查看仓库GitHub Actions运行状态。参数: dir', requires_confirm: false, category: 'git',
+    execute: async (params, ghToken) => { const { gitOps } = require('./git_ops'); return gitOps.listWorkflows(params, ghToken); }
+  },
+  git_release: { name: 'Create Release', description: '创建Tag和GitHub Release。参数: dir, tag, name(可选), body(可选)', requires_confirm: true, category: 'git',
+    execute: async (params, ghToken) => { const { gitOps } = require('./git_ops'); return gitOps.createRelease(params, ghToken); }
   },
 };
 

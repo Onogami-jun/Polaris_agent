@@ -281,6 +281,12 @@ function GitPopup({onClose}:{onClose:()=>void}){
   const [showCommit, setShowCommit] = useState(false);
   const [statusMsg, setStatusMsg] = useState('');
   const [pushMsg, setPushMsg] = useState('');
+  const [prs, setPrs] = useState<any[]>([]);
+  const [issues, setIssues] = useState<any[]>([]);
+  const [workflows, setWorkflows] = useState<any[]>([]);
+  const [showPRs, setShowPRs] = useState(false);
+  const [showIssues, setShowIssues] = useState(false);
+  const [showCI, setShowCI] = useState(false);
 
   const refreshStatus = useCallback(() => {
     if (!repoDir) return;
@@ -324,6 +330,25 @@ function GitPopup({onClose}:{onClose:()=>void}){
     const r = await api.toolsExecute({tool:'git_commit', params:{dir:repoDir, message:commitMsg}});
     if (r.success) { setCommitMsg(''); setShowCommit(false); refreshStatus(); }
     else { setStatusMsg(r.error||'Commit failed'); }
+    setLoading(false);
+  };
+
+  const loadPRs = async () => { setLoading(true); setShowPRs(!showPRs); if (showPRs) { setLoading(false); return; }
+    const api = window.electronAPI; if (!api) return;
+    const r = await api.toolsExecute({tool:'git_list_prs', params:{dir:repoDir}});
+    if (r.success) setPrs(r.prs||[]); else setStatusMsg(r.error||'');
+    setLoading(false);
+  };
+  const loadIssues = async () => { setLoading(true); setShowIssues(!showIssues); if (showIssues) { setLoading(false); return; }
+    const api = window.electronAPI; if (!api) return;
+    const r = await api.toolsExecute({tool:'git_list_issues', params:{dir:repoDir}});
+    if (r.success) setIssues(r.issues||[]); else setStatusMsg(r.error||'');
+    setLoading(false);
+  };
+  const loadCI = async () => { setLoading(true); setShowCI(!showCI); if (showCI) { setLoading(false); return; }
+    const api = window.electronAPI; if (!api) return;
+    const r = await api.toolsExecute({tool:'git_workflows', params:{dir:repoDir}});
+    if (r.success) setWorkflows(r.runs||[]); else setStatusMsg(r.error||'');
     setLoading(false);
   };
 
@@ -401,6 +426,25 @@ function GitPopup({onClose}:{onClose:()=>void}){
                 <div className="text-[10px] font-mono p-2.5 rounded-lg bg-muted/30 border border-border/50 text-muted-foreground truncate">{pushMsg}</div>
               )}
               {statusMsg && <div className="text-[10px] text-red-400 font-mono">{statusMsg}</div>}
+
+              {/* PRs / Issues / CI quick access */}
+              <div className="flex gap-1.5 pt-1">
+                <button onClick={loadPRs} className="flex-1 py-1.5 rounded-md bg-muted/30 hover:bg-muted/50 text-[10px] text-muted-foreground hover:text-foreground font-mono transition-colors">PRs</button>
+                <button onClick={loadIssues} className="flex-1 py-1.5 rounded-md bg-muted/30 hover:bg-muted/50 text-[10px] text-muted-foreground hover:text-foreground font-mono transition-colors">Issues</button>
+                <button onClick={loadCI} className="flex-1 py-1.5 rounded-md bg-muted/30 hover:bg-muted/50 text-[10px] text-muted-foreground hover:text-foreground font-mono transition-colors">CI</button>
+              </div>
+              {showPRs && <div className="max-h-[120px] overflow-y-auto space-y-0.5 rounded-md bg-muted/20 p-2">
+                {prs.length===0 ? <div className="text-[10px] text-muted-foreground/50 text-center py-2">No open PRs</div>
+                : prs.map(function(p:any,i:number){return <div key={i} className="text-[10px] font-mono px-2 py-1 rounded hover:bg-muted/30 flex items-center gap-2"><span className="text-muted-foreground">#{p.number}</span><span className="text-foreground/80 truncate">{p.title}</span><span className={'ml-auto shrink-0 '+(p.state==='open'?'text-emerald-400':'text-red-400')}>{p.state}</span></div>})}
+              </div>}
+              {showIssues && <div className="max-h-[120px] overflow-y-auto space-y-0.5 rounded-md bg-muted/20 p-2">
+                {issues.length===0 ? <div className="text-[10px] text-muted-foreground/50 text-center py-2">No open issues</div>
+                : issues.map(function(iss:any,i:number){return <div key={i} className="text-[10px] font-mono px-2 py-1 rounded hover:bg-muted/30 flex items-center gap-2"><span className="text-muted-foreground">#{iss.number}</span><span className="text-foreground/80 truncate">{iss.title}</span>{iss.labels&&iss.labels.map(function(l:string){return <span key={l} className="text-[8px] px-1 rounded bg-primary/10 text-primary">{l}</span>})}</div>})}
+              </div>}
+              {showCI && <div className="max-h-[120px] overflow-y-auto space-y-0.5 rounded-md bg-muted/20 p-2">
+                {workflows.length===0 ? <div className="text-[10px] text-muted-foreground/50 text-center py-2">No recent runs</div>
+                : workflows.map(function(w:any,i:number){return <div key={i} className="text-[10px] font-mono px-2 py-1 rounded hover:bg-muted/30 flex items-center gap-2"><span className={w.conclusion==='success'?'text-emerald-400':w.conclusion==='failure'?'text-red-400':'text-amber-400'}>O</span><span className="text-foreground/80 truncate">{w.name}</span><span className="ml-auto text-muted-foreground shrink-0">{w.branch}</span></div>})}
+              </div>}
             </div>
           )}
         </div>
