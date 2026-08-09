@@ -183,6 +183,7 @@ function WorkflowView({plan,planProg,planId,execLog,todoSteps,onStopPlan}:any){
 function LeftSidebar({sessions,activeId,onSelect,onNew,onDelete,onOpenSettings,onOpenLab,onOpenGit,width}:any){
   const auth = useAppSelector(s=>s.auth);
   const lang = useAppSelector(s=>s.chat.settings.language);
+  const ghToken = useAppSelector(s=>s.chat.settings.apiKeys.github);
   const d = useAppDispatch();
   const[proOpen,setProOpen]=useState(false);
   const proRef=useRef<HTMLDivElement>(null);
