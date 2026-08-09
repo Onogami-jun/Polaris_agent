@@ -183,6 +183,7 @@ function WorkflowView({plan,planProg,planId,execLog,todoSteps,onStopPlan}:any){
 function LeftSidebar({sessions,activeId,onSelect,onNew,onDelete,onOpenSettings,onOpenLab,onOpenGit,width}:any){
   const auth = useAppSelector(s=>s.auth);
   const lang = useAppSelector(s=>s.chat.settings.language);
+  const ghToken = useAppSelector(s=>s.chat.settings.apiKeys.github);
   const d = useAppDispatch();
   const[proOpen,setProOpen]=useState(false);
   const proRef=useRef<HTMLDivElement>(null);
@@ -195,7 +196,7 @@ function LeftSidebar({sessions,activeId,onSelect,onNew,onDelete,onOpenSettings,o
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3"><path d="M8 2v2.5M8 4.5a2 2 0 100 4 2 2 0 000-4zM4 11v2.5M12 11v2.5M8 8.5v4"/><circle cx="4" cy="13.5" r="1.3"/><circle cx="12" cy="13.5" r="1.3"/><path d="M4 11c0-1.5 1-2.5 1.5-2.5M12 11c0-1.5-1-2.5-1.5-2.5"/></svg>
           <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider font-mono">Git</span>
         </div>
-        <span className="text-[8px] font-mono text-muted-foreground/40 uppercase tracking-wider">Open</span>
+        {ghToken ? <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500"/><span className="text-[8px] font-mono text-emerald-500/60 uppercase tracking-wider">Connected</span></span> : <span className="text-[8px] font-mono text-muted-foreground/40 uppercase tracking-wider">Open</span>}
       </button>
       {/* ── Sessions ── */}
       <div className="flex items-center justify-between px-3 py-2">
@@ -347,7 +348,7 @@ function GitPopup({onClose}:{onClose:()=>void}){
                 <p className="text-sm text-foreground font-medium">Connect GitHub Account</p>
                 <p className="text-[11px] text-muted-foreground mt-1">Use Device Flow — no password needed. A one-time code will be shown on screen for you to enter on github.com.</p>
               </div>
-              <button className="px-6 py-2.5 rounded-lg bg-[#24292f] hover:bg-[#1b1f23] text-xs text-white font-medium transition-colors" onClick={()=>{onClose();d(openLoginModal());setTimeout(()=>{var el=document.querySelector('[data-tab="github"]');if(el)(el as HTMLElement).click()},100)}}>Connect GitHub Account</button>
+              <button className="px-6 py-2.5 rounded-lg bg-[#24292f] hover:bg-[#1b1f23] text-xs text-white font-medium transition-colors" onClick={()=>{onClose();(window as any).__pol_github_tab=true;d(openLoginModal())}}>Connect GitHub Account</button>
             </div>
           ) : !repoDir ? (
             <div className="space-y-3">

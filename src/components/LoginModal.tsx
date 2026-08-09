@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useAppDispatch, useAppSelector } from '../store';
 import { closeLoginModal, clearLoginError, loginUser, githubLogin } from '../store/authSlice';
+import { setApiKey } from '../store/chatSlice';
 import { supabase, getCurrentUser } from '../lib/supabase';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -11,7 +12,7 @@ export const LoginModal: React.FC = () => {
   const auth = useAppSelector(s => s.auth);
   const error = useAppSelector(s => s.auth.loginError);
 
-  const [tab, setTab] = useState<'login' | 'register' | 'forgot'>('login');
+  const [tab, setTab] = useState<'login' | 'register' | 'forgot' | 'github'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
@@ -36,6 +37,7 @@ export const LoginModal: React.FC = () => {
   const[resetEmail,setResetEmail]=useState('');
 
   useEffect(() => { if (!show) { setVStage('input'); setVCode(['','','','','','']); setMsg(''); setVError(''); } }, [show]);
+  useEffect(function(){ if(show&&(window as any).__pol_github_tab){setTab('github');delete (window as any).__pol_github_tab} },[show]);
 
   if (!show) return null;
 
@@ -207,6 +209,8 @@ export const LoginModal: React.FC = () => {
       if (!r || !r.success) { setVError(r?.error || 'Login failed'); setBusy(false); return; }
       // Login via Redux thunk
       d(githubLogin({ token: r.token, user: r.user }));
+      // Save token to Redux settings so sidebar Git bar detects it
+      d(setApiKey({ provider: 'github', key: r.token }));
       // Save token via main process for git operations
       if (api) { api.authGithubLogin({ token: r.token, user: r.user }).catch(function(){}); }
       d(closeLoginModal());
