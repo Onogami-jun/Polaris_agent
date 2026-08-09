@@ -281,12 +281,16 @@ function GitPopup({onClose}:{onClose:()=>void}){
   const [showCommit, setShowCommit] = useState(false);
   const [statusMsg, setStatusMsg] = useState('');
   const [pushMsg, setPushMsg] = useState('');
-  const [prs, setPrs] = useState<any[]>([]);
-  const [issues, setIssues] = useState<any[]>([]);
-  const [workflows, setWorkflows] = useState<any[]>([]);
-  const [showPRs, setShowPRs] = useState(false);
-  const [showIssues, setShowIssues] = useState(false);
-  const [showCI, setShowCI] = useState(false);
+  const [prs, setPrs] = useState<any[]>([]); const [issues, setIssues] = useState<any[]>([]); const [workflows, setWorkflows] = useState<any[]>([]);
+  const [showPRs, setShowPRs] = useState(false); const [showIssues, setShowIssues] = useState(false); const [showCI, setShowCI] = useState(false);
+  const [repos, setRepos] = useState<any[]>([]); const [reposLoading, setReposLoading] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+
+  // Auto-fetch repos when popup opens
+  useEffect(function(){ if (ghToken) { setReposLoading(true); var api = window.electronAPI; if (api) { api.toolsExecute({tool:'git_list_repos', params:{}}).then(function(r){ if (r.success) setRepos(r.repos||[]); setReposLoading(false); }).catch(function(){ setReposLoading(false); }); } } }, [ghToken]);
+
+  // Insert prompt into chat input and close popup
+  var askAgent = function(prompt: string) { onClose(); var ta = document.querySelector('textarea'); if (ta) { var setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype,'value')?.set; if (setter) { setter.call(ta, prompt); ta.dispatchEvent(new Event('input',{bubbles:true})); } else { ta.value = prompt; ta.dispatchEvent(new Event('input',{bubbles:true})); } ta.focus(); } };
 
   const refreshStatus = useCallback(() => {
     if (!repoDir) return;
@@ -300,12 +304,13 @@ function GitPopup({onClose}:{onClose:()=>void}){
 
   useEffect(() => { refreshStatus(); const t = setInterval(refreshStatus, 30000); return () => clearInterval(t); }, [refreshStatus]);
 
-  const handleClone = async () => {
-    if (!cloneUrl.includes('github.com')) return;
-    setLoading(true);
+  const handleClone = async (url?: string) => {
+    var targetUrl = url || cloneUrl;
+    if (!targetUrl || !targetUrl.includes('github.com')) return;
+    setLoading(true); setStatusMsg('Cloning...');
     const api = window.electronAPI; if (!api) return;
-    const r = await api.toolsExecute({tool:'git_clone', params:{url:cloneUrl}});
-    if (r.success && r.dir) { setRepoDir(r.dir); localStorage.setItem('polaris_git_dir', r.dir); setCloneUrl(''); refreshStatus(); }
+    const r = await api.toolsExecute({tool:'git_clone', params:{url:targetUrl}});
+    if (r.success && r.dir) { setRepoDir(r.dir); localStorage.setItem('polaris_git_dir', r.dir); setCloneUrl(''); setStatusMsg(''); refreshStatus(); }
     else { setStatusMsg(r.error||'Clone failed'); }
     setLoading(false);
   };
@@ -352,6 +357,9 @@ function GitPopup({onClose}:{onClose:()=>void}){
     setLoading(false);
   };
 
+  // Listen for Agent git operations → auto-refresh Git panel
+  useEffect(function(){ var api = window.electronAPI; if (!api) return; api.onGitUpdate(function(data: any){ if (repoDir) refreshStatus(); if (showPRs) loadPRs(); if (showIssues) loadIssues(); if (showCI) loadCI(); }); }, [repoDir, showPRs, showIssues, showCI]);
+
   return(
     <div className="fixed inset-0 z-[300] bg-black/30 flex items-center justify-center animate-fade-in" onClick={onClose}>
       <div className="w-[480px] max-w-[94vw] max-h-[80vh] rounded-2xl border border-border bg-card shadow-2xl overflow-hidden flex flex-col" onClick={e=>e.stopPropagation()}>
@@ -377,11 +385,24 @@ function GitPopup({onClose}:{onClose:()=>void}){
             </div>
           ) : !repoDir ? (
             <div className="space-y-3">
-              <p className="text-xs text-muted-foreground">Clone a repository to enable version control.</p>
-              <div className="flex gap-2">
-                <input className="flex-1 bg-muted border border-border rounded-lg px-3 py-2.5 text-xs font-mono outline-none focus:border-primary/50" placeholder="https://github.com/user/repo.git" value={cloneUrl} onChange={e=>setCloneUrl(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')handleClone()}}/>
-                <button className="px-4 py-2.5 rounded-lg bg-primary hover:bg-primary/90 text-xs text-primary-foreground font-medium transition-colors shrink-0" onClick={handleClone} disabled={loading||!cloneUrl.includes('github')}>{loading?'...':'Clone'}</button>
+              <p className="text-xs text-muted-foreground">Select a repository to clone.</p>
+              <input className="w-full bg-muted border border-border rounded-lg px-3 py-2.5 text-xs font-mono outline-none focus:border-primary/50" placeholder="Filter repositories..." value={searchQuery} onChange={function(e:any){setSearchQuery(e.target.value)}}/>
+              <div className="max-h-[240px] overflow-y-auto space-y-0.5">
+                {reposLoading ? <div className="text-center py-8 text-muted-foreground text-xs animate-pulse">Loading repositories...</div>
+                : repos.length===0 ? <div className="text-center py-4 text-muted-foreground text-xs">No repositories found.</div>
+                : (function(){ var filtered = repos.filter(function(r){ return !searchQuery || r.name.toLowerCase().includes(searchQuery.toLowerCase()); }); return filtered.length===0 ? <div className="text-center py-4 text-muted-foreground text-xs">No matches.</div> : filtered.map(function(r,i){ return <div key={i} className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-muted/50 cursor-pointer transition-colors group" onClick={function(){ setCloneUrl(r.url); handleClone(r.url); }}>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-medium text-foreground truncate">{r.name}</span>
+                      {r.isPrivate && <span className="text-[9px] font-mono px-1 rounded bg-muted/50 text-muted-foreground shrink-0">private</span>}
+                      {r.language && <span className="text-[9px] text-muted-foreground font-mono shrink-0">{r.language}</span>}
+                    </div>
+                    {r.description && <div className="text-[10px] text-muted-foreground truncate mt-0.5">{r.description}</div>}
+                  </div>
+                  <span className="text-[9px] text-muted-foreground/30 font-mono shrink-0 opacity-0 group-hover:opacity-100">{r.stars} stars</span>
+                </div>;}); })()}
               </div>
+              <div className="text-[9px] text-muted-foreground/50 text-center font-mono pt-1">Tip: ask the Agent to clone a repo by name.</div>
             </div>
           ) : (
             <div className="space-y-4">
@@ -435,11 +456,11 @@ function GitPopup({onClose}:{onClose:()=>void}){
               </div>
               {showPRs && <div className="max-h-[120px] overflow-y-auto space-y-0.5 rounded-md bg-muted/20 p-2">
                 {prs.length===0 ? <div className="text-[10px] text-muted-foreground/50 text-center py-2">No open PRs</div>
-                : prs.map(function(p:any,i:number){return <div key={i} className="text-[10px] font-mono px-2 py-1 rounded hover:bg-muted/30 flex items-center gap-2"><span className="text-muted-foreground">#{p.number}</span><span className="text-foreground/80 truncate">{p.title}</span><span className={'ml-auto shrink-0 '+(p.state==='open'?'text-emerald-400':'text-red-400')}>{p.state}</span></div>})}
+                : prs.map(function(p:any,i:number){return <div key={i} className="polaris-inline-btn cursor-pointer text-[10px] font-mono px-2 py-1 rounded hover:bg-muted/30 flex items-center gap-2" data-prompt={'Review this PR: ' + p.title + '. PR# ' + p.number + (p.url?'. URL: '+p.url:'')}>{<span className="text-muted-foreground">#{p.number}</span>}<span className="text-foreground/80 truncate">{p.title}</span><span className={'ml-auto shrink-0 '+(p.state==='open'?'text-emerald-400':'text-red-400')}>{p.state}</span></div>})}
               </div>}
               {showIssues && <div className="max-h-[120px] overflow-y-auto space-y-0.5 rounded-md bg-muted/20 p-2">
                 {issues.length===0 ? <div className="text-[10px] text-muted-foreground/50 text-center py-2">No open issues</div>
-                : issues.map(function(iss:any,i:number){return <div key={i} className="text-[10px] font-mono px-2 py-1 rounded hover:bg-muted/30 flex items-center gap-2"><span className="text-muted-foreground">#{iss.number}</span><span className="text-foreground/80 truncate">{iss.title}</span>{iss.labels&&iss.labels.map(function(l:string){return <span key={l} className="text-[8px] px-1 rounded bg-primary/10 text-primary">{l}</span>})}</div>})}
+                : issues.map(function(iss:any,i:number){return <div key={i} className="polaris-inline-btn cursor-pointer text-[10px] font-mono px-2 py-1 rounded hover:bg-muted/30 flex items-center gap-2" data-prompt={'Look at this issue: ' + iss.title + '. Issue# ' + iss.number + (iss.url?'. URL: '+iss.url:'')}>{<span className="text-muted-foreground">#{iss.number}</span>}<span className="text-foreground/80 truncate">{iss.title}</span>{iss.labels&&iss.labels.map(function(l:string){return <span key={l} className="text-[8px] px-1 rounded bg-primary/10 text-primary">{l}</span>})}</div>})}
               </div>}
               {showCI && <div className="max-h-[120px] overflow-y-auto space-y-0.5 rounded-md bg-muted/20 p-2">
                 {workflows.length===0 ? <div className="text-[10px] text-muted-foreground/50 text-center py-2">No recent runs</div>
@@ -557,7 +578,7 @@ const App:React.FC=()=>{
         var nativeInputValueSetter=Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype,'value')?.set;
         if(nativeInputValueSetter){nativeInputValueSetter.call(ta,prompt);ta.dispatchEvent(new Event('input',{bubbles:true}));}
         else{ta.value=prompt;ta.dispatchEvent(new Event('input',{bubbles:true}));}
-        ta.focus();setInp(prompt);
+        ta.focus();setInp(prompt);setGitOpen(false);
       }
       if(target.classList.contains('polaris-login'))d(openLoginModal());
     };

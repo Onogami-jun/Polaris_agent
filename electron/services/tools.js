@@ -378,15 +378,11 @@ except Exception as e:
   },
 
   // ── Git / GitHub tools (PR workflow) ──
-  git_clone: {
-    name: 'Git Clone',
-    description: '克隆GitHub仓库到本地。参数: url, branch(可选), targetDir(可选)',
-    requires_confirm: false,
-    category: 'git',
-    execute: async (params, ghToken) => {
-      const { gitOps } = require('./git_ops');
-      return gitOps.clone(params, ghToken);
-    }
+  git_clone: { name: 'Git Clone', description: '克隆GitHub仓库到本地。参数: url, branch(可选), targetDir(可选)', requires_confirm: false, category: 'git',
+    execute: async (params, ghToken) => { const { gitOps } = require('./git_ops'); return gitOps.clone(params, ghToken); }
+  },
+  git_list_repos: { name: 'List Repos', description: '列出用户的GitHub仓库列表。无需参数。', requires_confirm: false, category: 'git',
+    execute: async (params, ghToken) => { const { gitOps } = require('./git_ops'); return gitOps.listRepos(params, ghToken); }
   },
   git_status: {
     name: 'Git Status',

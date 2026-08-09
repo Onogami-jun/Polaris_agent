@@ -108,6 +108,8 @@ async function executeTool(name, args, onExec) {
     try {
       const result = await tool.execute(args, _ghToken || '');
       if (onExec) onExec({ tool: name, status: result.confirmation_required ? 'running' : (result.success ? 'done' : 'error'), detail: result.confirmation_required ? 'Waiting for user approval...' : ((result.result || result.error || '').slice(0, 120)) });
+      // Notify renderer so Git panel auto-refreshes
+      if (_gitNotify && result) _gitNotify({ tool: name, success: result.success, result: (result.result || '').slice(0, 200), branch: result.branch, dir: result.dir });
       return result;
     } catch (e) { return { success: false, error: e.message }; }
   }
@@ -531,11 +533,13 @@ async function qualityCheck(userMessage, messages, bestResponse, latestContent, 
    ══════════════════════════════════════════════════════════ */
 
 var _ghToken = '';
+var _gitNotify = null; // Callback to notify renderer of git operations
 
 async function executeQuery(text, strategy, systemPrompt, images, onStreamChunk, apiKeys = {}) {
   const startTime = Date.now();
   const apiKey = apiKeys.deepseek || apiKeys.anthropic || getApiKey();
   _ghToken = apiKeys.github || '';
+  _gitNotify = apiKeys.onGitOp || null;
   const tid = logger.newTraceId();
   logger.info('Request received', { tid, text: text.slice(0, 80) });
 

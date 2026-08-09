@@ -65,6 +65,15 @@ const gitOps = {
     const args = ['clone', authUrl, dir]; if (branch) args.splice(1, 0, '-b', branch);
     const r = gitRun(args); return r.success ? { success: true, result: 'Cloned', dir, branch: branch || 'main' } : { success: false, error: r.stderr || r.error };
   },
+
+  /* ── List all user repos (for repo picker UX) ── */
+  listRepos: async function (params, ghToken) {
+    const token = ghToken || params.token; if (!token) return { success: false, error: 'GitHub token required' };
+    const r = await ghAPI(token, 'GET', '/user/repos?sort=updated&per_page=30&type=all');
+    if (!r.ok) return { success: false, error: (r.data && r.data.message) || r.error };
+    const repos = (r.data || []).map(function(repo) { return { name: repo.full_name, url: repo.clone_url, description: repo.description || '', stars: repo.stargazers_count, language: repo.language, updated: repo.updated_at, isPrivate: repo.private, defaultBranch: repo.default_branch }; });
+    return { success: true, repos };
+  },
   status: async function (params) {
     const { dir } = params; if (!dir) return { success: false, error: 'dir required' };
     const r = gitRun(['status', '--porcelain'], dir);

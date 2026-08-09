@@ -44,6 +44,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   sandboxRunCode: (code) => ipcRenderer.invoke('sandbox:runCode', { code }),
   sandboxCheckSafety: (code) => ipcRenderer.invoke('sandbox:safety', { code }),
   onSandboxProgress: (cb) => { ipcRenderer.on('sandbox:progress', (_, d) => cb(d)); },
+  onGitUpdate: (cb) => { ipcRenderer.on('polaris:git-update', (_, d) => cb(d)); },
   onToolConfirm: (cb) => { ipcRenderer.on('polaris:tool-confirm', (_, d) => cb(d)); },
   onToolConfirmDismiss: (cb) => { ipcRenderer.on('polaris:tool-confirm-dismiss', (_, d) => cb(d)); },
   approvePermission: (id) => ipcRenderer.invoke('tools:approvePermission', { id }),
