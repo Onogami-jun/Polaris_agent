@@ -427,7 +427,7 @@ function GitPopup({onClose}:{onClose:()=>void}){
                 <span className="font-mono text-emerald-400">{branch||'main'}</span>
                 <span className="text-muted-foreground/50 mx-1">/</span>
                 <span className="font-mono text-muted-foreground">{files.length} file{(files.length!==1?'s':'')}</span>
-                <button onClick={refreshStatus} className="ml-auto text-muted-foreground hover:text-foreground text-xs font-mono" disabled={loading}>{loading?'...':'{t(lang,'git.refresh')}'}</button>
+                <button onClick={refreshStatus} className="ml-auto text-muted-foreground hover:text-foreground text-xs font-mono" disabled={loading}>{loading?'...':t(lang,'git.refresh')}</button>
               </div>
 
               {/* Changed files */}
@@ -447,13 +447,13 @@ function GitPopup({onClose}:{onClose:()=>void}){
                   <input className="w-full bg-muted border border-border rounded-lg px-3 py-2.5 text-xs font-mono outline-none focus:border-primary/50" placeholder="Commit message" value={commitMsg} onChange={e=>setCommitMsg(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')handleCommit()}} autoFocus/>
                   <div className="flex gap-2">
                     <button className="flex-1 py-2 rounded-lg bg-muted hover:bg-muted/70 text-xs text-muted-foreground font-mono transition-colors" onClick={()=>setShowCommit(false)}>{t(lang,'git.cancel')}</button>
-                    <button className="flex-1 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-xs text-white font-medium transition-colors" onClick={handleCommit} disabled={loading||!commitMsg.trim()}>{loading?'{t(lang,'git.committing')}':'{t(lang,'git.commit')}'}</button>
+                    <button className="flex-1 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-xs text-white font-medium transition-colors" onClick={handleCommit} disabled={loading||!commitMsg.trim()}>{loading?t(lang,'git.committing'):t(lang,'git.commit')}}</button>
                   </div>
                 </div>
               ) : (
                 <div className="flex gap-2">
                   <button className="flex-1 py-2.5 rounded-lg bg-primary/10 hover:bg-primary/20 text-xs text-primary font-medium transition-colors" onClick={()=>setShowCommit(true)}>{t(lang,'git.commit')}</button>
-                  <button className="flex-1 py-2.5 rounded-lg bg-muted hover:bg-muted/70 text-xs text-muted-foreground font-medium transition-colors" onClick={handlePush} disabled={loading}>{loading?'...':'{t(lang,'git.push')}'}</button>
+                  <button className="flex-1 py-2.5 rounded-lg bg-muted hover:bg-muted/70 text-xs text-muted-foreground font-medium transition-colors" onClick={handlePush} disabled={loading}>{loading?'...':t(lang,'git.push')}</button>
                 </div>
               ))}
 
