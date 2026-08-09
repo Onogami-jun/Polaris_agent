@@ -8,6 +8,7 @@ import { Input } from './ui/input';
 export const LoginModal: React.FC = () => {
   const d = useAppDispatch();
   const show = useAppSelector(s => s.auth.showLoginModal);
+  const auth = useAppSelector(s => s.auth);
   const error = useAppSelector(s => s.auth.loginError);
 
   const [tab, setTab] = useState<'login' | 'register' | 'forgot'>('login');
@@ -359,7 +360,7 @@ export const LoginModal: React.FC = () => {
             </div>
           )}
 
-          {tab === 'github' && (
+          {tab === 'github' && (auth.user ? (
             <div className="text-center py-4 space-y-4">
               <svg width="40" height="40" viewBox="0 0 16 16" fill="currentColor" className="mx-auto text-foreground"><path fillRule="evenodd" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
               <div className="text-sm font-medium text-foreground">GitHub 设备码登录</div>
@@ -367,7 +368,16 @@ export const LoginModal: React.FC = () => {
               <p className="text-[10px] text-muted-foreground">登录后可使用 Git 仓库操作和创建 PR。</p>
               <Button className="h-10 w-full" onClick={doGithubLogin} disabled={busy}>{busy?'正在等待授权...':'使用 GitHub 登录'}</Button>
             </div>
-          )}
+          ) : (
+            <div className="text-center py-6 space-y-4">
+              <div className="w-14 h-14 rounded-2xl bg-muted/50 mx-auto flex items-center justify-center">
+                <svg width="24" height="24" viewBox="0 0 16 16" fill="currentColor" className="text-muted-foreground"><path fillRule="evenodd" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+              </div>
+              <p className="text-sm text-foreground font-medium">请先登录 BitWool 账号</p>
+              <p className="text-[11px] text-muted-foreground">GitHub 登录需要先通过 BitWool 账号验证。切换到登录或注册标签完成 BitWool 登录后，再返回此页面绑定 GitHub 账号。</p>
+              <Button className="h-10 w-full" onClick={()=>setTab('login')}>前往 BitWool 登录</Button>
+            </div>
+          ))}
 
           {tab !== 'github' && <div className="space-y-1.5">
             <label className="text-xs font-medium text-muted-foreground">邮箱</label>
