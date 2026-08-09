@@ -376,7 +376,7 @@ function GitPopup({onClose}:{onClose:()=>void}){
           {activeTab==='push'&&repoDir&&<div className="space-y-3">
             <p className="text-xs text-muted-foreground">Push your committed changes and optionally create a Pull Request.</p>
             <button className="w-full py-2.5 rounded-lg bg-primary hover:bg-primary/90 text-sm text-primary-foreground font-semibold transition-colors" onClick={handlePush} disabled={loading}>{loading?'Pushing...':'Push to GitHub & Create PR'}</button>
-            {pushMsg&&<div className={'text-xs font-mono p-3 rounded-lg '+(pushMsg.includes('PR:')?'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20':'pushMsg.includes('failed')?'bg-red-500/10 text-red-400 border border-red-500/20':'bg-muted/20 text-muted-foreground border border-border/50')}>{pushMsg}</div>}
+            {pushMsg&&<div className={'text-xs font-mono p-3 rounded-lg '+(pushMsg.indexOf('PR:')>=0?'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20':pushMsg.indexOf('failed')>=0?'bg-red-500/10 text-red-400 border border-red-500/20':'bg-muted/20 text-muted-foreground border border-border/50')}>{pushMsg}</div>}
           </div>}
           {!repoDir&&activeTab!=='clone'&&<div className="text-center py-12 text-muted-foreground">
             <div className="text-4xl mb-3 text-muted-foreground/30">~/</div>
