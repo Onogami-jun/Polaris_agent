@@ -287,6 +287,7 @@ const App:React.FC=()=>{
   const[thinking,setThinking]=useState('');const mascotAreaRef=useRef<HTMLDivElement>(null);
   const[toasts,setToasts]=useState<any[]>([]);
   const[permReq,setPermReq]=useState<any>(null); // Claude-style permission request
+  const[dragOver,setDragOver]=useState(false);const[dragFiles,setDragFiles]=useState<File[]>([]);
   const[execLog,setExecLog]=useState<{id:string;time:string;tool:string;status:'running'|'done'|'error';detail:string}[]>([]);
   const[todoSteps,setTodoSteps]=useState<{id:string;status:'pending'|'running'|'done';label:string}[]>([]);
   const[interventions,setInterventions]=useState<any[]>([]);
@@ -365,6 +366,16 @@ const App:React.FC=()=>{
   },[d]);
 
   useEffect(()=>{const h=(e:KeyboardEvent)=>{if((e.ctrlKey||e.metaKey)&&e.key==='p'){e.preventDefault();setCmd(true)}if(e.key==='Escape'){stop.current=true;d(setStreaming(false));setThk('');setCmd(false)}if((e.ctrlKey||e.metaKey)&&e.key==='n'){e.preventDefault();d(ns())}if((e.ctrlKey||e.metaKey)&&e.key===','){e.preventDefault();d(toggleSettings())}};window.addEventListener('keydown',h);return()=>window.removeEventListener('keydown',h)},[d]);
+  // ── Global drag/drop file handling ──
+  useEffect(()=>{var drEvs=['dragenter','dragover','dragleave','drop'];var drC=0;
+    function onDragEnter(e:DragEvent){e.preventDefault();e.stopPropagation();drC++;if(drC===1)setDragOver(true)}
+    function onDragOver(e:DragEvent){e.preventDefault();e.stopPropagation();if(e.dataTransfer)e.dataTransfer.dropEffect='copy'}
+    function onDragLeave(e:DragEvent){e.preventDefault();e.stopPropagation();drC--;if(drC<=0){drC=0;setDragOver(false)}}
+    function onDrop(e:DragEvent){e.preventDefault();e.stopPropagation();drC=0;setDragOver(false);if(e.dataTransfer&&e.dataTransfer.files.length>0){var files:File[]=[];for(var i=0;i<e.dataTransfer.files.length;i++)files.push(e.dataTransfer.files[i]);setDragFiles(files);readDroppedFiles(files)}}
+    drEvs.forEach(function(ev){document.addEventListener(ev,ev==='dragenter'?onDragEnter:ev==='dragover'?onDragOver:ev==='dragleave'?onDragLeave:onDrop as any)});
+    return function(){drEvs.forEach(function(ev){document.removeEventListener(ev,ev==='dragenter'?onDragEnter:ev==='dragover'?onDragOver:ev==='dragleave'?onDragLeave:onDrop as any)})}},[]);
+  // ── File reader helper ──
+  function readDroppedFiles(files:File[]){var ta=document.querySelector('textarea');if(!ta)return;var names: string[]=[];files.forEach(function(f){names.push(f.name)});var prefix=names.length===1?'[File: '+names[0]+']\n':'[Files: '+names.join(', ')+']\n';var setter=Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype,'value')?.set;if(setter){setter.call(ta,prefix);ta.dispatchEvent(new Event('input',{bubbles:true}))}else{ta.value=prefix;ta.dispatchEvent(new Event('input',{bubbles:true}))}ta.focus();setInp(prefix)}
   useEffect(()=>{const api=window.electronAPI;if(!api)return;api.monitorStart();api.onIntervention((card:any)=>{card.ts=Date.now();setInterventions(p=>[...p.slice(-4),card])});api.onPlanProgress((data:any)=>setPlanProg(data));api.onExecLog((data:any)=>{addExecLog(data.tool,data.status,data.detail||'')});api.onTodoUpdate((data:any)=>{if(data.steps)setTodoSteps(data.steps)});api.onStreamError((ed:any)=>{showToast('Stream Error: '+(ed?.message||'未知'),'error');dispatchRef.current(setStreaming(false));setThk('')});
   api.onToolConfirm((data:any)=>{setPermReq(data)});api.onToolConfirmDismiss((data:any)=>{setPermReq(function(p:any){return p&&p.id===data.id?null:p})});
   // Health check
@@ -558,6 +569,10 @@ const App:React.FC=()=>{
           </Conversation>
           <div className="shrink-0">
             <AuthBanner/>
+            {/* File chips from drag/drop */}
+            {dragFiles.length>0&&<div className="px-4 pb-1 flex gap-1.5 flex-wrap">
+              {dragFiles.map(function(f:File,i:number){return<div key={i} className="file-chip">{f.name}<button className="remove" onClick={function(){setDragFiles(function(p){return p.filter(function(_,j){return j!==i})})}}>×</button></div>})}
+            </div>}
             <div className="px-4 pb-6 pt-2">
               <MessageInput
                 value={inp} onChange={setInp} onSubmit={send}
@@ -579,6 +594,8 @@ const App:React.FC=()=>{
     {labOpen && <StandaloneLab onClose={()=>setLabOpen(false)}/>}
     {gitOpen && <GitPopup onClose={()=>setGitOpen(false)}/>}
     <LoginModal/>
+    {/* Drag & drop overlay */}
+    {dragOver&&<div className="dov" style={{zIndex:9999}}><div className="doz" style={{padding:'48px 64px',borderRadius:20,fontSize:15}}><div style={{fontSize:32,marginBottom:8,opacity:.6}}>+</div>Drop files to attach</div></div>}
     {/* ── Claude Code-style Permission Dialog ── */}
     {permReq&&<div className="perm-dialog" onClick={()=>{var api=window.electronAPI;if(api)api.rejectPermission(permReq.id);setPermReq(null)}}>
       <div className="perm-card" onClick={e=>e.stopPropagation()}>
