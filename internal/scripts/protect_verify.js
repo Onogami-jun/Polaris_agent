@@ -59,7 +59,7 @@ function getKey() {
 
   console.error('ERROR: No decryption key found.');
   console.error('  Set POLARIS_VERIFY_KEY env var, or create .polaris_key file, or ensure secrets.js has VAULT_SEED.');
-  process.exit(1);
+  return null;
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -73,6 +73,10 @@ function encrypt() {
   }
 
   const key = getKey();
+  if (!key) {
+    console.error('ERROR: Cannot encrypt without a key. Set POLARIS_VERIFY_KEY or create internal/.polaris_key.');
+    process.exit(1);
+  }
   const plaintext = fs.readFileSync(VERIFY_SRC, 'utf8');
   const iv = crypto.randomBytes(16);
   const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
@@ -95,11 +99,17 @@ function encrypt() {
 
 function decrypt() {
   if (!fs.existsSync(VERIFY_ENC)) {
-    console.error('ERROR: verification_engine.js.enc not found.');
-    process.exit(1);
+    console.log('⚠ No encrypted verification engine found. Creating stub.');
+    createStub();
+    return;
   }
 
   const key = getKey();
+  if (!key) {
+    console.log('⚠ No decryption key — creating stub for public build.');
+    createStub();
+    return;
+  }
   const data = fs.readFileSync(VERIFY_ENC, 'utf8').trim();
   const lines = data.split('\n');
   if (lines.length < 3) {

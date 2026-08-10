@@ -1,19 +1,20 @@
 #!/usr/bin/env python3
 """
-Polaris DPO Fine-Tuning — launcher
-Delegates to: internal/scripts/dpo_train.py
+Polaris Model Trainer — launcher
+Delegates to: internal/scripts/train_polaris.py (Two-Phase SFT→DPO)
+
+Usage:
+  python scripts/dpo_train.py                  # Full training (SFT + DPO)
+  python scripts/dpo_train.py --sft-only       # SFT only
+  python scripts/dpo_train.py --dpo-only       # DPO only
 
 In public builds, this file serves as documentation only.
 """
-import os, sys
-internal_path = os.path.join(os.path.dirname(__file__), '..', 'internal', 'scripts', 'dpo_train.py')
+import os, sys, subprocess
+internal_path = os.path.join(os.path.dirname(__file__), '..', 'internal', 'scripts', 'train_polaris.py')
 if os.path.exists(internal_path):
-    # Run the real training script
-    with open(internal_path, 'r', encoding='utf-8') as f:
-        code = f.read()
-    exec(compile(code, internal_path, 'exec'), {'__name__': '__main__', '__file__': internal_path})
+    subprocess.run([sys.executable, internal_path] + sys.argv[1:])
 else:
-    print('[Polaris] DPO training script is not available in public builds.')
+    print('[Polaris] Model trainer is not available in public builds.')
     print('  This script requires the internal development module.')
-    print('  See internal/scripts/dpo_train.py in the private repo.')
     sys.exit(0)
