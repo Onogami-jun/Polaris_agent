@@ -24,11 +24,12 @@ const ROUTER_FILE = path.join(os.homedir(), '.polaris', 'model_router.json');
 
 /* ── Model registry ── */
 var MODELS = {
-  'deepseek-v4-flash': { provider: 'deepseek', costPer1k: 0.0014, latency: 'fast', maxTokens: 4096 },
-  'deepseek-v4':       { provider: 'deepseek', costPer1k: 0.028,  latency: 'medium', maxTokens: 8192 },
-  'claude-sonnet-4':   { provider: 'anthropic', costPer1k: 0.003,  latency: 'fast', maxTokens: 4096 },
-  'claude-opus-4':     { provider: 'anthropic', costPer1k: 0.015,  latency: 'medium', maxTokens: 8192 },
-  'gpt-4o':            { provider: 'openai', costPer1k: 0.005,  latency: 'fast', maxTokens: 4096 },
+  'deepseek-v4-flash':  { provider: 'deepseek',  costPer1k: 0.0014, latency: 'fast',   maxTokens: 4096, local: false },
+  'deepseek-v4':        { provider: 'deepseek',  costPer1k: 0.028,  latency: 'medium', maxTokens: 8192, local: false },
+  'claude-sonnet-4':    { provider: 'anthropic', costPer1k: 0.003,  latency: 'fast',   maxTokens: 4096, local: false },
+  'claude-opus-4':      { provider: 'anthropic', costPer1k: 0.015,  latency: 'medium', maxTokens: 8192, local: false },
+  'gpt-4o':             { provider: 'openai',     costPer1k: 0.005,  latency: 'fast',   maxTokens: 4096, local: false },
+  'polaris-opt-local':  { provider: 'local',      costPer1k: 0,       latency: 'fast',   maxTokens: 1024, local: true, endpoint: 'http://127.0.0.1:8080/completion', healthPath: 'http://127.0.0.1:8080/health' },
 };
 
 /* ── Default routing table (cold start) ── */
@@ -75,7 +76,13 @@ function saveTable(table) {
 function route(problemType, strategy) {
   var table = loadTable();
   var candidates = table[problemType] || table['custom'];
-  if (!candidates) return 'deepseek-v4-flash';
+  if (!candidates) return { id: 'deepseek-v4-flash', score: 50 };
+
+  // If local model is running, prefer it for cost_optimized
+  var localAvailable = checkLocalModel();
+  if (localAvailable && strategy === 'cost_optimized') {
+    return { id: 'polaris-opt-local', score: 85, detail: 'local model available, 0 cost' };
+  }
 
   var modelIds = Object.keys(candidates);
   var scored = modelIds.map(function(id) {
@@ -157,4 +164,64 @@ function detectProblemType(dslOrText) {
   return 'custom';
 }
 
-module.exports = { route, record, getStats, detectProblemType, MODELS };
+/* ── Check local model availability ── */
+var _localAvailable = null;
+var _localCheckTime = 0;
+
+function checkLocalModel() {
+  var now = Date.now();
+  if (_localAvailable !== null && now - _localCheckTime < 30000) return _localAvailable;
+
+  try {
+    var http = require('http');
+    var req = http.get('http://127.0.0.1:8080/health', function(res) {
+      var d = '';
+      res.on('data', function(c) { d += c.toString(); });
+      res.on('end', function() {
+        _localAvailable = res.statusCode === 200 && (d.includes('ok') || d.includes('status'));
+        _localCheckTime = now;
+      });
+    });
+    req.on('error', function() { _localAvailable = false; _localCheckTime = now; });
+    req.setTimeout(3000, function() { req.destroy(); _localAvailable = false; _localCheckTime = now; });
+  } catch(e) { _localAvailable = false; _localCheckTime = now; }
+  // Return cached value synchronously — async check updates cache for next call
+  return _localAvailable !== null ? _localAvailable : false;
+}
+
+function isLocalModelAvailable() {
+  return checkLocalModel();
+}
+
+/* ── Call local model (llama.cpp server / Ollama compatible) ── */
+function callLocalModel(prompt, options) {
+  return new Promise(function(resolve, reject) {
+    var http = require('http');
+    var body = JSON.stringify({
+      prompt: prompt,
+      n_predict: (options && options.maxTokens) || 512,
+      temperature: (options && options.temperature) || 0.1,
+      stop: ['</s>', '<|im_end|>', '###'],
+      stream: false,
+    });
+    var req = http.request({
+      hostname: '127.0.0.1', port: 8080, path: '/completion', method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+      timeout: 30000,
+    }, function(res) {
+      var d = '';
+      res.on('data', function(c) { d += c.toString(); });
+      res.on('end', function() {
+        try {
+          var json = JSON.parse(d);
+          resolve({ content: json.content || json.text || '' });
+        } catch { resolve({ content: d.slice(0, 2000) }); }
+      });
+    });
+    req.on('error', function(e) { reject(e); });
+    req.on('timeout', function() { req.destroy(); reject(new Error('Local model timeout')); });
+    req.write(body); req.end();
+  });
+}
+
+module.exports = { route, record, getStats, detectProblemType, MODELS, checkLocalModel, isLocalModelAvailable, callLocalModel };

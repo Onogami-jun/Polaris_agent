@@ -30,12 +30,16 @@ export function StandaloneLab({ onClose }: { onClose: () => void }) {
   const [expHistory, setExpHistory] = useState<any[]>([]);
   const [execLog, setExecLog] = useState<any[]>([]);
   const [verifLog, setVerifLog] = useState<any[]>([]);
+  const [flywheelStats, setFlywheelStats] = useState<Record<string,number>|null>(null);
+  const [routerStats, setRouterStats] = useState<any[]>([]);
+  const [skillEdges, setSkillEdges] = useState<any[]>([]);
+  const [selectedProblemType, setSelectedProblemType] = useState('knapsack');
 
   const labLabels: any = {
-    'zh-CN': { dashboard:'仪表盘', diagnostics:'自诊断', benchmark:'跑分台', experiments:'实验历史', sandbox:'沙箱', memory:'记忆库', logs:'日志' },
-    'en':     { dashboard:'Dashboard', diagnostics:'Diagnostics', benchmark:'Benchmark', experiments:'Experiments', sandbox:'Sandbox', memory:'Memory', logs:'Logs' },
-    'ja':     { dashboard:'ダッシュボード', diagnostics:'診断', benchmark:'ベンチマーク', experiments:'実験履歴', sandbox:'サンドボックス', memory:'メモリ', logs:'ログ' },
-    'fr':     { dashboard:'Tableau', diagnostics:'Diagnostic', benchmark:'Benchmark', experiments:'Experiences', sandbox:'Sandbox', memory:'Memoire', logs:'Journaux' },
+    'zh-CN': { dashboard:'仪表盘', diagnostics:'自诊断', benchmark:'跑分台', experiments:'实验历史', sandbox:'沙箱', memory:'记忆库', training:'训练数据', logs:'日志' },
+    'en':     { dashboard:'Dashboard', diagnostics:'Diagnostics', benchmark:'Benchmark', experiments:'Experiments', sandbox:'Sandbox', memory:'Memory', training:'Training', logs:'Logs' },
+    'ja':     { dashboard:'ダッシュボード', diagnostics:'診断', benchmark:'ベンチマーク', experiments:'実験履歴', sandbox:'サンドボックス', memory:'メモリ', training:'訓練', logs:'ログ' },
+    'fr':     { dashboard:'Tableau', diagnostics:'Diagnostic', benchmark:'Benchmark', experiments:'Experiences', sandbox:'Sandbox', memory:'Memoire', training:'Entrainement', logs:'Journaux' },
   };
   const labL = labLabels[lang] || labLabels['zh-CN'];
   const sections = [
@@ -45,6 +49,7 @@ export function StandaloneLab({ onClose }: { onClose: () => void }) {
     { id: 'experiments', label: labL.experiments },
     { id: 'sandbox',     label: labL.sandbox },
     { id: 'memory',      label: labL.memory },
+    { id: 'training',    label: labL.training },
     { id: 'logs',        label: labL.logs },
   ];
 
@@ -53,6 +58,7 @@ export function StandaloneLab({ onClose }: { onClose: () => void }) {
     runDiagnostics();
     refreshSandbox();
     loadExperimentHistory();
+    loadTrainingStats();
     setUsageStats({
       calls: auth.tokenUsageCount || 0,
       tokens: chat.contextTokens?.used || 0,
@@ -78,6 +84,18 @@ export function StandaloneLab({ onClose }: { onClose: () => void }) {
       .then((r: any) => {
         try { setExpHistory(JSON.parse(r?.result || '[]')); } catch {}
       }).catch(() => {});
+  };
+
+  const loadTrainingStats = () => {
+    const api = window.electronAPI; if (!api) return;
+    api.flywheelStats?.().then((s: any) => setFlywheelStats(s)).catch(() => {});
+    loadRouterStats('knapsack');
+    api.skillgraphEdges?.(10).then((e: any) => setSkillEdges(e || [])).catch(() => {});
+  };
+
+  const loadRouterStats = (problemType: string) => {
+    const api = window.electronAPI; if (!api) return;
+    api.routerStats?.(problemType).then((r: any) => setRouterStats(r || [])).catch(() => {});
   };
 
   /* ── Benchmark ── */
@@ -132,6 +150,7 @@ export function StandaloneLab({ onClose }: { onClose: () => void }) {
           {activeSection === 'experiments' && <ExperimentsSection lang={lang} expHistory={expHistory} onRefresh={loadExperimentHistory} />}
           {activeSection === 'sandbox' && <SandboxSection lang={lang} health={sandboxHealth} pkgs={pkgs} onRefresh={refreshSandbox} />}
           {activeSection === 'memory' && <MemorySection lang={lang} memEntries={chat.settings.memory.entries} />}
+          {activeSection === 'training' && <TrainingSection lang={lang} flywheelStats={flywheelStats} routerStats={routerStats} skillEdges={skillEdges} selectedProblemType={selectedProblemType} onSelectType={(t: string) => { setSelectedProblemType(t); loadRouterStats(t); }} onRefresh={loadTrainingStats} />}
           {activeSection === 'logs' && <LogsSection lang={lang} />}
         </div>
       </div>
@@ -345,6 +364,123 @@ function MemorySection({ lang, memEntries }: any) {
       ) : (
         <div className="text-center py-8 text-muted-foreground text-sm">{t(lang,'lab.memEmpty')}</div>
       )}
+    </div>
+  );
+}
+
+/* ── Training ── */
+const PROBLEM_TYPES = ['knapsack','scheduling','assignment','facility','vrp','multi_knapsack','set_covering','custom'];
+function TrainingSection({ lang, flywheelStats, routerStats, skillEdges, selectedProblemType, onSelectType, onRefresh }: any) {
+  const labels: any = {
+    'zh-CN': { title:'训练数据看板', desc:'每次求解自动积累训练样本，用于DPO微调小模型', dpoPairs:'DPO偏好对', verifLabels:'验证标签', routeRecs:'路由记录', hallucSamples:'幻觉样本', routerTitle:'模型路由表现', routerDesc:'各模型在不同问题类型上的成功率', edgesTitle:'技能编排图', edgesDesc:'高频技能转换（越常用越靠前）', noData:'暂无数据 — 运行一次求解后自动产生', refresh:'刷新', total:'总计' },
+    'en':     { title:'Training Dashboard', desc:'Each solve auto-produces labeled samples for DPO fine-tuning', dpoPairs:'DPO Pairs', verifLabels:'Verif. Labels', routeRecs:'Route Records', hallucSamples:'Hallucination', routerTitle:'Model Router Performance', routerDesc:'Success rates per problem type', edgesTitle:'Skill Graph', edgesDesc:'Frequent skill transitions', noData:'No data yet — run a solve to start accumulating', refresh:'Refresh', total:'Total' },
+    'ja':     { title:'訓練データ', desc:'各求解が自動的にDPO微調整用サンプルを生成します', dpoPairs:'DPOペア', verifLabels:'検証ラベル', routeRecs:'ルート記録', hallucSamples:'幻覚', routerTitle:'ルーター性能', routerDesc:'問題タイプ別成功率', edgesTitle:'スキルグラフ', edgesDesc:'頻繁なスキル遷移', noData:'データなし — 求解を実行してください', refresh:'更新', total:'合計' },
+    'fr':     { title:'Tableau entraînement', desc:'Chaque résolution produit des échantillons étiquetés', dpoPairs:'Paires DPO', verifLabels:'Étiquettes', routeRecs:'Routage', hallucSamples:'Hallucination', routerTitle:'Performance routeur', routerDesc:'Taux de réussite par type', edgesTitle:'Graphe compétences', edgesDesc:'Transitions fréquentes', noData:'Pas de données — lancez une résolution', refresh:'Actualiser', total:'Total' },
+  };
+  const L = labels[lang] || labels['zh-CN'];
+  const statCards = [
+    { key: 'dpo_preference_pairs.jsonl', label: L.dpoPairs, color: 'text-amber-400' },
+    { key: 'verification_labels.jsonl', label: L.verifLabels, color: 'text-emerald-400' },
+    { key: 'routing_performance.jsonl', label: L.routeRecs, color: 'text-blue-400' },
+    { key: 'hallucination_samples.jsonl', label: L.hallucSamples, color: 'text-red-400' },
+  ];
+  const total = flywheelStats ? Object.values(flywheelStats).reduce((a: number,b: number) => a+b, 0) : 0;
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-lg font-bold text-foreground">{L.title}</h3>
+          <p className="text-xs text-muted-foreground mt-1">{L.desc}</p>
+        </div>
+        <Button size="sm" className="h-7 text-[10px]" onClick={onRefresh}>{L.refresh}</Button>
+      </div>
+
+      {/* ── Flywheel stats ── */}
+      {flywheelStats ? (
+        <>
+          <div className="grid grid-cols-4 gap-3">
+            {statCards.map((sc, i) => (
+              <div key={i} className="p-4 rounded-xl bg-muted/20 border border-border/50">
+                <div className={'text-2xl font-bold font-mono ' + sc.color}>{flywheelStats[sc.key] || 0}</div>
+                <div className="text-[10px] text-muted-foreground mt-1 uppercase tracking-wider">{sc.label}</div>
+              </div>
+            ))}
+          </div>
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <span className="font-semibold text-foreground">{L.total}: {total}</span>
+            <span>records</span>
+          </div>
+        </>
+      ) : (
+        <div className="text-center py-12 text-muted-foreground bg-muted/10 rounded-xl border border-border/50">
+          <div className="text-3xl mb-3 text-muted-foreground/30">—</div>
+          <p className="text-sm">{L.noData}</p>
+        </div>
+      )}
+
+      {/* ── Router performance ── */}
+      <div>
+        <h4 className="text-sm font-semibold text-foreground mb-2">{L.routerTitle}</h4>
+        <p className="text-[10px] text-muted-foreground -mt-1 mb-3">{L.routerDesc}</p>
+        <div className="flex gap-1.5 mb-3 flex-wrap">
+          {PROBLEM_TYPES.map(pt => (
+            <button key={pt} onClick={() => onSelectType(pt)}
+              className={'px-2.5 py-1 rounded-md text-[10px] font-mono transition-all ' +
+                (selectedProblemType === pt ? 'bg-primary text-primary-foreground' : 'bg-muted/30 text-muted-foreground hover:bg-muted hover:text-foreground')}>
+              {pt}
+            </button>
+          ))}
+        </div>
+        {routerStats.length > 0 ? (
+          <div className="rounded-xl border border-border overflow-hidden">
+            <table className="w-full text-xs">
+              <thead className="bg-muted/50">
+                <tr>
+                  <th className="px-4 py-2 text-left font-medium">Model</th>
+                  <th className="px-4 py-2 text-right font-medium">Calls</th>
+                  <th className="px-4 py-2 text-right font-medium">Success</th>
+                  <th className="px-4 py-2 text-right font-medium">Halluc.</th>
+                  <th className="px-4 py-2 text-right font-medium">Gap</th>
+                </tr>
+              </thead>
+              <tbody>
+                {routerStats.map((r: any, i: number) => (
+                  <tr key={i} className="border-t border-border/50">
+                    <td className="px-4 py-2 font-mono font-medium">{r.model}</td>
+                    <td className="px-4 py-2 text-right font-mono">{r.total}</td>
+                    <td className="px-4 py-2 text-right font-mono" style={{color: r.successRate !== null ? (r.successRate >= 80 ? '#4ade80' : r.successRate >= 50 ? '#facc15' : '#f87171') : '#888'}}>{r.successRate !== null ? r.successRate + '%' : '—'}</td>
+                    <td className="px-4 py-2 text-right font-mono" style={{color: r.hallucRate !== null ? (r.hallucRate === 0 ? '#4ade80' : '#f87171') : '#888'}}>{r.hallucRate !== null ? r.hallucRate + '%' : '—'}</td>
+                    <td className="px-4 py-2 text-right font-mono text-muted-foreground">{r.avgGap != null ? r.avgGap.toFixed(3) : '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p className="text-xs text-muted-foreground py-4 text-center">{L.noData}</p>
+        )}
+      </div>
+
+      {/* ── Skill graph edges ── */}
+      <div>
+        <h4 className="text-sm font-semibold text-foreground mb-2">{L.edgesTitle}</h4>
+        <p className="text-[10px] text-muted-foreground -mt-1 mb-3">{L.edgesDesc}</p>
+        {skillEdges.length > 0 ? (
+          <div className="space-y-1.5">
+            {skillEdges.map((e: any, i: number) => (
+              <div key={i} className="flex items-center gap-3 px-3 py-2 rounded-lg bg-muted/20 border border-border/50">
+                <span className="text-xs font-mono text-amber-400">{e.from}</span>
+                <span className="text-[10px] text-muted-foreground">→</span>
+                <span className="text-xs font-mono text-emerald-400">{e.to}</span>
+                <span className="ml-auto text-[10px] font-mono font-bold text-muted-foreground">×{e.count}</span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-xs text-muted-foreground py-4 text-center">{L.noData}</p>
+        )}
+      </div>
     </div>
   );
 }

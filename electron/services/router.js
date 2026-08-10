@@ -14,7 +14,7 @@ const { requestPermission } = require('./permission_bridge');
 const { verifyAndScore } = require('./verification_engine');
 const { planSteps, executePlan, CATEGORIES } = require('./workflow_planner');
 const { parseFromLLM } = require('./semantic_dsl');
-const { route: routeModel, record: recordRoute, detectProblemType } = require('./model_router');
+const { route: routeModel, record: recordRoute, detectProblemType, MODELS: ROUTER_MODELS, callLocalModel } = require('./model_router');
 const { recordPath } = require('./skill_graph');
 const { recordVerification, recordDPOPair, recordHallucination } = require('./data_flywheel');
 const { runAdversarialChecks } = require('./adversarial_verify');
@@ -140,6 +140,10 @@ async function executeTool(name, args, onExec) {
  * Returns the full message (content + optional tool_calls).
  */
 function callDeepSeekStream(messages, tools, apiKey, temperature, maxTokens, onChunk, modelOverride) {
+  // Route to local model if applicable
+  if (modelOverride && isLocalModel(modelOverride)) {
+    return callLLMUnified(messages, tools, apiKey, temperature, maxTokens, onChunk, modelOverride);
+  }
   const key = apiKey || getApiKey();
   var modelName = resolveModel(modelOverride);
   const payload = {
@@ -222,6 +226,10 @@ function callDeepSeekStream(messages, tools, apiKey, temperature, maxTokens, onC
  * Non-streaming fallback
  */
 function callDeepSeek(messages, tools, apiKey, temperature, maxTokens, modelOverride) {
+  // Route to local model if applicable
+  if (modelOverride && isLocalModel(modelOverride)) {
+    return callLLMUnified(messages, tools, apiKey, temperature, maxTokens, null, modelOverride);
+  }
   const key = apiKey || getApiKey();
   var modelName = resolveModel(modelOverride);
   return new Promise(resolve => {
@@ -242,14 +250,50 @@ function callDeepSeek(messages, tools, apiKey, temperature, maxTokens, modelOver
   });
 }
 
+/* ── Unified LLM call — routes local or remote ──────────── */
+async function callLLMUnified(messages, tools, apiKey, temperature, maxTokens, onChunk, modelOverride) {
+  var modelName = modelOverride || 'deepseek-v4-flash';
+
+  // Local model path
+  if (isLocalModel(modelName)) {
+    try {
+      var prompt = '';
+      for (var mi = 0; mi < messages.length; mi++) {
+        var m = messages[mi];
+        if (m.role === 'system') prompt += '<|system|>\n' + m.content + '\n';
+        else if (m.role === 'user') prompt += '<|user|>\n' + m.content + '\n';
+        else if (m.role === 'assistant') prompt += '<|assistant|>\n' + m.content + '\n';
+      }
+      prompt += '<|assistant|>\n';
+      var result = await callLocalModel(prompt, { maxTokens: maxTokens || 512, temperature: temperature || 0.1 });
+      return { choices: [{ message: { content: result.content || '' } }] };
+    } catch(e) {
+      // Fallback to DeepSeek flash if local model fails
+      modelName = 'deepseek-v4-flash';
+    }
+  }
+
+  // Prefer streaming if onChunk provided
+  if (onChunk) {
+    return callDeepSeekStream(messages, tools, apiKey, temperature, maxTokens, onChunk, modelName);
+  }
+  return callDeepSeek(messages, tools, apiKey, temperature, maxTokens, modelName);
+}
+
 /* ── Resolve routed model to available API model ─────────── */
 function resolveModel(routeId) {
+  // If it's a local model, return as-is (caller handles local path)
+  if (ROUTER_MODELS[routeId] && ROUTER_MODELS[routeId].local) return routeId;
   // If the router picks a model we have API access to, use it directly
   if (routeId === 'deepseek-v4-flash' || routeId === 'deepseek-v4') return routeId;
   // For non-DeepSeek models, map to the closest DeepSeek equivalent
   if (routeId === 'claude-opus-4' || routeId === 'gpt-4o') return 'deepseek-v4';
   // Default: fast/cheap
   return 'deepseek-v4-flash';
+}
+
+function isLocalModel(modelName) {
+  return ROUTER_MODELS[modelName] && ROUTER_MODELS[modelName].local;
 }
 
 /* ══════════════════════════════════════════════════════════
@@ -302,7 +346,7 @@ async function runAgentLoop(userMessage, apiKey, onExec, onTodo, onStreamChunk, 
     const agentPrompt = buildAgentPrompt(lang,'chat', effectivePrompt, envNote);
     var content = '';
     try {
-      var resp = await callDeepSeekStream(
+      var resp = await callLLMUnified(
         [{ role: 'system', content: agentPrompt }, { role: 'user', content: userMessage }],
         [], apiKey, activeSkill.temperature || temp, maxTok, onStreamChunk, (strategyConfig && strategyConfig.routedModel));
       content = resp.choices?.[0]?.message?.content || '';

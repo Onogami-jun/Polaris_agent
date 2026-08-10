@@ -250,35 +250,98 @@ function generatePython(instance) {
 
   switch (instance.type) {
     case 'knapsack_01':
-      return 'from polaris.chat import solve\nprint(solve("""' +
-        JSON.stringify('Knapsack: capacity=' + p.capacity +
-        ', values=[' + (p.values || []).join(',') + ']' +
-        ', weights=[' + (p.weights || []).join(',') + ']') +
-        '"""))';
+      return [
+        'from polaris.chat import solve',
+        'print(solve(' + JSON.stringify(
+          'Knapsack: capacity=' + p.capacity +
+          ', values=[' + (p.values || []).join(',') + ']' +
+          ', weights=[' + (p.weights || []).join(',') + ']'
+        ) + '))',
+      ].join('\n');
 
     case 'single_machine':
-      return 'from polaris.chat import solve\nprint(solve("""' +
-        JSON.stringify('Scheduling: processing_times=[' + (p.processing_times || []).join(',') + ']') +
-        '"""))';
+      var schedParts = ['Scheduling: processing_times=[' + (p.processing_times || []).join(',') + ']'];
+      if (p.due_dates && p.due_dates.length > 0) schedParts.push('due_dates=[' + p.due_dates.join(',') + ']');
+      if (p.weights && p.weights.length > 0) schedParts.push('weights=[' + p.weights.join(',') + ']');
+      return [
+        'from polaris.chat import solve',
+        'print(solve(' + JSON.stringify(schedParts.join(', ')) + '))',
+      ].join('\n');
 
     case 'linear_assignment':
       var costStr = (p.cost_matrix || []).map(function(row) { return '[' + (row || []).join(',') + ']'; }).join(',');
-      return 'from polaris.chat import solve\nprint(solve("""' +
-        JSON.stringify('Assignment: cost_matrix=[' + costStr + ']') +
-        '"""))';
+      return [
+        'from polaris.chat import solve',
+        'print(solve(' + JSON.stringify('Assignment: cost_matrix=[' + costStr + ']') + '))',
+      ].join('\n');
+
+    case 'facility_location':
+      var dp = (p.demand_points || []).map(function(pt) {
+        return JSON.stringify({ x: pt.x, y: pt.y, demand: pt.demand });
+      }).join(',');
+      var fcStr = (p.fixed_costs || []).join(',');
+      return [
+        'from polaris.chat import solve',
+        'import json',
+        'demand_points = json.loads(' + JSON.stringify(JSON.stringify(p.demand_points || [])) + ')',
+        'prompt = ' + JSON.stringify(
+          'Facility location: num_facilities=' + p.num_facilities +
+          ', demand_points=' + dp +
+          ', fixed_costs=[' + fcStr + ']'
+        ),
+        'print(solve(prompt))',
+      ].join('\n');
+
+    case 'cvrp':
+      var dmStr = JSON.stringify(p.distance_matrix || []);
+      var demStr = JSON.stringify(p.demands || []);
+      return [
+        'from polaris.chat import solve',
+        'prompt = ' + JSON.stringify(
+          'CVRP: distance_matrix=' + dmStr +
+          ', demands=' + demStr +
+          ', vehicle_capacity=' + p.vehicle_capacity +
+          ', num_vehicles=' + p.num_vehicles
+        ),
+        'print(solve(prompt))',
+      ].join('\n');
+
+    case 'multiple_knapsack':
+      return [
+        'from polaris.chat import solve',
+        'prompt = ' + JSON.stringify(
+          'Multiple knapsack: capacities=[' + (p.capacities || []).join(',') + ']' +
+          ', values=[' + (p.values || []).join(',') + ']' +
+          ', weights=[' + (p.weights || []).join(',') + ']'
+        ),
+        'print(solve(prompt))',
+      ].join('\n');
+
+    case 'set_covering':
+      var setsStr = JSON.stringify(p.sets || []);
+      var costsStr = (p.costs || []).join(',');
+      return [
+        'from polaris.chat import solve',
+        'prompt = ' + JSON.stringify(
+          'Set covering: sets=' + setsStr +
+          ', costs=[' + costsStr + ']'
+        ),
+        'print(solve(prompt))',
+      ].join('\n');
 
     default:
-      return 'from polaris.chat import solve\nprint(solve("""' + JSON.stringify(paramsToString(p, instance.type_name)) + '""))';
+      // Custom type: try structured params then fallback to raw text
+      var parts = [(instance.type_name || 'custom') + ' problem:'];
+      for (var k in p) {
+        if (k === 'raw_numbers') continue;
+        if (typeof p[k] === 'object') parts.push(k + '=' + JSON.stringify(p[k]));
+        else parts.push(k + '=' + p[k]);
+      }
+      return [
+        'from polaris.chat import solve',
+        'print(solve(' + JSON.stringify(parts.join(', ')) + '))',
+      ].join('\n');
   }
-}
-
-function paramsToString(params, typeName) {
-  var parts = [typeName + ' problem:'];
-  for (var k in params) {
-    if (typeof params[k] === 'object') parts.push(k + '=' + JSON.stringify(params[k]));
-    else parts.push(k + '=' + params[k]);
-  }
-  return parts.join(', ');
 }
 
 module.exports = { parseFromLLM, validate, generatePython, SCHEMAS };
