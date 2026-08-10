@@ -199,11 +199,39 @@ def parse_response(text):
         solution = text
     return reasoning, solution
 
+# ── Concurrent worker ──────────────────────────────────────
+def worker_task(args_tuple):
+    """Single task: generate problem → call V4 → return result."""
+    api_key, offline = args_tuple
+    ptype = random.choice(list(GENERATORS.keys()))
+    question, ptype, params = GENERATORS[ptype]()
+
+    if not offline and api_key:
+        response = call_v4(question, api_key)
+        if response and len(response) > 20:
+            reasoning, solution = parse_response(response)
+            return {
+                'question': question, 'reasoning': reasoning, 'answer': solution,
+                'problem_type': ptype, 'source': 'v4_distillation',
+                'ts': time.strftime('%Y-%m-%dT%H:%M:%S'),
+            }, True
+    # Fallback: algorithmic
+    reasoning = f'Algorithmic heuristic for {ptype} problem.'
+    solution = algo_solve(ptype, params)
+    return {
+        'question': question, 'reasoning': reasoning, 'answer': solution,
+        'problem_type': ptype, 'source': 'algorithmic',
+        'ts': time.strftime('%Y-%m-%dT%H:%M:%S'),
+    }, False
+
 # ── Main ───────────────────────────────────────────────────
 def main():
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    import threading
     parser = argparse.ArgumentParser(description='Polaris SFT distillation data generator')
     parser.add_argument('count', nargs='?', type=int, default=2000, help='Number of problems')
     parser.add_argument('--offline', action='store_true', help='Algorithmic mode (no API)')
+    parser.add_argument('--workers', type=int, default=20, help='Concurrent API workers')
     parser.add_argument('--key', type=str, default=API_KEY, help='DeepSeek API key')
     args = parser.parse_args()
 
@@ -229,54 +257,49 @@ def main():
 
     mode = 'LLM (DeepSeek V4)' if not args.offline else 'Algorithmic (offline)'
     print(f'Generating {args.count} SFT distillation samples...')
-    print(f'Mode: {mode}')
+    print(f'Mode: {mode}  |  Workers: {args.workers}')
     print(f'Output: {OUTPUT_FILE}\n')
 
     DATA_DIR.mkdir(parents=True, exist_ok=True)
-    total, llm_success = 0, 0
+    total, v4_success, algo_fallback = 0, 0, 0
+    write_lock = threading.Lock()
     start = time.time()
 
-    with open(OUTPUT_FILE, 'a', encoding='utf-8') as f:
-        for i in range(args.count):
-            ptype = random.choice(list(GENERATORS.keys()))
-            question, ptype, params = GENERATORS[ptype]()
-            total += 1
+    with ThreadPoolExecutor(max_workers=args.workers) as executor:
+        futures = {executor.submit(worker_task, (api_key, args.offline)): i for i in range(args.count)}
+        f_out = open(OUTPUT_FILE, 'a', encoding='utf-8')
 
-            if not args.offline:
-                response = call_v4(question, api_key)
-                if response and len(response) > 20:
-                    reasoning, solution = parse_response(response)
-                    llm_success += 1
-                else:
-                    reasoning, solution = '', algo_solve(ptype, params)
-            else:
-                reasoning = f'Algorithmic heuristic for {ptype} problem.'
-                solution = algo_solve(ptype, params)
+        for i, future in enumerate(as_completed(futures)):
+            try:
+                record, v4 = future.result()
+                with write_lock:
+                    f_out.write(json.dumps(record, ensure_ascii=False) + '\n')
+                    f_out.flush()
+                total += 1
+                if v4: v4_success += 1
+                else: algo_fallback += 1
+            except Exception as e:
+                total += 1; algo_fallback += 1
 
-            f.write(json.dumps({
-                'question': question,
-                'reasoning': reasoning,
-                'answer': solution,
-                'problem_type': ptype,
-                'source': 'v4_distillation' if not args.offline else 'algorithmic',
-                'ts': time.strftime('%Y-%m-%dT%H:%M:%S'),
-            }, ensure_ascii=False) + '\n')
-
-            if (i + 1) % 50 == 0:
+            if (i + 1) % 100 == 0:
                 elapsed = time.time() - start
                 rate = (i + 1) / elapsed if elapsed > 0 else 0
-                print(f'  {i+1}/{args.count} ({elapsed:.0f}s, {rate:.1f}/s) | V4: {llm_success}')
+                print(f'  {i+1}/{args.count} ({elapsed:.0f}s, {rate:.1f}/s) | V4: {v4_success}  fallback: {algo_fallback}')
+
+        f_out.close()
 
     elapsed = time.time() - start
     file_size = OUTPUT_FILE.stat().st_size / 1024 if OUTPUT_FILE.exists() else 0
     print(f'\n{"="*56}')
     print(f'  DISTILLATION COMPLETE')
     print(f'{"="*56}')
-    print(f'  Time:      {elapsed:.0f}s')
-    print(f'  Generated: {total}')
-    print(f'  V4 solved: {llm_success}')
-    print(f'  File:      {OUTPUT_FILE} ({file_size:.0f} KB)')
-    print(f'\n  Ready for SFT phase: python internal/scripts/train_polaris.py --sft-only')
+    print(f'  Time:       {elapsed:.0f}s')
+    print(f'  Total:      {total}')
+    print(f'  V4 solved:  {v4_success} ({v4_success*100//max(1,total)}%)')
+    print(f'  Fallback:   {algo_fallback}')
+    print(f'  File:       {OUTPUT_FILE} ({file_size:.0f} KB)')
+    print(f'  Workers:    {args.workers}')
+    print(f'\n  Ready for SFT phase: python scripts/dpo_train.py --sft-only')
 
 if __name__ == '__main__':
     main()
