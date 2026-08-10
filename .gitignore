@@ -10,8 +10,11 @@ Thumbs.db
 npm-debug.log*
 
 # ★ CLOSED-SOURCE PROTECTION ★
-# verification_engine.js 是 Polaris 独家核心技术（投票制验证引擎）
-# 运行时由 protect_verify.js 从 .js.enc 解密生成
-# 不要提交解密后的原文件！
-electron/services/verification_engine.js
-.polaris_key
+# internal/ 目录包含 Polaris 独家核心技术：
+#   5个技术壁垒源码 + 验证引擎 + 训练管线 + 加解密工具
+#   .enc 文件和 protect_verify.js 可安全提交（无密钥无法解密）
+#   .js 明文文件由构建时 npm run decrypt:verify 产生，不要提交！
+internal/services/*.js
+internal/.polaris_key
+!internal/services/verification_engine.js.enc
+!internal/scripts/protect_verify.js
