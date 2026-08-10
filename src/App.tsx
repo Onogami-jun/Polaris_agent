@@ -291,8 +291,6 @@ const App:React.FC=()=>{
   const[todoSteps,setTodoSteps]=useState<{id:string;status:'pending'|'running'|'done';label:string}[]>([]);
   const[interventions,setInterventions]=useState<any[]>([]);
   const[plan,setPlan]=useState<any>(null);const[planProg,setPlanProg]=useState<any>(null);const[planId,setPlanId]=useState('');const[labOpen,setLabOpen]=useState(false);const[gitOpen,setGitOpen]=useState(false);
-  const[labOpen,setLabOpen]=useState(false);
-  const[gitOpen,setGitOpen]=useState(false);
 
   // Panel widths (px) & visibility
   const[leftW,setLeftW]=useState(220);const[leftOpen,setLeftOpen]=useState(true);
