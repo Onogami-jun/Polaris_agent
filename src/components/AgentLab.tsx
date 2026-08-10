@@ -48,6 +48,7 @@ export function StandaloneLab({ onClose }: { onClose: () => void }) {
     { id: 'logs',        label: labL.logs },
   ];
 
+  useEffect(()=>{function h(e:KeyboardEvent){if(e.key==='Escape')onClose()};window.addEventListener('keydown',h);return()=>window.removeEventListener('keydown',h)},[onClose]);
   useEffect(() => {
     runDiagnostics();
     refreshSandbox();
@@ -106,7 +107,7 @@ export function StandaloneLab({ onClose }: { onClose: () => void }) {
         <div className="w-[190px] shrink-0 bg-muted/30 border-r border-border flex flex-col">
           <div className="flex items-center justify-between px-4 pt-5 pb-3">
             <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider font-mono">{t(lang, 'sidebar.lab')}</span>
-            <button onClick={onClose} className="text-muted-foreground hover:text-foreground text-sm">✕</button>
+            <button onClick={onClose} className="px-3 py-1 rounded-md bg-muted/50 hover:bg-muted text-xs text-muted-foreground hover:text-foreground font-mono transition-colors">Esc</button>
           </div>
           <div className="flex-1 px-2 py-1 space-y-0.5">
             {sections.map(sec => (
@@ -117,8 +118,9 @@ export function StandaloneLab({ onClose }: { onClose: () => void }) {
               </button>
             ))}
           </div>
-          <div className="px-3 py-3 border-t border-border">
+          <div className="px-3 py-3 border-t border-border space-y-2">
             <p className="text-[9px] text-muted-foreground font-mono">Polaris Lab v4.0</p>
+            <button onClick={onClose} className="w-full py-2 rounded-md bg-muted/50 hover:bg-muted text-[10px] text-muted-foreground hover:text-foreground font-mono transition-colors">Close Lab</button>
           </div>
         </div>
 
