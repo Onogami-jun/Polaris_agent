@@ -20,6 +20,10 @@ export function GitPopup({ onClose }: { onClose: () => void }) {
   var [showPRs, setShowPRs] = useState(false); var [showIssues, setShowIssues] = useState(false); var [showCI, setShowCI] = useState(false);
   var [repos, setRepos] = useState<any[]>([]); var [reposLoading, setReposLoading] = useState(false);
   var [searchQuery, setSearchQuery] = useState('');
+  var [branchInput, setBranchInput] = useState('');
+  var [showPRList, setShowPRList] = useState(false);
+  var [prDiff, setPrDiff] = useState('');
+  var [prDiffNum, setPrDiffNum] = useState(0);
 
   var call = function(tool:string, params?:any) {
     var api = window.electronAPI; if (!api) return Promise.reject('No API');
@@ -82,6 +86,17 @@ export function GitPopup({ onClose }: { onClose: () => void }) {
     call('git_workflows', {dir:repoDir}).then(function(r){ if (r.success) setWorkflows(r.runs||[]); else setStatusMsg(r.error||''); setLoading(false); });
   };
 
+  var switchBranch = function(branchName:string) { if (!branchName.trim()) return; call('git_switch_branch',{dir:repoDir,name:branchName}).then(function(r){ if (r.success) { setBranch(branchName); setBranchInput(''); refreshStatus(); } else setStatusMsg(r.error||'Switch failed'); }); };
+  var fetchRepo = function() { setLoading(true); call('git_fetch',{dir:repoDir}).then(function(){ refreshStatus(); setLoading(false); }); };
+  var viewPRDiff = function(prNumber:number) {
+    setLoading(true); setShowPRList(false);
+    call('git_pr_diff',{dir:repoDir,prNumber:String(prNumber)}).then(function(r){
+      if (r.success && r.diff) { setPrDiff(r.diff); setPrDiffNum(prNumber); } else { setStatusMsg(r.error||'Diff failed'); }
+      setLoading(false);
+    });
+  };
+  var switchToRepo = function(url:string) { if (repoDir) return; handleClone(url); };
+
   var filtered = repos.filter(function(r){ return !searchQuery || r.name.toLowerCase().includes(searchQuery.toLowerCase()); });
 
   return (
@@ -141,17 +156,40 @@ export function GitPopup({ onClose }: { onClose: () => void }) {
               {!repoDir ? (
                 <div className="text-center py-20 text-muted-foreground">
                   <p className="text-sm">Select a repository to clone.</p>
-                  <p className="text-xs mt-1 opacity-50">Commit, push, and manage PRs from here.</p>
+                  <p className="text-xs mt-1 opacity-50">Click any repo on the left to clone. Then commit, push, and manage PRs.</p>
                 </div>
               ) : (
                 <div>
-                  <div className="flex items-center gap-2 text-[11px] mb-3">
+                  {/* Branch bar + quick actions */}
+                  <div className="flex items-center gap-2 text-[11px] mb-2">
                     <span className="w-2 h-2 rounded-full bg-emerald-500"/>
-                    <span className="font-mono text-emerald-400">{branch||'main'}</span>
-                    <span className="text-muted-foreground/50">/</span>
+                    <span className="font-mono font-semibold text-emerald-400">{branch||'main'}</span>
+                    <span className="text-muted-foreground/50 mx-0.5">·</span>
                     <span className="font-mono text-muted-foreground">{files.length} changed</span>
-                    <button onClick={refreshStatus} className="ml-auto text-[10px] text-muted-foreground hover:text-foreground font-mono" disabled={loading}>{loading?'...':t(lang,'git.refresh')}</button>
+                    <div className="ml-auto flex gap-1">
+                      <button onClick={fetchRepo} className="text-[10px] text-muted-foreground hover:text-foreground font-mono px-1.5 py-0.5 rounded hover:bg-muted/30" disabled={loading} title="git fetch --all">Fetch</button>
+                      <button onClick={refreshStatus} className="text-[10px] text-muted-foreground hover:text-foreground font-mono px-1.5 py-0.5 rounded hover:bg-muted/30" disabled={loading}>{loading?'...':t(lang,'git.refresh')}</button>
+                    </div>
                   </div>
+
+                  {/* Branch switch input */}
+                  <div className="flex gap-1.5 mb-2">
+                    <input className="flex-1 bg-muted/50 border border-border rounded px-2.5 py-1 text-[10px] font-mono outline-none focus:border-primary/50" placeholder="Switch branch..." value={branchInput} onChange={function(e:any){setBranchInput(e.target.value)}} onKeyDown={function(e:any){if(e.key==='Enter')switchBranch(branchInput)}}/>
+                    <button onClick={function(){switchBranch(branchInput)}} className="px-2.5 py-1 rounded bg-muted/30 hover:bg-muted/50 text-[10px] text-muted-foreground hover:text-foreground font-mono" disabled={!branchInput.trim()}>Switch</button>
+                  </div>
+
+                  {/* PR diff viewer */}
+                  {prDiff && (
+                    <div className="mb-2 rounded-md bg-muted/20 border border-border/50 overflow-hidden">
+                      <div className="flex items-center justify-between px-2.5 py-1 bg-muted/30 border-b border-border/50">
+                        <span className="text-[9px] font-mono text-muted-foreground uppercase tracking-wider">PR #{prDiffNum} Diff</span>
+                        <button onClick={function(){setPrDiff('')}} className="text-[9px] text-muted-foreground hover:text-foreground">Close</button>
+                      </div>
+                      <div className="max-h-[200px] overflow-y-auto p-2 text-[9px] font-mono leading-relaxed whitespace-pre text-muted-foreground">{prDiff.slice(0, 8000)}</div>
+                    </div>
+                  )}
+
+                  {/* Status bar */}
 
                   {statusMsg && <div className="text-[10px] text-red-400 font-mono mb-2">{statusMsg}</div>}
 
@@ -187,7 +225,7 @@ export function GitPopup({ onClose }: { onClose: () => void }) {
                     <button onClick={loadCI} className={'py-1.5 rounded-md text-[10px] font-mono font-medium transition-colors '+(showCI?'bg-primary/10 text-primary':'bg-muted/20 text-muted-foreground hover:text-foreground hover:bg-muted/40')}>{t(lang,'git.ci')}</button>
                   </div>
 
-                  {showPRs && <SubList data={prs} empty={t(lang,'git.noPRs')} kind="pr" lang={lang}/>}
+                  {showPRs && <SubListPR data={prs} empty={t(lang,'git.noPRs')} lang={lang} onViewDiff={viewPRDiff}/>}
                   {showIssues && <SubList data={issues} empty={t(lang,'git.noIssues')} kind="issue" lang={lang}/>}
                   {showCI && <SubListCI data={workflows} empty={t(lang,'git.noRuns')}/>}
                 </div>
@@ -198,6 +236,20 @@ export function GitPopup({ onClose }: { onClose: () => void }) {
       </div>
     </div>
   );
+}
+
+function SubListPR({data,empty,lang,onViewDiff}:{data:any[],empty:string,lang:string,onViewDiff:(n:number)=>void}) {
+  if (data.length===0) return <div className="text-[10px] text-muted-foreground/50 text-center py-2">{empty}</div>;
+  return <div className="max-h-[120px] overflow-y-auto space-y-0.5 rounded-md bg-muted/10 p-1.5">
+    {data.map(function(d:any,i:number){
+      return <div key={i} className="text-[10px] font-mono px-2 py-0.5 rounded hover:bg-muted/30 flex items-center gap-2 group">
+        <span className="text-muted-foreground">#{d.number}</span>
+        <span className="text-foreground/80 truncate flex-1">{d.title}</span>
+        <span className={d.state==='open'?'text-emerald-400':'text-red-400'}>{d.state}</span>
+        <button onClick={function(){onViewDiff(d.number)}} className="text-[8px] text-primary/60 hover:text-primary font-mono opacity-0 group-hover:opacity-100 px-1 rounded hover:bg-primary/10">Diff</button>
+      </div>;
+    })}
+  </div>;
 }
 
 function SubList({data,empty,kind,lang}:{data:any[],empty:string,kind:string,lang:string}) {

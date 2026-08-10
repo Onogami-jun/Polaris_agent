@@ -1,5 +1,5 @@
 /**
- * Polaris Router v8 — Claude Code-style while loop + Quality Check + Handoff runtime
+ * Polaris Router v9 — Unified Workflow Engine + Plan-before-Execute
  */
 const https = require('https');
 const { TOOLS } = require('./tools');
@@ -12,6 +12,7 @@ const AGENTS = require('./agents');
 const { POLARIS_PERSONA } = require('./persona');
 const { requestPermission } = require('./permission_bridge');
 const { verifyAndScore } = require('./verification_engine');
+const { planSteps, executePlan, CATEGORIES } = require('./workflow_planner');
 
 // API key supplied by main process after successful auth
 const { setKey, getKey } = require('./keymanager');
@@ -551,6 +552,19 @@ async function executeQuery(text, strategy, systemPrompt, images, onStreamChunk,
     var strategyConfig = { best_quality: { maxTokens: 4096, temperature: 0.3 }, cost_optimized: { maxTokens: 1024, temperature: 0.2 }, ensemble: { maxTokens: 8192, temperature: 0.5 } };
     var stratCfg = strategyConfig[strategy] || strategyConfig.best_quality;
     stratCfg.language = apiKeys.language || 'zh-CN'; // ★ Thread language through
+
+    // ── ★ Workflow planning: detect multi-step goals ──
+    var needsPlan = /(?:clone|克隆).*(?:fix|修复|code|代码|write|commit|push|pr|pull request|review|审查|experiment|实验).*|(?:analyze|分析).*(?:solve|求解).*(?:push|commit|pr)/i.test(text);
+    if (needsPlan && onTodo) {
+      try {
+        var plan = await planSteps(text, apiKey);
+        var planSteps_ = (plan.steps || []).map(function(s, i) {
+          return { id: 'step_' + i, label: (SKILLS[s.skill] ? SKILLS[s.skill].name : s.skill), skill: s.skill, status: 'pending', params: s.params, category: SKILLS[s.skill] ? SKILLS[s.skill].category : 'agent' };
+        });
+        onTodo({ type: 'plan', steps: planSteps_ });
+      } catch {}
+    }
+
     const content = await runAgentLoop(text, apiKey, onExec, onTodo, onStreamChunk, stratCfg);
     const elapsed = Date.now() - startTime;
     logger.info('Request completed', { tid, ms: elapsed });

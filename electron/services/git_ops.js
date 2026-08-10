@@ -2,7 +2,7 @@
  * Polaris Git Operations Service v2.0
  * Full GitHub integration: clone, branch, commit, push, PR, review, issues, CI, releases.
  */
-const { execSync, spawnSync } = require('child_process');
+const { execSync, spawnSync, spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
@@ -27,6 +27,21 @@ function gitRun(args, cwd, timeout = 30000) {
     const r = spawnSync(git, args, { cwd: cwd || os.homedir(), timeout, encoding: 'utf8', windowsHide: true, env: Object.assign({}, process.env) });
     return { success: r.status === 0, stdout: (r.stdout || '').slice(0, 5000), stderr: (r.stderr || '').slice(0, 2000) };
   } catch (e) { return { success: false, error: e.message }; }
+}
+
+function gitRunAsync(args, cwd, timeout = 120000) {
+  return new Promise(function(resolve) {
+    const git = getGit();
+    if (!git) return resolve({ success: false, error: 'Git not found.' });
+    try {
+      const child = spawn(git, args, { cwd: cwd || os.homedir(), timeout, encoding: 'utf8', windowsHide: true, env: Object.assign({}, process.env) });
+      var stdout = ''; var stderr = '';
+      child.stdout.on('data', function(c) { stdout += c.toString(); });
+      child.stderr.on('data', function(c) { stderr += c.toString(); });
+      child.on('close', function(code) { resolve({ success: code===0, stdout: stdout.slice(0, 10000), stderr: stderr.slice(0, 2000) }); });
+      child.on('error', function(e) { resolve({ success: false, error: e.message }); });
+    } catch (e) { resolve({ success: false, error: e.message }); }
+  });
 }
 function ghAPI(token, method, apiPath, body) {
   return new Promise((resolve) => {
@@ -62,8 +77,8 @@ const gitOps = {
     if (fs.existsSync(dir) && fs.readdirSync(dir).length > 0) return { success: true, result: 'Already exists', dir };
     if (!fs.existsSync(path.dirname(dir))) fs.mkdirSync(path.dirname(dir), { recursive: true });
     const authUrl = url.replace('https://github.com/', 'https://' + token + '@github.com/');
-    const args = ['clone', authUrl, dir]; if (branch) args.splice(1, 0, '-b', branch);
-    const r = gitRun(args); return r.success ? { success: true, result: 'Cloned', dir, branch: branch || 'main' } : { success: false, error: r.stderr || r.error };
+    const args = ['clone', '--depth', '1', authUrl, dir]; if (branch) args.splice(1, 0, '-b', branch);
+    const r = await gitRunAsync(args); return r.success ? { success: true, result: 'Cloned', dir, branch: branch || 'main' } : { success: false, error: r.stderr || r.error };
   },
 
   /* ── List all user repos (for repo picker UX) ── */
@@ -206,5 +221,5 @@ const gitOps = {
   },
 };
 
-module.exports = { gitOps, getGit, gitRun, ghAPI };
+module.exports = { gitOps, getGit, gitRun, gitRunAsync, ghAPI };
 

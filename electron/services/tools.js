@@ -3,6 +3,8 @@
  * Optimization-centric tools: solve, decompose, benchmark.
  */
 const { resolvePython, runPython } = require('./python_resolver');
+const { getGit } = require('./git_ops');
+const { spawnSync: spSync } = require('child_process');
 
 /* ── Safe escaping for Python string interpolation ── */
 function safeEscape(s) {
@@ -456,6 +458,12 @@ except Exception as e:
   },
   git_release: { name: 'Create Release', description: '创建Tag和GitHub Release。参数: dir, tag, name(可选), body(可选)', requires_confirm: true, category: 'git',
     execute: async (params, ghToken) => { const { gitOps } = require('./git_ops'); return gitOps.createRelease(params, ghToken); }
+  },
+  git_switch_branch: { name: 'Switch Branch', description: '切换Git分支。参数: dir, name(分支名)', requires_confirm: false, category: 'git',
+    execute: async function(p) { var git=getGit(); if(!git) return {success:false,error:'Git not found'}; var r=spSync(git,['checkout',p.name],{cwd:p.dir,encoding:'utf8',windowsHide:true}); return r.status===0?{success:true,branch:p.name}:{success:false,error:(r.stderr||'').slice(0,500)}; }
+  },
+  git_fetch: { name: 'Git Fetch', description: '拉取远程分支列表。参数: dir', requires_confirm: false, category: 'git',
+    execute: async function(p) { var git=getGit(); if(!git) return {success:false,error:'Git not found'}; var r=spSync(git,['fetch','--all'],{cwd:p.dir,encoding:'utf8',windowsHide:true}); return r.status===0?{success:true,result:'Fetched'}:{success:false,error:(r.stderr||'').slice(0,500)}; }
   },
 };
 
