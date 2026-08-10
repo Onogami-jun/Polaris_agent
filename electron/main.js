@@ -501,6 +501,18 @@ ipcMain.handle('agents:list', () => Object.entries(AGENTS).map(([id, a]) => ({ i
 const { WORKFLOWS } = require('./services/workflow');
 ipcMain.handle('workflows:list', () => Object.entries(WORKFLOWS).map(([id, w]) => ({ id, name: w.name, steps: w.steps.map(s => ({ id: s.id, agent: s.agent, description: s.description })) })));
 
+// ── New IPC: Data Flywheel + Model Router + Skill Graph ──
+const { getDatasetStats, exportDataset } = require('./services/data_flywheel');
+const { getStats: getRouterStats } = require('./services/model_router');
+const { getEdgeStats, querySimilar, buildPlanningContext } = require('./services/skill_graph');
+
+ipcMain.handle('flywheel:stats', () => getDatasetStats());
+ipcMain.handle('flywheel:export', (_e, format) => exportDataset(format || 'jsonl'));
+ipcMain.handle('router:stats', (_e, problemType) => getRouterStats(problemType || 'custom'));
+ipcMain.handle('skillgraph:edges', (_e, limit) => getEdgeStats(limit || 10));
+ipcMain.handle('skillgraph:similar', (_e, goalText, limit) => querySimilar(goalText, limit || 5));
+ipcMain.handle('skillgraph:context', (_e, goalText) => buildPlanningContext(goalText));
+
 // IPC: System Monitor
 ipcMain.handle('monitor:start', () => {
   systemMonitor.startMonitoring((card) => {

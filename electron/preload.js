@@ -63,4 +63,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   terminalWrite: (id, input) => ipcRenderer.invoke('terminal:write', { id, input }),
   terminalRead: (id, lines) => ipcRenderer.invoke('terminal:read', { id, lines }),
   terminalKill: (id) => ipcRenderer.invoke('terminal:kill', { id }),
+  flywheelStats: () => ipcRenderer.invoke('flywheel:stats'),
+  flywheelExport: (format) => ipcRenderer.invoke('flywheel:export', format),
+  routerStats: (problemType) => ipcRenderer.invoke('router:stats', problemType),
+  skillgraphEdges: (limit) => ipcRenderer.invoke('skillgraph:edges', limit),
+  skillgraphSimilar: (goalText, limit) => ipcRenderer.invoke('skillgraph:similar', goalText, limit),
+  skillgraphContext: (goalText) => ipcRenderer.invoke('skillgraph:context', goalText),
 });

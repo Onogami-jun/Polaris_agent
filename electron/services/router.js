@@ -14,7 +14,7 @@ const { requestPermission } = require('./permission_bridge');
 const { verifyAndScore } = require('./verification_engine');
 const { planSteps, executePlan, CATEGORIES } = require('./workflow_planner');
 const { parseFromLLM } = require('./semantic_dsl');
-const { route: routeModel, record: recordRoute } = require('./model_router');
+const { route: routeModel, record: recordRoute, detectProblemType } = require('./model_router');
 const { recordPath } = require('./skill_graph');
 const { recordVerification, recordDPOPair, recordHallucination } = require('./data_flywheel');
 const { runAdversarialChecks } = require('./adversarial_verify');
@@ -139,10 +139,11 @@ async function executeTool(name, args, onExec) {
  * Emits each content chunk to `onChunk` as it arrives.
  * Returns the full message (content + optional tool_calls).
  */
-function callDeepSeekStream(messages, tools, apiKey, temperature, maxTokens, onChunk) {
+function callDeepSeekStream(messages, tools, apiKey, temperature, maxTokens, onChunk, modelOverride) {
   const key = apiKey || getApiKey();
+  var modelName = resolveModel(modelOverride);
   const payload = {
-    model: 'deepseek-v4-flash', messages,
+    model: modelName, messages,
     stream: true,
     max_tokens: maxTokens || 4096,
     temperature: temperature || 0.3,
@@ -220,10 +221,11 @@ function callDeepSeekStream(messages, tools, apiKey, temperature, maxTokens, onC
 /**
  * Non-streaming fallback
  */
-function callDeepSeek(messages, tools, apiKey, temperature, maxTokens) {
+function callDeepSeek(messages, tools, apiKey, temperature, maxTokens, modelOverride) {
   const key = apiKey || getApiKey();
+  var modelName = resolveModel(modelOverride);
   return new Promise(resolve => {
-    const payload = { model: 'deepseek-v4-flash', messages, max_tokens: maxTokens || 4096, temperature: temperature || 0.3 };
+    const payload = { model: modelName, messages, max_tokens: maxTokens || 4096, temperature: temperature || 0.3 };
     if (tools && tools.length > 0) { payload.tools = tools; payload.tool_choice = 'auto'; }
     const body = JSON.stringify(payload);
     const req = https.request({
@@ -238,6 +240,16 @@ function callDeepSeek(messages, tools, apiKey, temperature, maxTokens) {
     req.on('timeout', () => { req.destroy(); resolve({ error: 'Timeout' }); });
     req.write(body); req.end();
   });
+}
+
+/* ── Resolve routed model to available API model ─────────── */
+function resolveModel(routeId) {
+  // If the router picks a model we have API access to, use it directly
+  if (routeId === 'deepseek-v4-flash' || routeId === 'deepseek-v4') return routeId;
+  // For non-DeepSeek models, map to the closest DeepSeek equivalent
+  if (routeId === 'claude-opus-4' || routeId === 'gpt-4o') return 'deepseek-v4';
+  // Default: fast/cheap
+  return 'deepseek-v4-flash';
 }
 
 /* ══════════════════════════════════════════════════════════
@@ -292,14 +304,14 @@ async function runAgentLoop(userMessage, apiKey, onExec, onTodo, onStreamChunk, 
     try {
       var resp = await callDeepSeekStream(
         [{ role: 'system', content: agentPrompt }, { role: 'user', content: userMessage }],
-        [], apiKey, activeSkill.temperature || temp, maxTok, onStreamChunk);
+        [], apiKey, activeSkill.temperature || temp, maxTok, onStreamChunk, (strategyConfig && strategyConfig.routedModel));
       content = resp.choices?.[0]?.message?.content || '';
     } catch(e) { logger.warn('Streaming failed', { error: e.message }); }
     if (!content || content.trim().length < 5) {
       if (onStreamChunk) onStreamChunk({ type: 'thinking', text: '正在生成回复...' });
       var fallback = await callDeepSeek(
         [{ role: 'system', content: agentPrompt }, { role: 'user', content: userMessage }],
-        [], apiKey, activeSkill.temperature || temp, maxTok);
+        [], apiKey, activeSkill.temperature || temp, maxTok, (strategyConfig && strategyConfig.routedModel));
       content = fallback.choices?.[0]?.message?.content || '';
       if (content && onStreamChunk) onStreamChunk({ type: 'content', text: content, full: content });
     }
@@ -327,6 +339,7 @@ async function runAgentLoop(userMessage, apiKey, onExec, onTodo, onStreamChunk, 
 
   var bestResponse = '';
   var toolsUsed = false;
+  var allToolCalls = []; // ★ Collect all tool calls across rounds for BARRIER 5
   const MAX_ROUNDS = 10;
   var round = 0;
 
@@ -336,7 +349,7 @@ async function runAgentLoop(userMessage, apiKey, onExec, onTodo, onStreamChunk, 
     var thinkingText = round <= 1 ? '分析问题...' : round <= 3 ? `执行第${round}步...` : `继续处理 (${round}/${MAX_ROUNDS})...`;
     if (onStreamChunk) onStreamChunk({ type: 'thinking', text: thinkingText });
 
-    const resp = await callDeepSeek(messages, tools, apiKey, agentTemp, maxTok);
+    const resp = await callDeepSeek(messages, tools, apiKey, agentTemp, maxTok, (strategyConfig && strategyConfig.routedModel));
     if (resp.error) break;
 
     const choice = resp.choices?.[0];
@@ -381,6 +394,10 @@ async function runAgentLoop(userMessage, apiKey, onExec, onTodo, onStreamChunk, 
     // ── Tool calls present → execute them ──
     toolsUsed = true;
     const toolCalls = choice.message.tool_calls;
+    // Collect for BARRIER 5 (skill graph)
+    for (var tci = 0; tci < (toolCalls || []).length; tci++) {
+      allToolCalls.push(toolCalls[tci]);
+    }
     messages.push({ role: 'assistant', content: choice.message.content || 'Calling tools...', tool_calls: toolCalls });
 
     for (const tc of toolCalls) {
@@ -445,6 +462,8 @@ async function runAgentLoop(userMessage, apiKey, onExec, onTodo, onStreamChunk, 
   // ── ★ Verification-First: 投票制验证引擎 ──
   var finalResult = bestResponse || '';
   var dslInstance = null;
+  var problemType = 'custom';
+  var routedModelId = 'deepseek-v4-flash';
   if (toolsUsed && finalResult && finalResult.length > 20) {
     try {
       if (onStreamChunk) onStreamChunk({ type: 'thinking', text: '验证结果...' });
@@ -457,11 +476,26 @@ async function runAgentLoop(userMessage, apiKey, onExec, onTodo, onStreamChunk, 
         if (dslInstance.valid && onStreamChunk) onStreamChunk({ type: 'thinking', text: 'DSL valid: ' + dslInstance.type + ' (' + (dslInstance.meta.provenance_counts.user||0) + ' user/' + (dslInstance.meta.provenance_counts.inferred||0) + ' inferred params)' });
       } catch(dslErr) { logger.warn('DSL parse failed', { error: dslErr.message }); }
 
+      // ★ BARRIER 6: Adversarial Verify — run perturbation/mismatch/phrasing checks
+      var advResult = null;
+      if (dslInstance && dslInstance.valid) {
+        try {
+          if (onStreamChunk) onStreamChunk({ type: 'thinking', text: '对抗验证...' });
+          advResult = await runAdversarialChecks(dslInstance, [finalResult], null);
+          if (!advResult.passed && onStreamChunk) onStreamChunk({ type: 'thinking', text: '⚠️ 对抗验证未通过: ' + (advResult.details || []).filter(function(d){return d.indexOf('FAIL')>=0}).join('; ') });
+        } catch(advErr) { logger.warn('Adversarial verify failed', { error: advErr.message }); }
+      }
+
+      // ★ BARRIER 9: Model Router — update routing stats with verification signal
+      try {
+        problemType = detectProblemType(dslInstance || userMessage);
+        routedModelId = (strategyConfig && strategyConfig.routedModel) || 'deepseek-v4-flash';
+        recordRoute(problemType, routedModelId, verification);
+      } catch(rtErr) { logger.warn('Route record failed', { error: rtErr.message }); }
+
       // ★ BARRIER 1: Data Flywheel — record verification result
       try {
-        var problemType = require('./model_router').detectProblemType(dslInstance || userMessage);
-        recordVerification(userMessage, finalResult, verification, 'deepseek-v4-flash');
-        recordRoute(problemType, 'deepseek-v4-flash', verification);
+        recordVerification(userMessage, finalResult, verification, routedModelId);
         // Record hallucinations if any
         if (verification.hardVetoes) {
           var untrusted = [];
@@ -470,11 +504,30 @@ async function runAgentLoop(userMessage, apiKey, onExec, onTodo, onStreamChunk, 
           }
           if (untrusted.length > 0) recordHallucination(userMessage, finalResult, untrusted, []);
         }
+        // Record DPO pair if verification found a quality gap
+        if (!verification.passed && verification.finalScore < 60) {
+          var directResult = await directSolve(userMessage, onExec);
+          if (directResult.success && directResult.result) {
+            recordDPOPair(userMessage, directResult.result, finalResult, { good: 85, bad: verification.finalScore, model: routedModelId, type: problemType });
+          }
+        }
       } catch(fwErr) { logger.warn('Flywheel record failed', { error: fwErr.message }); }
 
+      // ★ BARRIER 5: Skill Graph — record successful workflow path
+      try {
+        var pathSteps = [];
+        for (var ti = 0; ti < (allToolCalls || []).length; ti++) {
+          var tcName = (allToolCalls && allToolCalls[ti] && allToolCalls[ti].function && allToolCalls[ti].function.name) || 'unknown';
+          var tcArgs = {};
+          try { tcArgs = JSON.parse((allToolCalls && allToolCalls[ti] && allToolCalls[ti].function && allToolCalls[ti].function.arguments) || '{}'); } catch(e) {}
+          pathSteps.push({ skill: tcName, params: tcArgs, outputs: { success: verification.passed } });
+        }
+        if (pathSteps.length > 0) recordPath(userMessage, pathSteps, { problem_type: problemType, model: routedModelId, score: verification.finalScore, passed: verification.passed });
+      } catch(sgErr) { logger.warn('Skill graph record failed', { error: sgErr.message }); }
+
       if (verification.passed) {
-        logger.info('Verified OK', { score: verification.finalScore, verdict: verification.verdict });
-        bestResponse = bestResponse + '\n\n[Verified: ' + verification.verdict + ', score ' + verification.finalScore + ']';
+        logger.info('Verified OK', { score: verification.finalScore, verdict: verification.verdict, advPassed: advResult ? advResult.passed : 'n/a' });
+        bestResponse = bestResponse + '\n\n[Verified: ' + verification.verdict + ', score ' + verification.finalScore + (advResult && !advResult.passed ? ', ⚠️adv' : '') + ']';
       } else {
         logger.warn('Verified FAIL', { score: verification.finalScore, reason: verification.reason });
         const dr = await directSolve(userMessage, onExec);
@@ -580,6 +633,13 @@ async function executeQuery(text, strategy, systemPrompt, images, onStreamChunk,
     var strategyConfig = { best_quality: { maxTokens: 4096, temperature: 0.3 }, cost_optimized: { maxTokens: 1024, temperature: 0.2 }, ensemble: { maxTokens: 8192, temperature: 0.5 } };
     var stratCfg = strategyConfig[strategy] || strategyConfig.best_quality;
     stratCfg.language = apiKeys.language || 'zh-CN'; // ★ Thread language through
+
+    // ★ BARRIER 9: Model Router — select best model for this problem type
+    var problemType = detectProblemType(text);
+    var routed = routeModel(problemType, strategy);
+    stratCfg.routedModel = routed.id;
+    stratCfg.routedScore = routed.score;
+    if (onExec) onExec({ tool: 'model_router', status: 'running', detail: 'Routing: ' + routed.id + ' (score ' + routed.score + ', ' + (routed.detail || '') + ')' });
 
     // ── ★ Workflow planning: detect multi-step goals ──
     var needsPlan = /(?:clone|克隆).*(?:fix|修复|code|代码|write|commit|push|pr|pull request|review|审查|experiment|实验).*|(?:analyze|分析).*(?:solve|求解).*(?:push|commit|pr)/i.test(text);

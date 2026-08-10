@@ -23,5 +23,30 @@ interface PolarisAPI {
   monitorStart(): Promise<{ success: boolean }>; monitorUpdate(a: any): Promise<boolean>; monitorSetScene(s: string): Promise<boolean>; monitorFeedback(p: { eventKey: string; accepted: boolean }): Promise<boolean>; monitorContext(): Promise<any>;
   plannerGenerate(t: string): Promise<any>; plannerExecute(id: string): Promise<any>; plannerReject(id: string): Promise<any>;
   onIntervention(cb: (card: any) => void): void; onPlanProgress(cb: (data: any) => void): void; onExecLog(cb: (data: any) => void): void; onTodoUpdate(cb: (data: any) => void): void;
+  healthCheck(): Promise<any>;
+  sandboxReady(): Promise<boolean>; sandboxNeedsSetup(): Promise<boolean>; sandboxGetProgress(): Promise<any>;
+  sandboxSetup(): Promise<any>; sandboxRepair(): Promise<any>; sandboxHealth(): Promise<any>;
+  sandboxPackages(): Promise<any>; sandboxHasPolaris(): Promise<boolean>;
+  sandboxInstallPackage(pkg: string): Promise<any>; sandboxUninstallPackage(pkg: string): Promise<any>;
+  sandboxAutoSetup(): Promise<any>; sandboxRunCode(code: string): Promise<any>; sandboxCheckSafety(code: string): Promise<any>;
+  onSandboxProgress(cb: (data: any) => void): void;
+  onGitUpdate(cb: (data: any) => void): void;
+  onToolConfirm(cb: (data: any) => void): void; onToolConfirmDismiss(cb: (data: any) => void): void;
+  approvePermission(id: string): Promise<any>; rejectPermission(id: string): Promise<any>;
+  emailSendCode(email: string): Promise<any>; emailSendWelcome(email: string, displayName: string): Promise<any>;
+  emailForgotPassword(email: string): Promise<any>;
+  authUnlock(userId: string): Promise<any>; authLock(): Promise<any>;
+  authGithubLogin(data: any): Promise<any>; authGithubLoginLoopback(): Promise<any>;
+  authAdminResetPassword(email: string, newPassword: string): Promise<any>;
+  authAdminConfirmUser(email: string): Promise<any>;
+  authAdminCreateUser(email: string, password: string, displayName: string): Promise<any>;
+  terminalCreate(type: string): Promise<any>; terminalWrite(id: string, input: string): Promise<any>;
+  terminalRead(id: string, lines: number): Promise<any>; terminalKill(id: string): Promise<any>;
+  flywheelStats(): Promise<Record<string, number>>;
+  flywheelExport(format: string): Promise<any>;
+  routerStats(problemType: string): Promise<any[]>;
+  skillgraphEdges(limit: number): Promise<any[]>;
+  skillgraphSimilar(goalText: string, limit: number): Promise<any[]>;
+  skillgraphContext(goalText: string): Promise<string>;
 }
 interface Window { electronAPI?: PolarisAPI; }
