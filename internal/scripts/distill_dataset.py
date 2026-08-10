@@ -119,6 +119,7 @@ If the solution involves an ordering, list it explicitly.
 # ── Algorithmic fallback for offline mode ──────────────────
 def algo_solve(problem_type, params):
     """Quick heuristic solutions for offline testing."""
+    p = params  # alias for brevity
     if problem_type == 'knapsack':
         items = sorted([(p['values'][i]/p['weights'][i], i, p['values'][i], p['weights'][i])
                         for i in range(len(p['values']))], reverse=True)
@@ -209,21 +210,20 @@ def main():
     # API key
     api_key = args.key
     if not args.offline and not api_key:
-        # Try loading from secrets vault
+        # Try loading from secrets vault via Node
         try:
-            sys.path.insert(0, str(Path(__file__).parent.parent))
-            import importlib, importlib.util
-            secrets_path = Path(__file__).parent.parent / 'services' / 'secrets.js'
-            if secrets_path.exists():
-                import subprocess
-                r = subprocess.run(['node', '-e',
-                    f'console.log(require("{secrets_path}").get("deepseek_api_key")||"")'],
-                    capture_output=True, text=True, timeout=5)
-                api_key = r.stdout.strip()
+            import subprocess
+            secrets_js = str((Path(__file__).parent.parent / 'services' / 'secrets.js').resolve())
+            # Use forward slashes for Node require() on Windows
+            secrets_js = secrets_js.replace('\\', '/')
+            key_script = 'try{var s=require("%s");var k=s.get("deepseek_api_key");process.stdout.write(k||"")}catch(e){process.stdout.write("")}' % secrets_js
+            r = subprocess.run(['node', '-e', key_script], capture_output=True, text=True, timeout=5)
+            api_key = r.stdout.strip()
         except:
             pass
     if not args.offline and not api_key:
-        print('[WARN] No API key found. Use --offline for algorithmic mode or set DEEPSEEK_KEY env var.')
+        # Second fallback: env var
+        api_key = os.environ.get('DEEPSEEK_KEY', '')
         print('[WARN] Falling back to offline mode.\n')
         args.offline = True
 
