@@ -13,6 +13,11 @@ const { POLARIS_PERSONA } = require('./persona');
 const { requestPermission } = require('./permission_bridge');
 const { verifyAndScore } = require('./verification_engine');
 const { planSteps, executePlan, CATEGORIES } = require('./workflow_planner');
+const { parseFromLLM } = require('./semantic_dsl');
+const { route: routeModel, record: recordRoute } = require('./model_router');
+const { recordPath } = require('./skill_graph');
+const { recordVerification, recordDPOPair, recordHallucination } = require('./data_flywheel');
+const { runAdversarialChecks } = require('./adversarial_verify');
 
 // API key supplied by main process after successful auth
 const { setKey, getKey } = require('./keymanager');
@@ -439,11 +444,34 @@ async function runAgentLoop(userMessage, apiKey, onExec, onTodo, onStreamChunk, 
 
   // ── ★ Verification-First: 投票制验证引擎 ──
   var finalResult = bestResponse || '';
+  var dslInstance = null;
   if (toolsUsed && finalResult && finalResult.length > 20) {
     try {
       if (onStreamChunk) onStreamChunk({ type: 'thinking', text: '验证结果...' });
       var execLog = []; // tool execution log
       var verification = await verifyAndScore(userMessage, finalResult, execLog, messages, apiKey);
+
+      // ★ BARRIER 7: DSL — parse LLM output into structured form
+      try {
+        dslInstance = parseFromLLM(finalResult, userMessage);
+        if (dslInstance.valid && onStreamChunk) onStreamChunk({ type: 'thinking', text: 'DSL valid: ' + dslInstance.type + ' (' + (dslInstance.meta.provenance_counts.user||0) + ' user/' + (dslInstance.meta.provenance_counts.inferred||0) + ' inferred params)' });
+      } catch(dslErr) { logger.warn('DSL parse failed', { error: dslErr.message }); }
+
+      // ★ BARRIER 1: Data Flywheel — record verification result
+      try {
+        var problemType = require('./model_router').detectProblemType(dslInstance || userMessage);
+        recordVerification(userMessage, finalResult, verification, 'deepseek-v4-flash');
+        recordRoute(problemType, 'deepseek-v4-flash', verification);
+        // Record hallucinations if any
+        if (verification.hardVetoes) {
+          var untrusted = [];
+          for (var vi = 0; vi < (verification.hardVetoes || []).length; vi++) {
+            if (!verification.hardVetoes[vi].passed) untrusted.push({ value: 0, context: verification.hardVetoes[vi].detail });
+          }
+          if (untrusted.length > 0) recordHallucination(userMessage, finalResult, untrusted, []);
+        }
+      } catch(fwErr) { logger.warn('Flywheel record failed', { error: fwErr.message }); }
+
       if (verification.passed) {
         logger.info('Verified OK', { score: verification.finalScore, verdict: verification.verdict });
         bestResponse = bestResponse + '\n\n[Verified: ' + verification.verdict + ', score ' + verification.finalScore + ']';
