@@ -117,11 +117,6 @@ var words=kw[l]||[];var o=c;
 words.forEach(function(x){o=o.replace(new RegExp('\\b'+x+'\\b','g'),'<span style="color:hsl(var(--primary))">'+x+'</span>')});
 return o;}
 
-/* ─────────────────────────────────────────────────
-   WORKFLOW VIEW — elegant pipeline timeline
-   ───────────────────────────────────────────────── */
-  }
-
   var rightPanel = null;
   if (rightOpen) {
     rightPanel = <div key="right" style={{display:'flex',flexShrink:0}}>
