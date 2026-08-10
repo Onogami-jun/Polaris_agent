@@ -465,6 +465,9 @@ except Exception as e:
   git_fetch: { name: 'Git Fetch', description: '拉取远程分支列表。参数: dir', requires_confirm: false, category: 'git',
     execute: async function(p) { var git=getGit(); if(!git) return {success:false,error:'Git not found'}; var r=spSync(git,['fetch','--all'],{cwd:p.dir,encoding:'utf8',windowsHide:true}); return r.status===0?{success:true,result:'Fetched'}:{success:false,error:(r.stderr||'').slice(0,500)}; }
   },
+  terminal: { name: 'Terminal', description: 'Execute shell commands in PowerShell or CMD. Returns stdout. Params: command, shell(可选: powershell/cmd)', requires_confirm: true, category: 'system',
+    execute: async function(p) { var cmd = p.command || p.cmd || ''; if (!cmd) return { success: false, error: 'Please provide a command' }; var shell = (p.shell === 'cmd') ? 'cmd.exe' : 'powershell.exe'; var r = require('child_process').spawnSync(shell, shell==='powershell.exe'?['-NoLogo','-NoProfile','-Command',cmd]:['/c',cmd],{cwd:p.cwd||require('os').homedir(),timeout:30000,encoding:'utf8',windowsHide:true}); return { success:r.status===0, stdout:(r.stdout||'').slice(0,5000), stderr:(r.stderr||'').slice(0,1000), exitCode:r.status }; }
+  },
 };
 
 // ============================================================

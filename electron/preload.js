@@ -59,4 +59,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   authAdminResetPassword: (email, newPassword) => ipcRenderer.invoke('auth:adminResetPassword', { email, newPassword }),
   authAdminConfirmUser: (email) => ipcRenderer.invoke('auth:adminConfirmUser', { email }),
   authAdminCreateUser: (email, password, displayName) => ipcRenderer.invoke('auth:adminCreateUser', { email, password, displayName }),
+  terminalCreate: (type) => ipcRenderer.invoke('terminal:create', { type }),
+  terminalWrite: (id, input) => ipcRenderer.invoke('terminal:write', { id, input }),
+  terminalRead: (id, lines) => ipcRenderer.invoke('terminal:read', { id, lines }),
+  terminalKill: (id) => ipcRenderer.invoke('terminal:kill', { id }),
 });

@@ -10,6 +10,7 @@ import{Onboarding,ONBOARDING_KEY}from'./components/Onboarding';
 import{StandaloneLab}from'./components/AgentLab';
 import{GitPopup}from'./components/GitPopup';
 import{TaskBoard}from'./components/TaskBoard';
+import{TerminalPopup}from'./components/TerminalPopup';
 import{t}from'./i18n';
 import{AuthBanner}from'./components/AuthBanner';
 import{Mascot}from'./components/Mascot';
@@ -182,7 +183,7 @@ function WorkflowView({plan,planProg,planId,execLog,todoSteps,onStopPlan}:any){
 /* ─────────────────────────────────────────────────
    LEFT SIDEBAR — Git panel + Sessions
    ───────────────────────────────────────────────── */
-function LeftSidebar({sessions,activeId,onSelect,onNew,onDelete,onOpenSettings,onOpenLab,onOpenGit,width}:any){
+function LeftSidebar({sessions,activeId,onSelect,onNew,onDelete,onOpenSettings,onOpenLab,onOpenGit,onOpenTerm,width}:any){
   const auth = useAppSelector(s=>s.auth);
   const lang = useAppSelector(s=>s.chat.settings.language);
   const ghToken = useAppSelector(s=>s.chat.settings.apiKeys.github);
@@ -199,6 +200,14 @@ function LeftSidebar({sessions,activeId,onSelect,onNew,onDelete,onOpenSettings,o
           <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider font-mono">Git</span>
         </div>
         {ghToken ? <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500"/><span className="text-[8px] font-mono text-emerald-500/60 uppercase tracking-wider">Connected</span></span> : <span className="text-[8px] font-mono text-muted-foreground/40 uppercase tracking-wider">Open</span>}
+      </button>
+      {/* ── Terminal bar ── */}
+      <button onClick={onOpenTerm} className="w-full flex items-center justify-between px-3 py-2 hover:bg-muted/50 transition-colors border-b border-border">
+        <div className="flex items-center gap-2">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3"><rect x="1" y="2" width="14" height="11" rx="1.5"/><line x1="4" y1="6" x2="12" y2="6"/><line x1="4" y1="9" x2="9" y2="9"/></svg>
+          <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider font-mono">Terminal</span>
+        </div>
+        <span className="text-[8px] font-mono text-muted-foreground/40 uppercase tracking-wider">Open</span>
       </button>
       {/* ── Sessions ── */}
       <div className="flex items-center justify-between px-3 py-2">
@@ -291,7 +300,7 @@ const App:React.FC=()=>{
   const[execLog,setExecLog]=useState<{id:string;time:string;tool:string;status:'running'|'done'|'error';detail:string}[]>([]);
   const[todoSteps,setTodoSteps]=useState<{id:string;status:'pending'|'running'|'done';label:string}[]>([]);
   const[interventions,setInterventions]=useState<any[]>([]);
-  const[plan,setPlan]=useState<any>(null);const[planProg,setPlanProg]=useState<any>(null);const[planId,setPlanId]=useState('');const[labOpen,setLabOpen]=useState(false);const[gitOpen,setGitOpen]=useState(false);
+  const[plan,setPlan]=useState<any>(null);const[planProg,setPlanProg]=useState<any>(null);const[planId,setPlanId]=useState('');const[labOpen,setLabOpen]=useState(false);const[gitOpen,setGitOpen]=useState(false);const[termOpen,setTermOpen]=useState(false);
 
   // Panel widths (px) & visibility
   const[leftW,setLeftW]=useState(220);const[leftOpen,setLeftOpen]=useState(true);
@@ -485,6 +494,7 @@ const App:React.FC=()=>{
         onOpenSettings={()=>d(toggleSettings())}
         onOpenLab={()=>setLabOpen(true)}
         onOpenGit={()=>setGitOpen(true)}
+        onOpenTerm={()=>setTermOpen(true)}
       />
       <div onMouseDown={resizeLeft} style={{width:4,cursor:'ew-resize',flexShrink:0}}/>
     </div>;
@@ -593,6 +603,7 @@ const App:React.FC=()=>{
     {cmdEl}
     {labOpen && <StandaloneLab onClose={()=>setLabOpen(false)}/>}
     {gitOpen && <GitPopup onClose={()=>setGitOpen(false)}/>}
+    {termOpen && <TerminalPopup onClose={()=>setTermOpen(false)}/>}
     <LoginModal/>
     {/* Drag & drop overlay */}
     {dragOver&&<div className="dov" style={{zIndex:9999}}><div className="doz" style={{padding:'48px 64px',borderRadius:20,fontSize:15}}><div style={{fontSize:32,marginBottom:8,opacity:.6}}>+</div>Drop files to attach</div></div>}

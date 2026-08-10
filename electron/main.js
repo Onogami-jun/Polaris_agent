@@ -601,6 +601,16 @@ ipcMain.handle('email:forgotPassword', async (_e, { email }) => {
   }
 });
 
+// ── Terminal IPC ──
+const terminal = require('./services/terminal');
+ipcMain.handle('terminal:create', (_e, { type }) => {
+  var s = terminal.createSession(type || 'powershell');
+  return { success: true, id: s.id, pid: s.pid, cwd: s.cwd, type: s.type };
+});
+ipcMain.handle('terminal:write', (_e, { id, input }) => terminal.writeToSession(id, input));
+ipcMain.handle('terminal:read', (_e, { id, lines }) => ({ output: terminal.readOutput(id, lines) }));
+ipcMain.handle('terminal:kill', (_e, { id }) => terminal.killSession(id));
+
 // ── Auto-setup sandbox on first launch ──
 ipcMain.handle('sandbox:autoSetup', async () => {
   if (sandbox.isReady(sandboxDataPath())) {
