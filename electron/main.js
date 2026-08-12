@@ -143,6 +143,11 @@ async function refreshApiKey(userId) {
 
 // IPC: AI (auth-gated)
 ipcMain.handle('polaris:query', async (_e, { text, strategy, systemPrompt, images, apiKeys }) => {
+  console.log('=== polaris:query ===');
+  console.log('  getKey():', getKey() ? getKey().slice(0, 8) + '...' : 'NULL');
+  console.log('  env key:', process.env.POLARIS_KEY ? process.env.POLARIS_KEY.slice(0, 8) + '...' : 'NULL');
+  console.log('  _KEY_OK:', _KEY_OK);
+  console.log('  authUserId:', _authUserId);
   var key = getKey();
   if (!key) {
     return { routing:{strategy:'locked',top_intent:'locked',selected_models:[],rationale:'auth required'}, responses:[{model_id:'locked',model_display:'Locked',content:'<div style="text-align:center;padding:20px"><div style="font-size:48px;margin-bottom:12px">🔐</div><p style="font-size:14px;color:hsl(var(--foreground));margin-bottom:8px">Polaris 需要登录才能使用</p><p style="font-size:12px;color:hsl(var(--muted-foreground));margin-bottom:16px">登录 BitWool 账号后解锁全部 AI 功能。点击左侧栏底部的<b style="color:hsl(var(--primary))">登录 BitWool</b>按钮。</p></div>'}], total_latency_ms:0 };
