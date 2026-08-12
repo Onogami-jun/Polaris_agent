@@ -150,7 +150,7 @@ const authSlice = createSlice({
     // GitHub Login
     builder.addCase(githubLogin.pending, (s) => { s.loginError = null; });
     builder.addCase(githubLogin.fulfilled, (s, a: PayloadAction<PolarUser | null>) => {
-      if (a.payload) { s.user = a.payload; s.showLoginModal = false; s.tokenLimitReached = false; }
+      if (a.payload) { s.user = a.payload; s.showLoginModal = false; s.tokenLimitReached = false; s.tokenUsageCount = 0; saveUsageCount(0); }
     });
     builder.addCase(githubLogin.rejected, (s, a) => { s.loginError = a.payload as string; });
     // Logout

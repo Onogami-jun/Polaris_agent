@@ -272,17 +272,22 @@ ipcMain.handle('auth:githubLogin', async (_e, { token, user }) => {
   try {
     _authUserId = user.id;
     _mainGhToken = token;
-    // Store the GitHub token in settings for git ops
+    // Try loading API key (same flow as auth:unlock)
+    await refreshApiKey(user.id);
+    // Additional fallback: secrets vault
+    if (!getKey()) {
+      try {
+        var vaultGet = require('./services/secrets').get;
+        var builtinKey = vaultGet('deepseek_api_key');
+        if (builtinKey) setKey(builtinKey);
+      } catch {}
+    }
     if (win && !win.isDestroyed()) {
       win.webContents.send('polaris:github-token', { token, user });
     }
-    // Use built-in key as fallback for AI features
-    var vaultGet = require('./services/secrets').get;
-    var builtinKey = vaultGet('deepseek_api_key');
-    if (builtinKey) setKey(builtinKey);
     security.createAuthSession(user.id);
-    security.auditLog('auth', 'githubLogin', 'User: ' + user.login);
-    console.log('[Auth] GitHub login:', user.login);
+    security.auditLog('auth', 'githubLogin', 'User: ' + user.login + ', keyLoaded: ' + !!getKey());
+    console.log('[Auth] GitHub login:', user.login, 'key:', !!getKey());
     return { success: true };
   } catch (e) {
     return { success: false, error: e.message };

@@ -526,11 +526,14 @@ function LocalModelSection({ lang }: { lang: string }) {
       {status === 'error' && <p className="text-[10px] text-destructive">{L.err}: {msg}</p>}
       {status === 'done' && !running && <p className="text-[10px] text-emerald-500">{msg}</p>}
 
-      {!running && status !== 'checking' && (
+      {status !== 'done' && status !== 'checking' && !running && (
         <Button size="sm" onClick={install} disabled={status === 'installing'}
           className="w-full h-8 text-xs font-semibold">
           {status === 'installing' ? '⏳ ' + L.installing : L.install}
         </Button>
+      )}
+      {status === 'done' && !running && (
+        <p className="text-[10px] text-amber-400 font-medium">⚠ 已安装，但推理服务未启动。请重启 App 激活。</p>
       )}
     </div>
   );
