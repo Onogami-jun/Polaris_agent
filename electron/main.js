@@ -635,35 +635,36 @@ function startPolarisServe() {
   try {
     const fs = require('fs');
 
-    // Check multiple locations for serve script
-    var serveScriptCandidates = [
-      path.join(ROOT, 'internal', 'scripts', 'polaris_serve.py'),           // dev mode
-      path.join(ROOT, 'electron', 'services', 'polaris_serve.py'),          // bundled
-      path.join(POLARIS_MODEL_DIR, 'polaris_serve.py'),                     // user download
-    ];
+    // Check multiple locations for model
     var modelDirCandidates = [
-      path.join(ROOT, 'polaris-merged'),           // dev mode
-      POLARIS_MODEL_DIR,                           // user download
+      path.join(ROOT, 'polaris-merged'),           // dev mode (project root)
+      path.join(POLARIS_MODEL_DIR, 'polaris-merged'),  // user download
     ];
-
-    var scriptPath = null;
-    var modelDir = null;
-
-    for (var si = 0; si < serveScriptCandidates.length; si++) {
-      if (fs.existsSync(serveScriptCandidates[si])) { scriptPath = serveScriptCandidates[si]; break; }
-    }
     for (var mi = 0; mi < modelDirCandidates.length; mi++) {
-      if (fs.existsSync(path.join(modelDirCandidates[mi], 'config.json'))) { modelDir = modelDirCandidates[mi]; break; }
+      var d = modelDirCandidates[mi];
+      if (fs.existsSync(path.join(d, 'config.json'))) { modelDir = d; break; }
     }
-    // If no model dir found, use the default
+    // Also check if model is directly in POLARIS_MODEL_DIR (individual files)
+    if (!modelDir && fs.existsSync(path.join(POLARIS_MODEL_DIR, 'config.json'))) {
+      modelDir = POLARIS_MODEL_DIR;
+    }
     if (!modelDir) modelDir = POLARIS_MODEL_DIR;
 
+    // Find serve script
+    var scriptPath = null;
+    var serveCandidates = [
+      path.join(ROOT, 'internal', 'scripts', 'polaris_serve.py'),
+      path.join(ROOT, 'electron', 'services', 'polaris_serve.py'),
+    ];
+    for (var si = 0; si < serveCandidates.length; si++) {
+      if (fs.existsSync(serveCandidates[si])) { scriptPath = serveCandidates[si]; break; }
+    }
     if (!scriptPath) {
       console.log('[polaris-serve] Serve script not found.');
       return;
     }
     if (!fs.existsSync(path.join(modelDir, 'config.json'))) {
-      console.log('[polaris-serve] Model not installed. Users can download from Settings > Models.');
+      console.log('[polaris-serve] Model not found. Place polaris-merged/ in the project directory.');
       return;
     }
 
@@ -715,107 +716,79 @@ ipcMain.handle('polaris-model:install', async () => {
       return { success: true, alreadyInstalled: true };
     }
 
-    // Download model in chunks from Supabase Storage
+    // Download model in chunks from Supabase Storage using Electron's net module
     var chunksUrl = SUPABASE_URL + '/storage/v1/object/public/' + POLARIS_MODEL_PATH;
     var zipPath = path.join(POLARIS_MODEL_DIR, 'model.zip');
 
-    // Step 1: Download manifest to know how many chunks
+    // Helper: download via Electron net
+    function electronDownload(url, destPath) {
+      return new Promise(function(resolve) {
+        var net = require('electron').net;
+        var req = net.request({ method: 'GET', url: url });
+        req.on('response', function(response) {
+          if (response.statusCode !== 200) {
+            resolve({ success: false, error: 'HTTP ' + response.statusCode });
+            return;
+          }
+          var chunks = [];
+          response.on('data', function(chunk) { chunks.push(Buffer.from(chunk)); });
+          response.on('end', function() {
+            var data = Buffer.concat(chunks);
+            fs.writeFileSync(destPath, data);
+            resolve({ success: true, size: data.length });
+          });
+          response.on('error', function(e) { resolve({ success: false, error: e.message }); });
+        });
+        req.on('error', function(e) { resolve({ success: false, error: e.message }); });
+        req.end();
+      });
+    }
+
+    // Step 1: Download manifest
     var manifestUrl = chunksUrl + '/manifest.json';
-    var manifestResult = await downloadFile(manifestUrl, path.join(POLARIS_MODEL_DIR, 'manifest.json'), SUPABASE_ANON_KEY);
-    if (!manifestResult.success) return { success: false, error: 'Manifest download failed: ' + manifestResult.error };
+    var manifestResult = await electronDownload(manifestUrl, path.join(POLARIS_MODEL_DIR, 'manifest.json'));
+    if (!manifestResult.success) return { success: false, error: 'Manifest: ' + manifestResult.error };
 
     var manifest = JSON.parse(fs.readFileSync(path.join(POLARIS_MODEL_DIR, 'manifest.json'), 'utf8'));
     var nChunks = manifest.chunks || 0;
-    if (nChunks === 0) return { success: false, error: 'Invalid manifest: no chunks' };
+    if (nChunks === 0) return { success: false, error: 'Invalid manifest' };
 
     // Step 2: Download each chunk
     var combined = Buffer.alloc(0);
     for (var ci = 0; ci < nChunks; ci++) {
       var chunkName = 'chunk_' + String(ci).padStart(3, '0');
-      var chunkUrl = chunksUrl + '/' + chunkName;
-      var chunkPath = path.join(POLARIS_MODEL_DIR, chunkName);
-      var chunkResult = await downloadFile(chunkUrl, chunkPath, SUPABASE_ANON_KEY);
-      if (!chunkResult.success) return { success: false, error: 'Chunk ' + chunkName + ' failed: ' + chunkResult.error };
-      combined = Buffer.concat([combined, fs.readFileSync(chunkPath)]);
-      fs.unlinkSync(chunkPath); // clean up chunk file
+      var cr = await electronDownload(chunksUrl + '/' + chunkName, path.join(POLARIS_MODEL_DIR, chunkName));
+      if (!cr.success) return { success: false, error: 'Chunk ' + chunkName + ': ' + cr.error };
+      combined = Buffer.concat([combined, fs.readFileSync(path.join(POLARIS_MODEL_DIR, chunkName))]);
+      fs.unlinkSync(path.join(POLARIS_MODEL_DIR, chunkName));
     }
 
-    // Step 3: Write combined zip
+    // Step 3: Write zip + unzip
     fs.writeFileSync(zipPath, combined);
+    require('child_process').execSync(
+      'powershell -Command "Expand-Archive -Path \'' + zipPath + '\' -DestinationPath \'' + POLARIS_MODEL_DIR + '\' -Force"',
+      { timeout: 300000 }
+    );
+    fs.unlinkSync(zipPath);
+    // Clean up individual files if zip extracted flat
+    try { fs.unlinkSync(path.join(POLARIS_MODEL_DIR, 'manifest.json')); } catch {}
 
-    // Unzip
-    var AdmZip = null;
-    try { AdmZip = require('adm-zip'); } catch {}
-    if (AdmZip) {
-      var zip = new AdmZip(zipPath);
-      zip.extractAllTo(POLARIS_MODEL_DIR, true);
-      fs.unlinkSync(zipPath);
-    } else {
-      // Fallback: use PowerShell
-      require('child_process').execSync(
-        'powershell -Command "Expand-Archive -Path \'' + zipPath + '\' -DestinationPath \'' + POLARIS_MODEL_DIR + '\' -Force"',
-        { timeout: 300000 }
-      );
-      fs.unlinkSync(zipPath);
-    }
+    // Copy serve script
+    var serveSrc = fs.existsSync(path.join(ROOT, 'internal', 'scripts', 'polaris_serve.py'))
+      ? path.join(ROOT, 'internal', 'scripts', 'polaris_serve.py')
+      : path.join(ROOT, 'electron', 'services', 'polaris_serve.py');
+    if (fs.existsSync(serveSrc)) fs.copyFileSync(serveSrc, path.join(POLARIS_MODEL_DIR, 'polaris_serve.py'));
 
-    // Copy serve script alongside model
-    var serveSrc = path.join(ROOT, 'internal', 'scripts', 'polaris_serve.py');
-    if (!fs.existsSync(serveSrc)) serveSrc = path.join(ROOT, 'electron', 'services', 'polaris_serve.py'); // bundled fallback
-    if (fs.existsSync(serveSrc)) {
-      fs.copyFileSync(serveSrc, path.join(POLARIS_MODEL_DIR, 'polaris_serve.py'));
-    }
-
-    // Install pip deps for user
+    // Try pip install deps
     try {
-      require('child_process').execSync(
-        'pip install transformers torch peft --quiet',
-        { timeout: 300000, windowsHide: true }
-      );
-    } catch (e) { /* pip may not be available, try later at serve time */ }
+      require('child_process').execSync('pip install transformers torch peft --quiet', { timeout: 300000, windowsHide: true });
+    } catch {}
 
     return { success: true, path: POLARIS_MODEL_DIR };
   } catch (e) {
     return { success: false, error: e.message };
   }
 });
-
-function downloadFile(url, destPath, anonKey) {
-  return new Promise(function(resolve) {
-    var https = require('https');
-    var urlObj = new URL(url);
-    var headers = { 'User-Agent': 'Polaris-Solver/4.0' };
-    if (anonKey) headers['apikey'] = anonKey;
-    var options = {
-      hostname: urlObj.hostname,
-      path: urlObj.pathname + urlObj.search,
-      method: 'GET',
-      headers: headers,
-      timeout: 300000,
-    };
-    var file = require('fs').createWriteStream(destPath);
-    https.get(options, function(res) {
-      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-        file.close();
-        try { require('fs').unlinkSync(destPath); } catch {}
-        downloadFile(res.headers.location, destPath, anonKey).then(resolve);
-        return;
-      }
-      if (res.statusCode !== 200) {
-        file.close();
-        try { require('fs').unlinkSync(destPath); } catch {}
-        resolve({ success: false, error: 'HTTP ' + res.statusCode });
-        return;
-      }
-      res.pipe(file);
-      file.on('finish', function() { file.close(); resolve({ success: true }); });
-    }).on('error', function(e) {
-      file.close();
-      try { require('fs').unlinkSync(destPath); } catch {}
-      resolve({ success: false, error: e.message });
-    });
-  });
-}
 ipcMain.handle('sandbox:autoSetup', async () => {
   if (sandbox.isReady(sandboxDataPath())) {
     return { success: true, alreadyReady: true };

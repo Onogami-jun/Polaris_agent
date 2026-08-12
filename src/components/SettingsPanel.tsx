@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { useAppSelector, useAppDispatch } from '../store';
 import { toggleSettings, setApiKey, setTheme, setLanguage, setFontSize, updateAgentConfig, updateThirdParty, updateMobileLink, updateProxy, togglePlugin, setMascotSettings, type Theme, type Language } from '../store/chatSlice';
 import { loginUser, logoutUser } from '../store/authSlice';
-import { AgentLab } from './AgentLab';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { t } from '../i18n';
@@ -35,7 +34,6 @@ const TABS = [
   { id: 'data', label: '数据', icon: Icons.data },
   { id: 'account', label: '账号', icon: Icons.account },
   { id: 'sandbox', label: '沙箱', icon: Icons.sandbox },
-  { id: 'lab', label: '实验', icon: Icons.lab },
   { id: 'about', label: '关于', icon: Icons.about },
 ];
 
@@ -311,21 +309,6 @@ const SettingsPanel: React.FC = () => {
 
             {/* ── Sandbox ── */}
             {tab === 'sandbox' && <SandboxSettings />}
-
-            {/* ── Agent Lab ── */}
-            {tab === 'lab' && (
-              <div className="space-y-6">
-                <h3 className="text-base font-semibold text-foreground pb-3 border-b border-border">{t(s.language,'settings.lab.title') || 'Lab'}</h3>
-                <p className="text-xs text-muted-foreground -mt-4">全功能实验面板，独立窗口打开</p>
-                <button onClick={() => {
-                  const api = (window as any).electronAPI;
-                  const ev = new CustomEvent('polaris:open-lab', { bubbles: true });
-                  window.dispatchEvent(ev);
-                }} className="w-full py-3 rounded-xl bg-primary/10 hover:bg-primary/20 border border-primary/20 text-sm text-primary font-semibold transition-all">
-                  🧪 打开实验 Lab
-                </button>
-              </div>
-            )}
 
             {/* ── About ── */}
             {tab === 'about' && (
