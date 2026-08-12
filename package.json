@@ -16,21 +16,38 @@
   "build": {
     "appId": "com.bitwool.polaris-agent",
     "productName": "Polaris Solver",
-    "directories": { "output": "dist", "buildResources": "build" },
-    "files": ["electron/**/*","build/**/*","icon.png","package.json"],
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "electron/**/*",
+      "build/**/*",
+      "icon.png",
+      "package.json"
+    ],
     "win": {
-      "target": ["nsis", "zip"],
+      "target": [
+        "nsis",
+        "zip"
+      ],
       "icon": "icon.png",
       "artifactName": "Polaris-Solver-Windows.${ext}"
     },
     "mac": {
-      "target": ["dmg", "zip"],
+      "target": [
+        "dmg",
+        "zip"
+      ],
       "icon": "icon.png",
       "artifactName": "Polaris-Solver-macOS.${ext}",
       "category": "public.app-category.developer-tools"
     },
     "linux": {
-      "target": ["AppImage", "deb"],
+      "target": [
+        "AppImage",
+        "deb"
+      ],
       "icon": "icon.png",
       "artifactName": "Polaris-Solver-Linux.${ext}",
       "category": "Development"
@@ -45,20 +62,20 @@
   "dependencies": {
     "@reduxjs/toolkit": "^2.0.0",
     "@supabase/supabase-js": "^2.49.0",
-    "electron-updater": "^6.1.0",
     "electron-log": "^5.0.0",
+    "electron-updater": "^6.1.0",
     "nodemailer": "^6.9.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-redux": "^9.0.0"
   },
   "devDependencies": {
-    "@types/react": "^18.2.0",
-    "@types/react-dom": "^18.2.0",
     "@babel/core": "^7.24.0",
     "@babel/preset-env": "^7.24.0",
     "@babel/preset-react": "^7.24.0",
     "@babel/preset-typescript": "^7.24.0",
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0",
     "autoprefixer": "^10.4.0",
     "babel-loader": "^9.1.0",
     "class-variance-authority": "^0.7.0",
@@ -78,7 +95,7 @@
     "typescript": "^5.3.0",
     "wait-on": "^7.0.0",
     "webpack": "^5.89.0",
-    "webpack-cli": "^5.1.0",
+    "webpack-cli": "^5.1.4",
     "webpack-dev-server": "^4.15.0"
   }
 }
