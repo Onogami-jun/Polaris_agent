@@ -118,7 +118,7 @@ async function refreshApiKey(userId) {
 
 // IPC: AI (auth-gated)
 ipcMain.handle('polaris:query', async (_e, { text, strategy, systemPrompt, images, apiKeys }) => {
-  var key = getKey();
+  var key = getKey() || unlockDevKey();
   if (!key) {
     return { routing:{strategy:'locked',top_intent:'locked',selected_models:[],rationale:'auth required'}, responses:[{model_id:'locked',model_display:'Locked',content:'<div style="text-align:center;padding:20px"><div style="font-size:48px;margin-bottom:12px">🔐</div><p style="font-size:14px;color:hsl(var(--foreground));margin-bottom:8px">Polaris 需要登录才能使用</p><p style="font-size:12px;color:hsl(var(--muted-foreground));margin-bottom:16px">登录 BitWool 账号后解锁全部 AI 功能。点击左侧栏底部的<b style="color:hsl(var(--primary))">登录 BitWool</b>按钮。</p></div>'}], total_latency_ms:0 };
   }
@@ -263,26 +263,77 @@ function exchangeCodeForToken(code, clientId, port) {
 // IPC: Auth — unlock/lock API key + session token
 ipcMain.handle('auth:unlock', async (_e, { userId }) => {
   await refreshApiKey(userId);
+  if (!getKey()) unlockDevKey();
   security.createAuthSession(userId);
   security.auditLog('auth', 'unlock', 'User: ' + userId);
+  console.log('[Auth] Unlock:', userId, 'key:', !!getKey());
   return { success: !!getKey() };
 });
+// ═══════════════════════════════════════════════════════════
+// Key unlocker — inlined decryption, zero external dependency
+// This runs INSIDE the build output, uses only Node builtins.
+// ═══════════════════════════════════════════════════════════
+function unlockDevKey() {
+  var existing = getKey();
+  if (existing && existing.startsWith('sk-')) return existing;
+  try {
+    var fs = require('fs');
+    var crypto = require('crypto');
+
+    // Try reading vault from disk
+    var paths = [
+      path.join(ROOT, 'internal', 'services', 'secrets.js'),
+      path.join(ROOT, 'electron', 'services', 'secrets.js'),
+    ];
+    var src = null;
+    for (var pi = 0; pi < paths.length; pi++) {
+      if (fs.existsSync(paths[pi])) { src = fs.readFileSync(paths[pi], 'utf8'); break; }
+    }
+    if (!src) { console.log('[Unlock] No vault file'); return null; }
+
+    // Extract VAULT_SEED
+    var seedMatch = src.match(/VAULT_SEED\s*=\s*'([^']+)'/);
+    if (!seedMatch) { console.log('[Unlock] No seed'); return null; }
+    var seed = seedMatch[1];
+
+    // Extract encrypted deepseek key block
+    var keyMatch = src.match(/deepseek_api_key:\s*\{[^}]*\}/s);
+    if (!keyMatch) { console.log('[Unlock] No key block'); return null; }
+    var block = keyMatch[0];
+    var ivMatch = block.match(/iv:\s*'([^']+)'/);
+    var dataMatch = block.match(/data:\s*'([^']+)'/);
+    var tagMatch = block.match(/tag:\s*'([^']+)'/);
+    if (!ivMatch || !dataMatch || !tagMatch) { console.log('[Unlock] Bad block'); return null; }
+
+    // AES-256-GCM decrypt
+    var aesKey = crypto.createHash('sha256').update(seed).digest();
+    var decipher = crypto.createDecipheriv('aes-256-gcm', aesKey, Buffer.from(ivMatch[1], 'hex'));
+    decipher.setAuthTag(Buffer.from(tagMatch[1], 'hex'));
+    var plain = decipher.update(dataMatch[1], 'hex', 'utf8');
+    plain += decipher.final('utf8');
+
+    if (plain && plain.startsWith('sk-')) {
+      setKey(plain);
+      console.log('[Unlock] Key OK, len:', plain.length);
+      return plain;
+    }
+    console.log('[Unlock] Bad decryption:', plain.slice(0, 8));
+  } catch (e) { console.log('[Unlock] Error:', e.message); }
+  return null;
+}
+
 // IPC: GitHub OAuth login (device flow)
 ipcMain.handle('auth:githubLogin', async (_e, { token, user }) => {
   try {
     _authUserId = user.id;
     _mainGhToken = token;
-    // Store the GitHub token in settings for git ops
+    unlockDevKey();
     if (win && !win.isDestroyed()) {
       win.webContents.send('polaris:github-token', { token, user });
     }
-    // Use built-in key as fallback for AI features
-    var vaultGet = require('./services/secrets').get;
-    var builtinKey = vaultGet('deepseek_api_key');
-    if (builtinKey) setKey(builtinKey);
     security.createAuthSession(user.id);
     security.auditLog('auth', 'githubLogin', 'User: ' + user.login);
-    console.log('[Auth] GitHub login:', user.login);
+    console.log('[Auth] GitHub login:', user.login, 'key:', !!getKey());
     return { success: true };
   } catch (e) {
     return { success: false, error: e.message };
@@ -803,6 +854,6 @@ ipcMain.handle('sandbox:autoSetup', async () => {
   return sandbox.setup(sandboxDataPath(), onProgress);
 });
 
-app.whenReady().then(() => { createWindow(); createTray(); startPolarisServe(); systemMonitor.startMonitoring((card) => { if (win && !win.isDestroyed()) win.webContents.send('polaris:intervention', card); }); });
+app.whenReady().then(() => { unlockDevKey(); createWindow(); createTray(); startPolarisServe(); systemMonitor.startMonitoring((card) => { if (win && !win.isDestroyed()) win.webContents.send('polaris:intervention', card); }); });
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
 app.on('will-quit', () => { globalShortcut.unregisterAll(); for (const [, p] of mcpProcesses) p.kill(); if (polarisServeProc) { try { polarisServeProc.kill(); } catch {} } systemMonitor.stopMonitoring(); });
