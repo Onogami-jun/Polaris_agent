@@ -24,6 +24,7 @@ app.on('second-instance', () => { if (win) { win.show(); win.focus(); } });
 
 let win = null, tray = null;
 const mcpProcesses = new Map();
+let polarisServeProc = null; // Local inference server
 
 function createWindow() {
   win = new BrowserWindow({
@@ -623,7 +624,38 @@ ipcMain.handle('terminal:write', (_e, { id, input }) => terminal.writeToSession(
 ipcMain.handle('terminal:read', (_e, { id, lines }) => ({ output: terminal.readOutput(id, lines) }));
 ipcMain.handle('terminal:kill', (_e, { id }) => terminal.killSession(id));
 
-// ── Auto-setup sandbox on first launch ──
+// ── Local inference server ──
+function startPolarisServe() {
+  try {
+    const servePath = path.join(ROOT, 'internal', 'scripts', 'polaris_serve.py');
+    if (!require('fs').existsSync(servePath)) {
+      console.log('[polaris-serve] No internal model found — skipping local inference.');
+      return;
+    }
+    // Use the project's venv python if it exists
+    const venvPython = path.join(ROOT, '.venv', 'Scripts', 'python.exe');
+    const python = require('fs').existsSync(venvPython) ? venvPython : 'python';
+    polarisServeProc = spawn(python, [servePath], {
+      cwd: ROOT,
+      stdio: 'pipe',
+      windowsHide: true,
+    });
+    polarisServeProc.stdout?.on('data', (d) => console.log('[polaris-serve]', d.toString().trim()));
+    polarisServeProc.stderr?.on('data', (d) => console.log('[polaris-serve]', d.toString().trim()));
+    polarisServeProc.on('error', () => { polarisServeProc = null; });
+    polarisServeProc.on('exit', (code) => {
+      console.log('[polaris-serve] Exited with code', code);
+      polarisServeProc = null;
+    });
+    console.log('[polaris-serve] Starting local inference server (pid:', polarisServeProc.pid, ')');
+  } catch (e) {
+    console.log('[polaris-serve] Failed to start:', e.message);
+  }
+}
+
+ipcMain.handle('polaris-serve:status', () => {
+  return { running: polarisServeProc !== null && !polarisServeProc.killed };
+});
 ipcMain.handle('sandbox:autoSetup', async () => {
   if (sandbox.isReady(sandboxDataPath())) {
     return { success: true, alreadyReady: true };
@@ -634,6 +666,6 @@ ipcMain.handle('sandbox:autoSetup', async () => {
   return sandbox.setup(sandboxDataPath(), onProgress);
 });
 
-app.whenReady().then(() => { createWindow(); createTray(); systemMonitor.startMonitoring((card) => { if (win && !win.isDestroyed()) win.webContents.send('polaris:intervention', card); }); });
+app.whenReady().then(() => { createWindow(); createTray(); startPolarisServe(); systemMonitor.startMonitoring((card) => { if (win && !win.isDestroyed()) win.webContents.send('polaris:intervention', card); }); });
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
-app.on('will-quit', () => { globalShortcut.unregisterAll(); for (const [, p] of mcpProcesses) p.kill(); systemMonitor.stopMonitoring(); });
+app.on('will-quit', () => { globalShortcut.unregisterAll(); for (const [, p] of mcpProcesses) p.kill(); if (polarisServeProc) { try { polarisServeProc.kill(); } catch {} } systemMonitor.stopMonitoring(); });

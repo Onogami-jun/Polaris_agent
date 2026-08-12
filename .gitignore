@@ -7,14 +7,25 @@ dist/
 Thumbs.db
 .env
 *.log
+*.pyc
+__pycache__/
 npm-debug.log*
 
+# ★ DEV ENVIRONMENT — 本地开发环境，不要提交 ★
+.venv/
+.venv*/
+unsloth_compiled_cache/
+
 # ★ CLOSED-SOURCE PROTECTION ★
-# internal/ 目录包含 Polaris 独家核心技术：
-#   5个技术壁垒源码 + 验证引擎 + 训练管线 + 加解密工具
-#   .enc 文件和 protect_verify.js 可安全提交（无密钥无法解密）
-#   .js 明文文件由构建时 npm run decrypt:verify 产生，不要提交！
-internal/services/*.js
-internal/.polaris_key
-!internal/services/verification_engine.js.enc
-!internal/scripts/protect_verify.js
+# internal/ 包含全部独家核心技术 + 训练管线 + 测试数据
+# 公开仓库使用 electron/services/ 代理桩（运行时自动检测 internal/）
+# 有 internal/ → 全功能开发版
+# 无 internal/ → 桩降级商用版
+internal/
+
+# ★ MODEL FILES — 模型文件太大，不要提交 ★
+polaris-merged/
+polaris-opt/
+*.gguf
+*.bin
+*.safetensors
