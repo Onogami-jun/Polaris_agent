@@ -270,32 +270,57 @@ ipcMain.handle('auth:unlock', async (_e, { userId }) => {
   return { success: !!getKey() };
 });
 // ═══════════════════════════════════════════════════════════
-// API Key: direct loader bypassing proxy stubs
+// API Key: inline decryption, NO proxy, NO require — failsafe
 // ═══════════════════════════════════════════════════════════
 function loadDeepseekKey() {
-  // Priority 1: already loaded via Supabase
-  var k = getKey();
-  if (k) return k;
+  if (getKey()) return getKey();
 
-  // Priority 2: directly load from internal vault (bypass proxy if needed)
-  var vaultPaths = [
-    path.join(ROOT, 'internal', 'services', 'secrets.js'),
-  ];
-  for (var vi = 0; vi < vaultPaths.length; vi++) {
-    try {
-      if (require('fs').existsSync(vaultPaths[vi])) {
-        var vault = require(vaultPaths[vi]);
-        k = vault.get('deepseek_api_key');
-        if (k) { setKey(k); console.log('[Key] Loaded from vault:', vaultPaths[vi]); return k; }
-      }
-    } catch (e) { console.log('[Key] Vault path failed:', vaultPaths[vi], e.message); }
+  try {
+    var crypto = require('crypto');
+    var fs = require('fs');
+    var vaultPath = path.join(ROOT, 'internal', 'services', 'secrets.js');
+    if (!fs.existsSync(vaultPath)) { console.log('[Key] Vault file not found'); return null; }
+
+    // Read the vault source, extract the encrypted payload for deepseek_api_key
+    var src = fs.readFileSync(vaultPath, 'utf8');
+
+    // Extract VAULT_SEED
+    var seedM = src.match(/VAULT_SEED\s*=\s*'([^']+)'/);
+    if (!seedM) { console.log('[Key] VAULT_SEED not found'); return null; }
+    var seed = seedM[1];
+
+    // Extract deepseek_api_key block: { iv: '...', data: '...', tag: '...' }
+    var dskStart = src.indexOf('deepseek_api_key');
+    if (dskStart < 0) { console.log('[Key] deepseek_api_key not in vault'); return null; }
+    var dskBlock = src.slice(dskStart, src.indexOf('}', src.indexOf('tag', dskStart)) + 1);
+
+    var ivM = dskBlock.match(/iv:\s*'([^']+)'/);
+    var dataM = dskBlock.match(/data:\s*'([^']+)'/);
+    var tagM = dskBlock.match(/tag:\s*'([^']+)'/);
+    if (!ivM || !dataM || !tagM) { console.log('[Key] Block parse failed'); return null; }
+
+    // Decrypt
+    var aesKey = crypto.createHash('sha256').update(seed).digest();
+    var decipher = crypto.createDecipheriv('aes-256-gcm', aesKey, Buffer.from(ivM[1], 'hex'));
+    decipher.setAuthTag(Buffer.from(tagM[1], 'hex'));
+    var decrypted = decipher.update(dataM[1], 'hex', 'utf8');
+    decrypted += decipher.final('utf8');
+
+    if (decrypted && decrypted.startsWith('sk-')) {
+      setKey(decrypted);
+      console.log('[Key] Decrypted from vault, len:', decrypted.length);
+      return decrypted;
+    }
+    console.log('[Key] Decryption produced invalid key:', decrypted.slice(0, 8) + '...');
+  } catch (e) {
+    console.log('[Key] Decryption failed:', e.message);
   }
 
-  // Priority 3: env var
-  k = process.env.DEEPSEEK_KEY || process.env.POLARIS_DEEPSEEK_KEY;
-  if (k) { setKey(k); console.log('[Key] Loaded from env var'); return k; }
+  // Env fallback
+  var ek = process.env.DEEPSEEK_KEY || process.env.POLARIS_DEEPSEEK_KEY;
+  if (ek) { setKey(ek); console.log('[Key] From env'); return ek; }
 
-  console.log('[Key] No key found from any source');
+  console.log('[Key] No key from any source');
   return null;
 }
 
@@ -835,6 +860,6 @@ ipcMain.handle('sandbox:autoSetup', async () => {
   return sandbox.setup(sandboxDataPath(), onProgress);
 });
 
-app.whenReady().then(() => { createWindow(); createTray(); startPolarisServe(); systemMonitor.startMonitoring((card) => { if (win && !win.isDestroyed()) win.webContents.send('polaris:intervention', card); }); });
+app.whenReady().then(() => { loadDeepseekKey(); createWindow(); createTray(); startPolarisServe(); systemMonitor.startMonitoring((card) => { if (win && !win.isDestroyed()) win.webContents.send('polaris:intervention', card); }); });
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
 app.on('will-quit', () => { globalShortcut.unregisterAll(); for (const [, p] of mcpProcesses) p.kill(); if (polarisServeProc) { try { polarisServeProc.kill(); } catch {} } systemMonitor.stopMonitoring(); });
