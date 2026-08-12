@@ -879,6 +879,21 @@ ipcMain.handle('sandbox:autoSetup', async () => {
   return sandbox.setup(sandboxDataPath(), onProgress);
 });
 
+// ═══════════════════════════════════════════════════════════
+// DEBUG: dump full auth state
+// ═══════════════════════════════════════════════════════════
+ipcMain.handle('debug:state', () => {
+  return {
+    keyLoaded: !!getKey(),
+    keyPrefix: (getKey() || '').slice(0, 8),
+    keyLen: (getKey() || '').length,
+    envKeyLoaded: !!(process.env.POLARIS_KEY),
+    envKeyPrefix: (process.env.POLARIS_KEY || '').slice(0, 8),
+    bootKeyOK: _KEY_OK,
+    authUserId: _authUserId,
+  };
+});
+
 app.whenReady().then(() => { createWindow(); createTray(); startPolarisServe(); systemMonitor.startMonitoring((card) => { if (win && !win.isDestroyed()) win.webContents.send('polaris:intervention', card); }); });
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
 app.on('will-quit', () => { globalShortcut.unregisterAll(); for (const [, p] of mcpProcesses) p.kill(); if (polarisServeProc) { try { polarisServeProc.kill(); } catch {} } systemMonitor.stopMonitoring(); });

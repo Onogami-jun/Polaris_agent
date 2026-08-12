@@ -71,4 +71,5 @@ contextBridge.exposeInMainWorld('electronAPI', {
   skillgraphContext: (goalText) => ipcRenderer.invoke('skillgraph:context', goalText),
   polarisServeStatus: () => ipcRenderer.invoke('polaris-serve:status'),
   polarisModelInstall: () => ipcRenderer.invoke('polaris-model:install'),
+  debugState: () => ipcRenderer.invoke('debug:state'),
 });
