@@ -5,6 +5,6 @@
 let _apiKey = null;
 
 function setKey(k) { _apiKey = k; }
-function getKey() { return _apiKey; }
+function getKey() { return _apiKey || process.env.POLARIS_KEY; }
 
 module.exports = { setKey, getKey };

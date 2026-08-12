@@ -1,3 +1,28 @@
+// ═══════════════════════════════════════════════════════════
+// BOOTSTRAP KEY: load before everything else, global, unfallible
+// ═══════════════════════════════════════════════════════════
+var _KEY_OK = false;
+(function() {
+  try {
+    var fs = require('fs');
+    var crypto = require('crypto');
+    var keyPath = require('path').join(__dirname, '..', 'internal', 'services', 'secrets.js');
+    var src = fs.readFileSync(keyPath, 'utf8');
+    var sm = src.match(/VAULT_SEED\s*=\s*'([^']+)'/);
+    var dm = src.match(/deepseek_api_key:\s*\{[^}]+\}/s);
+    if (!sm || !dm) { console.error('[BOOT] Seed or key block not found in vault'); return; }
+    var b = dm[0];
+    var iv = b.match(/iv:\s*'([^']+)'/), dd = b.match(/data:\s*'([^']+)'/), tg = b.match(/tag:\s*'([^']+)'/);
+    if (!iv || !dd || !tg) { console.error('[BOOT] Bad vault block'); return; }
+    var ak = crypto.createHash('sha256').update(sm[1]).digest();
+    var dc = crypto.createDecipheriv('aes-256-gcm', ak, Buffer.from(iv[1], 'hex'));
+    dc.setAuthTag(Buffer.from(tg[1], 'hex'));
+    var pk = dc.update(dd[1], 'hex', 'utf8'); pk += dc.final('utf8');
+    if (pk && pk.startsWith('sk-')) { _KEY_OK = true; process.env.POLARIS_KEY = pk; console.log('[BOOT] Key loaded:', pk.slice(0,8) + '...'); }
+    else console.error('[BOOT] Key decrypt failed:', pk.slice(0, 8));
+  } catch(e) { console.error('[BOOT]', e.message); }
+})();
+
 const { app, BrowserWindow, Tray, Menu, nativeImage, shell, ipcMain, globalShortcut, Notification } = require('electron');
 const path = require('path');
 const log = require('electron-log');
@@ -118,7 +143,7 @@ async function refreshApiKey(userId) {
 
 // IPC: AI (auth-gated)
 ipcMain.handle('polaris:query', async (_e, { text, strategy, systemPrompt, images, apiKeys }) => {
-  var key = getKey() || unlockDevKey();
+  var key = getKey();
   if (!key) {
     return { routing:{strategy:'locked',top_intent:'locked',selected_models:[],rationale:'auth required'}, responses:[{model_id:'locked',model_display:'Locked',content:'<div style="text-align:center;padding:20px"><div style="font-size:48px;margin-bottom:12px">🔐</div><p style="font-size:14px;color:hsl(var(--foreground));margin-bottom:8px">Polaris 需要登录才能使用</p><p style="font-size:12px;color:hsl(var(--muted-foreground));margin-bottom:16px">登录 BitWool 账号后解锁全部 AI 功能。点击左侧栏底部的<b style="color:hsl(var(--primary))">登录 BitWool</b>按钮。</p></div>'}], total_latency_ms:0 };
   }
@@ -854,6 +879,6 @@ ipcMain.handle('sandbox:autoSetup', async () => {
   return sandbox.setup(sandboxDataPath(), onProgress);
 });
 
-app.whenReady().then(() => { unlockDevKey(); createWindow(); createTray(); startPolarisServe(); systemMonitor.startMonitoring((card) => { if (win && !win.isDestroyed()) win.webContents.send('polaris:intervention', card); }); });
+app.whenReady().then(() => { createWindow(); createTray(); startPolarisServe(); systemMonitor.startMonitoring((card) => { if (win && !win.isDestroyed()) win.webContents.send('polaris:intervention', card); }); });
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
 app.on('will-quit', () => { globalShortcut.unregisterAll(); for (const [, p] of mcpProcesses) p.kill(); if (polarisServeProc) { try { polarisServeProc.kill(); } catch {} } systemMonitor.stopMonitoring(); });
