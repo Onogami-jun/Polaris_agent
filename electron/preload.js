@@ -69,4 +69,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   skillgraphEdges: (limit) => ipcRenderer.invoke('skillgraph:edges', limit),
   skillgraphSimilar: (goalText, limit) => ipcRenderer.invoke('skillgraph:similar', goalText, limit),
   skillgraphContext: (goalText) => ipcRenderer.invoke('skillgraph:context', goalText),
+  polarisServeStatus: () => ipcRenderer.invoke('polaris-serve:status'),
+  polarisModelInstall: () => ipcRenderer.invoke('polaris-model:install'),
 });

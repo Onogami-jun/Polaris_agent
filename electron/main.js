@@ -625,20 +625,66 @@ ipcMain.handle('terminal:read', (_e, { id, lines }) => ({ output: terminal.readO
 ipcMain.handle('terminal:kill', (_e, { id }) => terminal.killSession(id));
 
 // ── Local inference server ──
+const os = require('os');
+const POLARIS_MODEL_DIR = path.join(os.homedir(), '.polaris', 'models');
+const POLARIS_MODEL_URL = 'https://github.com/D0gSXG/Polaris_agent/releases/download/v1.0/polaris-merged.zip';
+
 function startPolarisServe() {
   try {
-    const servePath = path.join(ROOT, 'internal', 'scripts', 'polaris_serve.py');
-    if (!require('fs').existsSync(servePath)) {
-      console.log('[polaris-serve] No internal model found — skipping local inference.');
+    const fs = require('fs');
+
+    // Check multiple locations for serve script
+    var serveScriptCandidates = [
+      path.join(ROOT, 'internal', 'scripts', 'polaris_serve.py'),           // dev mode
+      path.join(ROOT, 'electron', 'services', 'polaris_serve.py'),          // bundled
+      path.join(POLARIS_MODEL_DIR, 'polaris_serve.py'),                     // user download
+    ];
+    var modelDirCandidates = [
+      path.join(ROOT, 'polaris-merged'),           // dev mode
+      POLARIS_MODEL_DIR,                           // user download
+    ];
+
+    var scriptPath = null;
+    var modelDir = null;
+
+    for (var si = 0; si < serveScriptCandidates.length; si++) {
+      if (fs.existsSync(serveScriptCandidates[si])) { scriptPath = serveScriptCandidates[si]; break; }
+    }
+    for (var mi = 0; mi < modelDirCandidates.length; mi++) {
+      if (fs.existsSync(path.join(modelDirCandidates[mi], 'config.json'))) { modelDir = modelDirCandidates[mi]; break; }
+    }
+    // If no model dir found, use the default
+    if (!modelDir) modelDir = POLARIS_MODEL_DIR;
+
+    if (!scriptPath) {
+      console.log('[polaris-serve] Serve script not found.');
       return;
     }
-    // Use the project's venv python if it exists
-    const venvPython = path.join(ROOT, '.venv', 'Scripts', 'python.exe');
-    const python = require('fs').existsSync(venvPython) ? venvPython : 'python';
-    polarisServeProc = spawn(python, [servePath], {
-      cwd: ROOT,
+    if (!fs.existsSync(path.join(modelDir, 'config.json'))) {
+      console.log('[polaris-serve] Model not installed. Users can download from Settings > Models.');
+      return;
+    }
+
+    // Find a working python
+    var python = 'python';
+    var candidates = [
+      path.join(ROOT, '.venv', 'Scripts', 'python.exe'),   // dev venv
+      path.join(POLARIS_MODEL_DIR, '.venv', 'Scripts', 'python.exe'), // user venv
+      'python3', 'python',
+    ];
+    for (var ci = 0; ci < candidates.length; ci++) {
+      try {
+        var test = require('child_process').spawnSync(candidates[ci], ['--version'], { timeout: 5000, windowsHide: true });
+        if (test.status === 0) { python = candidates[ci]; break; }
+      } catch (e) { /* skip */ }
+    }
+
+    var env = Object.assign({}, process.env, { POLARIS_MODEL_DIR: modelDir });
+    polarisServeProc = spawn(python, [scriptPath], {
+      cwd: modelDir,
       stdio: 'pipe',
       windowsHide: true,
+      env: env,
     });
     polarisServeProc.stdout?.on('data', (d) => console.log('[polaris-serve]', d.toString().trim()));
     polarisServeProc.stderr?.on('data', (d) => console.log('[polaris-serve]', d.toString().trim()));
@@ -647,7 +693,7 @@ function startPolarisServe() {
       console.log('[polaris-serve] Exited with code', code);
       polarisServeProc = null;
     });
-    console.log('[polaris-serve] Starting local inference server (pid:', polarisServeProc.pid, ')');
+    console.log('[polaris-serve] Local inference server started (pid:', polarisServeProc.pid, ')');
   } catch (e) {
     console.log('[polaris-serve] Failed to start:', e.message);
   }
@@ -656,6 +702,80 @@ function startPolarisServe() {
 ipcMain.handle('polaris-serve:status', () => {
   return { running: polarisServeProc !== null && !polarisServeProc.killed };
 });
+
+ipcMain.handle('polaris-model:install', async () => {
+  try {
+    var fs = require('fs');
+    if (!fs.existsSync(POLARIS_MODEL_DIR)) fs.mkdirSync(POLARIS_MODEL_DIR, { recursive: true });
+
+    // Check if already installed
+    if (fs.existsSync(path.join(POLARIS_MODEL_DIR, 'config.json'))) {
+      return { success: true, alreadyInstalled: true };
+    }
+
+    // Download model zip from GitHub Releases
+    var zipPath = path.join(POLARIS_MODEL_DIR, 'model.zip');
+    var downloadResult = await downloadFile(POLARIS_MODEL_URL, zipPath);
+    if (!downloadResult.success) return { success: false, error: 'Download failed: ' + downloadResult.error };
+
+    // Unzip
+    var AdmZip = null;
+    try { AdmZip = require('adm-zip'); } catch {}
+    if (AdmZip) {
+      var zip = new AdmZip(zipPath);
+      zip.extractAllTo(POLARIS_MODEL_DIR, true);
+      fs.unlinkSync(zipPath);
+    } else {
+      // Fallback: use PowerShell
+      require('child_process').execSync(
+        'powershell -Command "Expand-Archive -Path \'' + zipPath + '\' -DestinationPath \'' + POLARIS_MODEL_DIR + '\' -Force"',
+        { timeout: 300000 }
+      );
+      fs.unlinkSync(zipPath);
+    }
+
+    // Copy serve script alongside model
+    var serveSrc = path.join(ROOT, 'internal', 'scripts', 'polaris_serve.py');
+    if (!fs.existsSync(serveSrc)) serveSrc = path.join(ROOT, 'electron', 'services', 'polaris_serve.py'); // bundled fallback
+    if (fs.existsSync(serveSrc)) {
+      fs.copyFileSync(serveSrc, path.join(POLARIS_MODEL_DIR, 'polaris_serve.py'));
+    }
+
+    // Install pip deps for user
+    try {
+      require('child_process').execSync(
+        'pip install transformers torch peft --quiet',
+        { timeout: 300000, windowsHide: true }
+      );
+    } catch (e) { /* pip may not be available, try later at serve time */ }
+
+    return { success: true, path: POLARIS_MODEL_DIR };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+});
+
+function downloadFile(url, destPath) {
+  return new Promise(function(resolve) {
+    var https = require('https');
+    var file = require('fs').createWriteStream(destPath);
+    https.get(url, function(res) {
+      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        // Follow redirect
+        file.close();
+        require('fs').unlinkSync(destPath);
+        downloadFile(res.headers.location, destPath).then(resolve);
+        return;
+      }
+      res.pipe(file);
+      file.on('finish', function() { file.close(); resolve({ success: true }); });
+    }).on('error', function(e) {
+      file.close();
+      try { require('fs').unlinkSync(destPath); } catch {}
+      resolve({ success: false, error: e.message });
+    });
+  });
+}
 ipcMain.handle('sandbox:autoSetup', async () => {
   if (sandbox.isReady(sandboxDataPath())) {
     return { success: true, alreadyReady: true };
