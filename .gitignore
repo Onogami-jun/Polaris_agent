@@ -23,9 +23,11 @@ unsloth_compiled_cache/
 # 无 internal/ → 桩降级商用版
 internal/
 
-# ★ MODEL FILES — 模型文件太大，不要提交 ★
+# ★ MODEL FILES — 大文件不上传仓库 ★
 polaris-merged/
+polaris-merged.zip
 polaris-opt/
+polaris_chunks/
 *.gguf
 *.bin
 *.safetensors

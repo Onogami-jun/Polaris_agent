@@ -626,8 +626,10 @@ ipcMain.handle('terminal:kill', (_e, { id }) => terminal.killSession(id));
 
 // ── Local inference server ──
 const os = require('os');
+const SUPABASE_URL = 'https://spwishxhydvgqbfchjgj.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_hY1a3BqHfPvUNPQwkV6AEg_Nz-b2bgY';
 const POLARIS_MODEL_DIR = path.join(os.homedir(), '.polaris', 'models');
-const POLARIS_MODEL_URL = 'https://github.com/D0gSXG/Polaris_agent/releases/download/v1.0/polaris-merged.zip';
+const POLARIS_MODEL_PATH = 'models/chunks'; // Supabase Storage prefix
 
 function startPolarisServe() {
   try {
@@ -713,10 +715,33 @@ ipcMain.handle('polaris-model:install', async () => {
       return { success: true, alreadyInstalled: true };
     }
 
-    // Download model zip from GitHub Releases
+    // Download model in chunks from Supabase Storage
+    var chunksUrl = SUPABASE_URL + '/storage/v1/object/public/' + POLARIS_MODEL_PATH;
     var zipPath = path.join(POLARIS_MODEL_DIR, 'model.zip');
-    var downloadResult = await downloadFile(POLARIS_MODEL_URL, zipPath);
-    if (!downloadResult.success) return { success: false, error: 'Download failed: ' + downloadResult.error };
+
+    // Step 1: Download manifest to know how many chunks
+    var manifestUrl = chunksUrl + '/manifest.json';
+    var manifestResult = await downloadFile(manifestUrl, path.join(POLARIS_MODEL_DIR, 'manifest.json'), SUPABASE_ANON_KEY);
+    if (!manifestResult.success) return { success: false, error: 'Manifest download failed: ' + manifestResult.error };
+
+    var manifest = JSON.parse(fs.readFileSync(path.join(POLARIS_MODEL_DIR, 'manifest.json'), 'utf8'));
+    var nChunks = manifest.chunks || 0;
+    if (nChunks === 0) return { success: false, error: 'Invalid manifest: no chunks' };
+
+    // Step 2: Download each chunk
+    var combined = Buffer.alloc(0);
+    for (var ci = 0; ci < nChunks; ci++) {
+      var chunkName = 'chunk_' + String(ci).padStart(3, '0');
+      var chunkUrl = chunksUrl + '/' + chunkName;
+      var chunkPath = path.join(POLARIS_MODEL_DIR, chunkName);
+      var chunkResult = await downloadFile(chunkUrl, chunkPath, SUPABASE_ANON_KEY);
+      if (!chunkResult.success) return { success: false, error: 'Chunk ' + chunkName + ' failed: ' + chunkResult.error };
+      combined = Buffer.concat([combined, fs.readFileSync(chunkPath)]);
+      fs.unlinkSync(chunkPath); // clean up chunk file
+    }
+
+    // Step 3: Write combined zip
+    fs.writeFileSync(zipPath, combined);
 
     // Unzip
     var AdmZip = null;
@@ -755,16 +780,31 @@ ipcMain.handle('polaris-model:install', async () => {
   }
 });
 
-function downloadFile(url, destPath) {
+function downloadFile(url, destPath, anonKey) {
   return new Promise(function(resolve) {
     var https = require('https');
+    var urlObj = new URL(url);
+    var headers = { 'User-Agent': 'Polaris-Solver/4.0' };
+    if (anonKey) headers['apikey'] = anonKey;
+    var options = {
+      hostname: urlObj.hostname,
+      path: urlObj.pathname + urlObj.search,
+      method: 'GET',
+      headers: headers,
+      timeout: 300000,
+    };
     var file = require('fs').createWriteStream(destPath);
-    https.get(url, function(res) {
+    https.get(options, function(res) {
       if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-        // Follow redirect
         file.close();
-        require('fs').unlinkSync(destPath);
-        downloadFile(res.headers.location, destPath).then(resolve);
+        try { require('fs').unlinkSync(destPath); } catch {}
+        downloadFile(res.headers.location, destPath, anonKey).then(resolve);
+        return;
+      }
+      if (res.statusCode !== 200) {
+        file.close();
+        try { require('fs').unlinkSync(destPath); } catch {}
+        resolve({ success: false, error: 'HTTP ' + res.statusCode });
         return;
       }
       res.pipe(file);
