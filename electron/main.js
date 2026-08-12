@@ -720,28 +720,20 @@ ipcMain.handle('polaris-model:install', async () => {
     var chunksUrl = SUPABASE_URL + '/storage/v1/object/public/' + POLARIS_MODEL_PATH;
     var zipPath = path.join(POLARIS_MODEL_DIR, 'model.zip');
 
-    // Helper: download via Electron net
-    function electronDownload(url, destPath) {
-      return new Promise(function(resolve) {
-        var net = require('electron').net;
-        var req = net.request({ method: 'GET', url: url });
-        req.on('response', function(response) {
-          if (response.statusCode !== 200) {
-            resolve({ success: false, error: 'HTTP ' + response.statusCode });
-            return;
-          }
-          var chunks = [];
-          response.on('data', function(chunk) { chunks.push(Buffer.from(chunk)); });
-          response.on('end', function() {
-            var data = Buffer.concat(chunks);
-            fs.writeFileSync(destPath, data);
-            resolve({ success: true, size: data.length });
-          });
-          response.on('error', function(e) { resolve({ success: false, error: e.message }); });
+    // Helper: download via Node fetch (built-in in Electron 31+)
+    async function electronDownload(url, destPath) {
+      try {
+        var response = await fetch(url, {
+          headers: { 'User-Agent': 'Polaris-Solver/4.0' },
+          signal: AbortSignal.timeout(120000),
         });
-        req.on('error', function(e) { resolve({ success: false, error: e.message }); });
-        req.end();
-      });
+        if (!response.ok) return { success: false, error: 'HTTP ' + response.status };
+        var buf = Buffer.from(await response.arrayBuffer());
+        fs.writeFileSync(destPath, buf);
+        return { success: true, size: buf.length };
+      } catch (e) {
+        return { success: false, error: e.message || 'fetch error' };
+      }
     }
 
     // Step 1: Download manifest
