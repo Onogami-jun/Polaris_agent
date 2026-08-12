@@ -149,8 +149,10 @@ ipcMain.handle('polaris:query', async (_e, { text, strategy, systemPrompt, image
   console.log('  _KEY_OK:', _KEY_OK);
   console.log('  authUserId:', _authUserId);
   var key = getKey();
+  // Debug: show diagnostic in locked screen
   if (!key) {
-    return { routing:{strategy:'locked',top_intent:'locked',selected_models:[],rationale:'auth required'}, responses:[{model_id:'locked',model_display:'Locked',content:'<div style="text-align:center;padding:20px"><div style="font-size:48px;margin-bottom:12px">🔐</div><p style="font-size:14px;color:hsl(var(--foreground));margin-bottom:8px">Polaris 需要登录才能使用</p><p style="font-size:12px;color:hsl(var(--muted-foreground));margin-bottom:16px">登录 BitWool 账号后解锁全部 AI 功能。点击左侧栏底部的<b style="color:hsl(var(--primary))">登录 BitWool</b>按钮。</p></div>'}], total_latency_ms:0 };
+    var diag = 'keyLen=' + (getKey()||'').length + ' envKey=' + !!process.env.POLARIS_KEY + ' bootOK=' + _KEY_OK + ' uid=' + (_authUserId||'none');
+    return { routing:{strategy:'locked',top_intent:'locked',selected_models:[],rationale:diag}, responses:[{model_id:'locked',model_display:'Locked',content:'<div style="text-align:center;padding:20px"><div style="font-size:48px;margin-bottom:12px">🔐</div><p style="font-size:14px;color:hsl(var(--foreground));margin-bottom:8px">Polaris 需要登录才能使用</p><p style="font-size:10px;color:#d45a5a;margin-bottom:16px;font-family:monospace">' + diag + '</p><p style="font-size:12px;color:hsl(var(--muted-foreground));margin-bottom:16px">登录 BitWool 账号后解锁全部 AI 功能。点击左侧栏底部的<b style="color:hsl(var(--primary))">登录 BitWool</b>按钮。</p></div>'}], total_latency_ms:0 };
   }
   console.log('[polaris:query] text:', (text||'').slice(0,80));
   var onExec = function(evt) { if (win && !win.isDestroyed()) win.webContents.send('polaris:exec-log', evt); };
@@ -357,7 +359,9 @@ ipcMain.handle('auth:githubLogin', async (_e, { token, user }) => {
   try {
     _authUserId = user.id;
     _mainGhToken = token;
-    unlockDevKey();
+    // Load key: try cloud FIRST (public builds rely on this), then local vault fallback
+    await refreshApiKey(user.id);
+    if (!getKey()) unlockDevKey();
     if (win && !win.isDestroyed()) {
       win.webContents.send('polaris:github-token', { token, user });
     }
