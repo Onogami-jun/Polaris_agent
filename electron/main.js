@@ -118,7 +118,7 @@ async function refreshApiKey(userId) {
 
 // IPC: AI (auth-gated)
 ipcMain.handle('polaris:query', async (_e, { text, strategy, systemPrompt, images, apiKeys }) => {
-  var key = getKey() || loadDeepseekKey();
+  var key = getKey();
   if (!key) {
     return { routing:{strategy:'locked',top_intent:'locked',selected_models:[],rationale:'auth required'}, responses:[{model_id:'locked',model_display:'Locked',content:'<div style="text-align:center;padding:20px"><div style="font-size:48px;margin-bottom:12px">🔐</div><p style="font-size:14px;color:hsl(var(--foreground));margin-bottom:8px">Polaris 需要登录才能使用</p><p style="font-size:12px;color:hsl(var(--muted-foreground));margin-bottom:16px">登录 BitWool 账号后解锁全部 AI 功能。点击左侧栏底部的<b style="color:hsl(var(--primary))">登录 BitWool</b>按钮。</p></div>'}], total_latency_ms:0 };
   }
@@ -133,7 +133,7 @@ ipcMain.handle('polaris:query', async (_e, { text, strategy, systemPrompt, image
   }
 });
 ipcMain.handle('polaris:queryStream', async (event, { text, strategy, systemPrompt, images, apiKeys, language }) => {
-  var key = getKey() || loadDeepseekKey();
+  var key = getKey();
   if (!key) {
     var locked = { routing:{strategy:'locked',top_intent:'locked',selected_models:[],rationale:'auth required'}, responses:[{model_id:'locked',model_display:'Locked',content:'<div style="text-align:center;padding:20px"><div style="font-size:48px;margin-bottom:12px">🔐</div><p style="font-size:14px;color:hsl(var(--foreground));margin-bottom:8px">Polaris 需要登录才能使用</p><p style="font-size:12px;color:hsl(var(--muted-foreground));margin-bottom:16px">登录 BitWool 账号后解锁全部 AI 功能。点击左侧栏底部的<b style="color:hsl(var(--primary))">登录 BitWool</b>按钮。</p></div>'}], total_latency_ms:0 };
     if (win && !win.isDestroyed()) win.webContents.send('polaris:stream-end', locked);
@@ -263,83 +263,26 @@ function exchangeCodeForToken(code, clientId, port) {
 // IPC: Auth — unlock/lock API key + session token
 ipcMain.handle('auth:unlock', async (_e, { userId }) => {
   await refreshApiKey(userId);
-  if (!getKey()) loadDeepseekKey();
   security.createAuthSession(userId);
   security.auditLog('auth', 'unlock', 'User: ' + userId);
-  console.log('[Auth] unlock:', userId, 'key loaded:', !!getKey());
   return { success: !!getKey() };
 });
-// ═══════════════════════════════════════════════════════════
-// API Key: inline decryption, NO proxy, NO require — failsafe
-// ═══════════════════════════════════════════════════════════
-function loadDeepseekKey() {
-  if (getKey()) return getKey();
-
-  try {
-    var crypto = require('crypto');
-    var fs = require('fs');
-    var vaultPath = path.join(ROOT, 'internal', 'services', 'secrets.js');
-    if (!fs.existsSync(vaultPath)) { console.log('[Key] Vault file not found'); return null; }
-
-    // Read the vault source, extract the encrypted payload for deepseek_api_key
-    var src = fs.readFileSync(vaultPath, 'utf8');
-
-    // Extract VAULT_SEED
-    var seedM = src.match(/VAULT_SEED\s*=\s*'([^']+)'/);
-    if (!seedM) { console.log('[Key] VAULT_SEED not found'); return null; }
-    var seed = seedM[1];
-
-    // Extract deepseek_api_key block: { iv: '...', data: '...', tag: '...' }
-    var dskStart = src.indexOf('deepseek_api_key');
-    if (dskStart < 0) { console.log('[Key] deepseek_api_key not in vault'); return null; }
-    var dskBlock = src.slice(dskStart, src.indexOf('}', src.indexOf('tag', dskStart)) + 1);
-
-    var ivM = dskBlock.match(/iv:\s*'([^']+)'/);
-    var dataM = dskBlock.match(/data:\s*'([^']+)'/);
-    var tagM = dskBlock.match(/tag:\s*'([^']+)'/);
-    if (!ivM || !dataM || !tagM) { console.log('[Key] Block parse failed'); return null; }
-
-    // Decrypt
-    var aesKey = crypto.createHash('sha256').update(seed).digest();
-    var decipher = crypto.createDecipheriv('aes-256-gcm', aesKey, Buffer.from(ivM[1], 'hex'));
-    decipher.setAuthTag(Buffer.from(tagM[1], 'hex'));
-    var decrypted = decipher.update(dataM[1], 'hex', 'utf8');
-    decrypted += decipher.final('utf8');
-
-    if (decrypted && decrypted.startsWith('sk-')) {
-      setKey(decrypted);
-      console.log('[Key] Decrypted from vault, len:', decrypted.length);
-      return decrypted;
-    }
-    console.log('[Key] Decryption produced invalid key:', decrypted.slice(0, 8) + '...');
-  } catch (e) {
-    console.log('[Key] Decryption failed:', e.message);
-  }
-
-  // Env fallback
-  var ek = process.env.DEEPSEEK_KEY || process.env.POLARIS_DEEPSEEK_KEY;
-  if (ek) { setKey(ek); console.log('[Key] From env'); return ek; }
-
-  console.log('[Key] No key from any source');
-  return null;
-}
-
 // IPC: GitHub OAuth login (device flow)
 ipcMain.handle('auth:githubLogin', async (_e, { token, user }) => {
   try {
     _authUserId = user.id;
     _mainGhToken = token;
-
-    // Load key directly first, then try cloud refresh
-    loadDeepseekKey();
-    refreshApiKey(user.id).catch(function() {});
-
+    // Store the GitHub token in settings for git ops
     if (win && !win.isDestroyed()) {
       win.webContents.send('polaris:github-token', { token, user });
     }
+    // Use built-in key as fallback for AI features
+    var vaultGet = require('./services/secrets').get;
+    var builtinKey = vaultGet('deepseek_api_key');
+    if (builtinKey) setKey(builtinKey);
     security.createAuthSession(user.id);
-    security.auditLog('auth', 'githubLogin', 'User: ' + user.login + ', keyLoaded: ' + !!getKey());
-    console.log('[Auth] GitHub login:', user.login, 'key loaded:', !!getKey());
+    security.auditLog('auth', 'githubLogin', 'User: ' + user.login);
+    console.log('[Auth] GitHub login:', user.login);
     return { success: true };
   } catch (e) {
     return { success: false, error: e.message };
@@ -860,6 +803,6 @@ ipcMain.handle('sandbox:autoSetup', async () => {
   return sandbox.setup(sandboxDataPath(), onProgress);
 });
 
-app.whenReady().then(() => { loadDeepseekKey(); createWindow(); createTray(); startPolarisServe(); systemMonitor.startMonitoring((card) => { if (win && !win.isDestroyed()) win.webContents.send('polaris:intervention', card); }); });
+app.whenReady().then(() => { createWindow(); createTray(); startPolarisServe(); systemMonitor.startMonitoring((card) => { if (win && !win.isDestroyed()) win.webContents.send('polaris:intervention', card); }); });
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
 app.on('will-quit', () => { globalShortcut.unregisterAll(); for (const [, p] of mcpProcesses) p.kill(); if (polarisServeProc) { try { polarisServeProc.kill(); } catch {} } systemMonitor.stopMonitoring(); });
