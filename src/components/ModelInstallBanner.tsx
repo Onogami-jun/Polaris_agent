@@ -25,7 +25,7 @@ export function ModelInstallBanner({ lang, labels }: Props) {
       const api = (window as any).electronAPI;
       if (!api?.polarisServeStatus) return;
       const s = await api.polarisServeStatus();
-      if (s?.running) {
+      if (s?.running || s?.modelInstalled) {
         setInstalled(true);
         return;
       }

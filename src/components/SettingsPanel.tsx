@@ -474,7 +474,9 @@ function LocalModelSection({ lang }: { lang: string }) {
     setStatus('checking');
     api.polarisServeStatus().then((s: any) => {
       setRunning(!!s?.running);
-      setStatus(s?.running ? 'done' : 'idle');
+      if (s?.running) setStatus('done');
+      else if (s?.modelInstalled) { setStatus('done'); setMsg('已安装，推理服务未启动'); }
+      else setStatus('idle');
     }).catch(() => setStatus('idle'));
   }, []);
 
