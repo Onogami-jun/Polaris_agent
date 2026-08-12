@@ -386,7 +386,12 @@ const App:React.FC=()=>{
     drEvs.forEach(function(ev){document.addEventListener(ev,ev==='dragenter'?onDragEnter:ev==='dragover'?onDragOver:ev==='dragleave'?onDragLeave:onDrop as any)});
     return function(){drEvs.forEach(function(ev){document.removeEventListener(ev,ev==='dragenter'?onDragEnter:ev==='dragover'?onDragOver:ev==='dragleave'?onDragLeave:onDrop as any)})}},[]);
   // ── File reader helper ──
-  function readDroppedFiles(files:File[]){var ta=document.querySelector('textarea');if(!ta)return;var names: string[]=[];files.forEach(function(f){names.push(f.name)});var prefix=names.length===1?'[File: '+names[0]+']\n':'[Files: '+names.join(', ')+']\n';var setter=Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype,'value')?.set;if(setter){setter.call(ta,prefix);ta.dispatchEvent(new Event('input',{bubbles:true}))}else{ta.value=prefix;ta.dispatchEvent(new Event('input',{bubbles:true}))}ta.focus();setInp(prefix)}
+  async function readDroppedFiles(files:File[]){var ta=document.querySelector('textarea');if(!ta)return;
+    var parts:string[]=[];var fp=(await import('./utils/fileParser')).parseFile;
+    for(var fi=0;fi<files.length;fi++){var f=files[fi];try{var r=await fp(f);if(r.text&&r.text.length>10){parts.push('[File: '+f.name+' ('+r.type+')]\n'+r.text.slice(0,8000)+'\n[/File]');}
+    else{parts.push('[File: '+f.name+' — binary/could not parse]');}}catch(e){parts.push('[File: '+f.name+']');}}
+    var prefix=parts.join('\n\n')+'\n';
+    var setter=Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype,'value')?.set;if(setter){setter.call(ta,prefix);ta.dispatchEvent(new Event('input',{bubbles:true}))}else{ta.value=prefix;ta.dispatchEvent(new Event('input',{bubbles:true}))}ta.focus();setInp(prefix);setDragFiles([])}
   useEffect(()=>{const api=window.electronAPI;if(!api)return;api.monitorStart();api.onIntervention((card:any)=>{card.ts=Date.now();setInterventions(p=>[...p.slice(-4),card])});api.onPlanProgress((data:any)=>setPlanProg(data));api.onExecLog((data:any)=>{addExecLog(data.tool,data.status,data.detail||'')});api.onTodoUpdate((data:any)=>{if(data.steps)setTodoSteps(data.steps)});api.onStreamError((ed:any)=>{showToast('Stream Error: '+(ed?.message||'未知'),'error');dispatchRef.current(setStreaming(false));setThk('')});
   api.onToolConfirm((data:any)=>{setPermReq(data)});api.onToolConfirmDismiss((data:any)=>{setPermReq(function(p:any){return p&&p.id===data.id?null:p})});
   // Health check
@@ -404,7 +409,7 @@ const App:React.FC=()=>{
   // ── Query ──
   const query=useCallback(async(t:string,rgn?:boolean)=>{
     if(!t||streaming)return;stop.current=false;
-    const sid=activeSessionId||'default';setInp('');setFs([]);
+    const sid=activeSessionId||'default';setInp('');setFs([]);setDragFiles([]);
     if(!rgn){d(addMessage({sessionId:sid,message:{id:'u'+Date.now(),role:'user',content:t,timestamp:Date.now()}}))}
     d(setStreaming(true));setThinking('');
     var msgId='a'+Date.now();var modelName='';var hasAdded=false;
@@ -464,7 +469,7 @@ const App:React.FC=()=>{
   },[streaming,strategy,activeSessionId,d,fs,web,settings]);
 
   // ── Actions ──
-  const send=()=>{const t=inp.trim();if(!t||streaming)return;query(t)};
+  const send=()=>{const t=inp.trim();if(!t||streaming)return;setDragFiles([]);query(t)};
   const cp=(c:string)=>{navigator.clipboard.writeText(c).catch(()=>{});setCid(c.slice(0,20));setTimeout(()=>setCid(''),1500)};
   const rg=()=>{if(!act||act.messages.length<2)return;const u=[...act.messages].reverse().find(m=>m.role==='user');if(u)query(u.content,true)};
   const br=()=>{if(!act||act.messages.length<2)return;const u=[...act.messages].reverse().find(m=>m.role==='user');if(u)d(branchSession({sourceSessionId:act.id,upToMessageId:u.id}))};
