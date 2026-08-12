@@ -31,6 +31,11 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onDone }) => {
       desc: '注册 BitWool 账号后解锁全部功能。\n同一账号可在启文 QiWen Writer 中登录使用。',
       icon: <div className="text-5xl mb-4">🔐</div>,
     },
+    {
+      title: '本地推理模型',
+      desc: 'Polaris 内置轻量推理模型，一键安装。\n安装后常见优化问题离线求解，零 API 费用。',
+      icon: <div className="text-5xl mb-4">🧠</div>,
+    },
   ];
 
   const slide = slides[step];

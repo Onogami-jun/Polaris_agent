@@ -10,6 +10,7 @@ import{Onboarding,ONBOARDING_KEY}from'./components/Onboarding';
 import{StandaloneLab}from'./components/AgentLab';
 import{GitPopup}from'./components/GitPopup';
 import{TaskBoard}from'./components/TaskBoard';
+import{ModelInstallBanner}from'./components/ModelInstallBanner';
 import{TerminalPopup}from'./components/TerminalPopup';
 import{t}from'./i18n';
 import{AuthBanner}from'./components/AuthBanner';
@@ -301,6 +302,7 @@ const App:React.FC=()=>{
   const[todoSteps,setTodoSteps]=useState<{id:string;status:'pending'|'running'|'done';label:string}[]>([]);
   const[interventions,setInterventions]=useState<any[]>([]);
   const[plan,setPlan]=useState<any>(null);const[planProg,setPlanProg]=useState<any>(null);const[planId,setPlanId]=useState('');const[labOpen,setLabOpen]=useState(false);const[gitOpen,setGitOpen]=useState(false);const[termOpen,setTermOpen]=useState(false);
+  const closeLab=useCallback(()=>setLabOpen(false),[]);
 
   // Panel widths (px) & visibility
   const[leftW,setLeftW]=useState(220);const[leftOpen,setLeftOpen]=useState(true);
@@ -475,6 +477,13 @@ const App:React.FC=()=>{
   const confirmPlan=async()=>{if(!planId)return;const api=window.electronAPI;if(!api)return;setThk('执行中...');d(setStreaming(true));try{await api.plannerExecute(planId);setPlan(null);setPlanId('');setPlanProg(null);addExecLog('planner','done','计划执行完成');d(addMessage({sessionId:activeSessionId!,message:{id:'p'+Date.now(),role:'assistant',content:'计划已执行完成。',timestamp:Date.now(),model:'Planner'}}))}catch(e:any){addExecLog('planner','error',e.message);d(addMessage({sessionId:activeSessionId!,message:{id:'e'+Date.now(),role:'assistant',content:'执行失败: '+e.message,timestamp:Date.now()}}))}d(setStreaming(false));setThk('')};
   const rejectPlan=async()=>{const api=window.electronAPI;if(!api)return;await api.plannerReject(planId);setPlan(null);setPlanId('');setPlanProg(null);setExecLog(p=>p.filter(e=>e.tool!=='planner'))};
 
+  // ── Open Lab from Settings ──
+  useEffect(()=>{
+    const handler = () => { setLabOpen(true); dispatchRef.current(toggleSettings()); };
+    window.addEventListener('polaris:open-lab', handler);
+    return () => window.removeEventListener('polaris:open-lab', handler);
+  }, []);
+
   // ── Onboarding (once) ──
   useEffect(()=>{if(!localStorage.getItem(ONBOARDING_KEY)&&!showOnboarding)setShowOnboarding(true)},[]);
 
@@ -601,10 +610,14 @@ const App:React.FC=()=>{
     </div>
     {settingsEl}
     {cmdEl}
-    {labOpen && <StandaloneLab onClose={()=>setLabOpen(false)}/>}
+    {labOpen && <StandaloneLab onClose={closeLab}/>}
     {gitOpen && <GitPopup onClose={()=>setGitOpen(false)}/>}
     {termOpen && <TerminalPopup onClose={()=>setTermOpen(false)}/>}
     <LoginModal/>
+    <ModelInstallBanner lang={lang} labels={{
+      zh: { title:'安装本地模型', desc:'Polaris 内置轻量推理模型，安装后可离线求解常见优化问题，零 API 费用。', install:'一键安装', installing:'下载中...', done:'安装完成', never:'不再提示' },
+      en: { title:'Install Local Model', desc:'Built-in lightweight inference model. Solve common optimization problems offline, zero API cost.', install:'Install Now', installing:'Downloading...', done:'Installation complete', never:'Don\'t show again' },
+    }} />
     {/* Drag & drop overlay */}
     {dragOver&&<div className="dov" style={{zIndex:9999}}><div className="doz" style={{padding:'48px 64px',borderRadius:20,fontSize:15}}><div style={{fontSize:32,marginBottom:8,opacity:.6}}>+</div>Drop files to attach</div></div>}
     {/* ── Claude Code-style Permission Dialog ── */}

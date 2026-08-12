@@ -172,6 +172,10 @@ const SettingsPanel: React.FC = () => {
               <div className="space-y-6">
                 <h3 className="text-base font-semibold text-foreground pb-3 border-b border-border">{t(s.language,'settings.models.title')}</h3>
                 <p className="text-xs text-muted-foreground -mt-4">{t(s.language,'settings.models.desc')}</p>
+
+                {/* ── Local Model ── */}
+                <LocalModelSection lang={s.language} />
+
                 {[
                   { id: 'deepseek', label: 'DeepSeek', noteK: 'deepseekNote' },
                   { id: 'anthropic', label: 'Anthropic', noteK: 'anthropicNote' },
@@ -309,7 +313,19 @@ const SettingsPanel: React.FC = () => {
             {tab === 'sandbox' && <SandboxSettings />}
 
             {/* ── Agent Lab ── */}
-            {tab === 'lab' && <AgentLab />}
+            {tab === 'lab' && (
+              <div className="space-y-6">
+                <h3 className="text-base font-semibold text-foreground pb-3 border-b border-border">{t(s.language,'settings.lab.title') || 'Lab'}</h3>
+                <p className="text-xs text-muted-foreground -mt-4">全功能实验面板，独立窗口打开</p>
+                <button onClick={() => {
+                  const api = (window as any).electronAPI;
+                  const ev = new CustomEvent('polaris:open-lab', { bubbles: true });
+                  window.dispatchEvent(ev);
+                }} className="w-full py-3 rounded-xl bg-primary/10 hover:bg-primary/20 border border-primary/20 text-sm text-primary font-semibold transition-all">
+                  🧪 打开实验 Lab
+                </button>
+              </div>
+            )}
 
             {/* ── About ── */}
             {tab === 'about' && (
@@ -459,6 +475,80 @@ function SandboxSettings() {
         <p>{t(s.language,'settings.sandbox.info2')} <span className="font-mono text-[10px]">Documents/GitHub/polaris/</span></p>
         <p>{t(s.language,'settings.sandbox.info3')}</p>
       </div>
+    </div>
+  );
+}
+
+/* ── Local Model Install Section ── */
+function LocalModelSection({ lang }: { lang: string }) {
+  const [status, setStatus] = useState<'idle'|'checking'|'installing'|'done'|'error'>('idle');
+  const [msg, setMsg] = useState('');
+  const [running, setRunning] = useState(false);
+
+  useEffect(() => {
+    const api = (window as any).electronAPI;
+    if (!api?.polarisServeStatus) return;
+    setStatus('checking');
+    api.polarisServeStatus().then((s: any) => {
+      setRunning(!!s?.running);
+      setStatus(s?.running ? 'done' : 'idle');
+    }).catch(() => setStatus('idle'));
+  }, []);
+
+  const install = async () => {
+    setStatus('installing');
+    setMsg('Downloading model chunks from Supabase...');
+    try {
+      const api = (window as any).electronAPI;
+      if (!api?.polarisModelInstall) { setStatus('error'); setMsg('IPC not available'); return; }
+      const r = await api.polarisModelInstall();
+      if (r?.success) {
+        setStatus('done');
+        setMsg(r.alreadyInstalled ? 'Already installed' : 'Installed! Please restart Polaris to activate.');
+      } else {
+        setStatus('error');
+        setMsg(r?.error || 'Installation failed');
+      }
+    } catch (e: any) {
+      setStatus('error');
+      setMsg(e.message);
+    }
+  };
+
+  const labels: any = {
+    'zh-CN': { title:'本地推理模型', desc:'Polaris 内置轻量模型，安装后离线求解，零 API 费用', install:'安装模型', installing:'下载中...', done:'已安装', runningStatus:'运行中', notRunning:'未启动', check:'检查中...', err:'安装失败' },
+    'en':     { title:'Local Inference Model', desc:'Built-in lightweight model for offline solving, zero API cost', install:'Install Model', installing:'Installing...', done:'Installed', runningStatus:'Running', notRunning:'Not running', check:'Checking...', err:'Failed' },
+    'ja':     { title:'ローカル推論モデル', desc:'軽量モデルでオフライン解決', install:'インストール', installing:'インストール中...', done:'完了', runningStatus:'実行中', notRunning:'停止', check:'確認中...', err:'失敗' },
+    'fr':     { title:'Modele local', desc:'Modele leger integre pour resolution hors ligne', install:'Installer', installing:'Installation...', done:'Installe', runningStatus:'En cours', notRunning:'Arrete', check:'Verification...', err:'Echec' },
+  };
+  const L = labels[lang] || labels['zh-CN'];
+
+  return (
+    <div className="p-4 rounded-xl border border-primary/20 bg-primary/5 space-y-3">
+      <div className="flex items-center gap-2">
+        <span className="text-lg">🧠</span>
+        <div>
+          <h4 className="text-sm font-semibold text-foreground">{L.title}</h4>
+          <p className="text-[10px] text-muted-foreground">{L.desc}</p>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-3">
+        <div className={'w-2 h-2 rounded-full ' + (running ? 'bg-emerald-500' : status === 'checking' ? 'bg-amber-400' : 'bg-muted-foreground/30')} />
+        <span className="text-[10px] text-muted-foreground font-mono">
+          {status === 'checking' ? L.check : running ? L.runningStatus : status === 'done' ? L.done : L.notRunning}
+        </span>
+      </div>
+
+      {status === 'error' && <p className="text-[10px] text-destructive">{L.err}: {msg}</p>}
+      {status === 'done' && !running && <p className="text-[10px] text-emerald-500">{msg}</p>}
+
+      {!running && status !== 'checking' && (
+        <Button size="sm" onClick={install} disabled={status === 'installing'}
+          className="w-full h-8 text-xs font-semibold">
+          {status === 'installing' ? '⏳ ' + L.installing : L.install}
+        </Button>
+      )}
     </div>
   );
 }
