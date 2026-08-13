@@ -493,6 +493,9 @@ permBridge.initPermissionBridge(function(msg) {
 ipcMain.handle('tools:approvePermission', (_e, { id }) => {
   return { ok: permBridge.approvePermission(id) };
 });
+ipcMain.handle('tools:approveAlwaysPermission', (_e, { id }) => {
+  return { ok: permBridge.approveAlwaysPermission(id) };
+});
 ipcMain.handle('tools:rejectPermission', (_e, { id }) => {
   return { ok: permBridge.rejectPermission(id) };
 });

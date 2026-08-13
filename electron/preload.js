@@ -48,6 +48,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onToolConfirm: (cb) => { ipcRenderer.on('polaris:tool-confirm', (_, d) => cb(d)); },
   onToolConfirmDismiss: (cb) => { ipcRenderer.on('polaris:tool-confirm-dismiss', (_, d) => cb(d)); },
   approvePermission: (id) => ipcRenderer.invoke('tools:approvePermission', { id }),
+  approveAlwaysPermission: (id) => ipcRenderer.invoke('tools:approveAlwaysPermission', { id }),
   rejectPermission: (id) => ipcRenderer.invoke('tools:rejectPermission', { id }),
   emailSendCode: (email) => ipcRenderer.invoke('email:sendCode', { email }),
   emailSendWelcome: (email, displayName) => ipcRenderer.invoke('email:sendWelcome', { email, displayName }),

@@ -352,6 +352,12 @@ html, body, #root {
   box-shadow: 0 2px 8px hsla(var(--primary), .3);
 }
 .perm-btn.approve:hover { filter: brightness(1.1); }
+.perm-btn.approve.always {
+  background: hsla(var(--primary), .12); color: hsl(var(--primary));
+  border: 1px solid hsla(var(--primary), .3);
+  box-shadow: none;
+}
+.perm-btn.approve.always:hover { background: hsla(var(--primary), .2); }
 
 /* ═══════════════════════════════════════════════════════════
    TITLEBAR + MISC

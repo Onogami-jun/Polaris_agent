@@ -695,7 +695,8 @@ const App:React.FC=()=>{
         </div>
         <div className="perm-footer">
           <button className="perm-btn deny" onClick={()=>{var api=window.electronAPI;if(api)api.rejectPermission(permReq.id);setPermReq(null)}}>拒绝</button>
-          <button className="perm-btn approve" onClick={()=>{var api=window.electronAPI;if(api)api.approvePermission(permReq.id);setPermReq(null)}}>允许</button>
+          <button className="perm-btn approve" onClick={()=>{var api=window.electronAPI;if(api)api.approvePermission(permReq.id);setPermReq(null)}}>允许一次</button>
+          <button className="perm-btn approve always" onClick={()=>{var api=window.electronAPI;if(api)api.approveAlwaysPermission(permReq.id);setPermReq(null)}}>始终允许</button>
         </div>
       </div>
     </div>}
