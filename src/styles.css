@@ -133,6 +133,14 @@ html, body, #root {
 .msg-bubble table { width: 100%; border-collapse: collapse; margin: 8px 0; font-size: 12px; }
 .msg-bubble th { padding: 6px 10px; text-align: left; font-weight: 600; border-bottom: 2px solid hsl(var(--border)); font-size: 10px; color: hsl(var(--muted-foreground)); text-transform: uppercase; letter-spacing: .04em; }
 .msg-bubble td { padding: 6px 10px; border-bottom: 1px solid hsl(var(--border)); }
+/* Math rendering */
+.msg-bubble .math-block { display: block; text-align: center; margin: 10px 0; padding: 8px; background: hsl(var(--muted)); border-radius: 8px; font-size: 14px; overflow-x: auto; }
+.msg-bubble .math-inline { display: inline; font-style: normal; color: hsl(var(--primary)); font-family: 'JetBrains Mono', var(--font-mono), monospace; }
+.msg-bubble .math-inline sub, .msg-bubble .math-block sub { font-size: 0.7em; vertical-align: sub; }
+.msg-bubble .math-inline sup, .msg-bubble .math-block sup { font-size: 0.7em; vertical-align: super; }
+.msg-bubble .frac { display: inline-flex; flex-direction: column; vertical-align: middle; text-align: center; margin: 0 2px; }
+.msg-bubble .frac > span:first-child { border-bottom: 1px solid currentColor; padding: 0 4px; }
+.msg-bubble .frac > span:last-child { padding: 0 4px; }
 .msg-bubble h1 { font-size: 15px; font-weight: 700; margin: 14px 0 6px; color: hsl(var(--primary)); }
 .msg-bubble h2 { font-size: 14px; font-weight: 600; margin: 10px 0 4px; }
 .msg-bubble h3 { font-size: 13px; font-weight: 600; margin: 8px 0 3px; }

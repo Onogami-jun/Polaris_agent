@@ -93,16 +93,65 @@ out=out.replace(new RegExp(BL+"(\\d+)"+BE,"g"),function(_,idx){
  var ec=b.c.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
  return "<div class=\"code-block my-3 rounded-lg border border-border overflow-hidden\"><div class=\"flex items-center justify-between px-3 py-1.5 bg-muted border-b border-border\"><span class=\"text-[10px] font-mono text-muted-foreground\">"+(b.l||"plaintext")+"</span><button onclick=\"copyCode(this)\" class=\"text-[10px] text-muted-foreground hover:text-foreground font-mono transition-colors\">复制</button></div><pre class=\"p-4 overflow-x-auto text-xs font-mono leading-relaxed\"><code>"+hl(ec,b.l)+"</code></pre></div>";
 });
-// Step 5: Markdown tables -> HTML (moved out of the code block callback)
-var tableRe=new RegExp('(\\|.+\\|\\n)+(\\|[-:\\s]+\\|\\n)+(\\|.+\\|\\n?)+','g');
-out=out.replace(tableRe,function(tb){
- var rows=tb.trim().split(/\n/);if(rows.length<3)return tb;
- var thead='<thead><tr>'+rows[0].replace(/^\|/,'').replace(/\|$/,'').split('|').map(function(c){return'<th class="px-3 py-2 text-left text-xs font-semibold border-b border-border">'+c.trim()+'</th>'}).join('')+'</tr></thead>';
+// Step 5: Markdown tables -> HTML (line-based, tolerant of column mismatch)
+function renderTable(tb:string):string{
+ var rows=tb.trim().split(/\n/).filter(function(r){return r.indexOf('|')>=0});
+ if(rows.length<2)return tb;
+ // Detect separator row (| --- | --- |)
+ var sepIdx=-1;
+ for(var ri=0;ri<rows.length;ri++){ if(/^\s*\|?[\s:|-]+\|[\s:|-]*$/.test(rows[ri])&&rows[ri].indexOf('-')>=0){sepIdx=ri;break;} }
+ if(sepIdx<0)return tb;
+ var header=rows[sepIdx-1]||rows[0];
+ var dataRows=rows.slice(sepIdx+1);
+ function cells(r:string){var c=r.replace(/^\|/,'').replace(/\|$/,'').split('|');return c.map(function(x){return x.trim()});}
+ var headCells=cells(header);
+ var colCount=headCells.length;
+ var thead='<thead><tr>'+headCells.map(function(c){return'<th class="px-3 py-2 text-left text-xs font-semibold border-b border-border">'+c+'</th>'}).join('')+'</tr></thead>';
  var tbody='<tbody>';
- for(var ri=2;ri<rows.length;ri++){tbody+='<tr>'+rows[ri].replace(/^\|/,'').replace(/\|$/,'').split('|').map(function(c){return'<td class="px-3 py-2 text-xs border-b border-border/50">'+c.trim()+'</td>'}).join('')+'</tr>';}
+ for(var di=0;di<dataRows.length;di++){
+  var cs=cells(dataRows[di]);
+  while(cs.length<colCount)cs.push('');
+  cs=cs.slice(0,colCount);
+  tbody+='<tr>'+cs.map(function(c){return'<td class="px-3 py-2 text-xs border-b border-border/50">'+c+'</td>'}).join('')+'</tr>';
+ }
  tbody+='</tbody>';
  return'<div class="my-3 overflow-x-auto rounded-lg border border-border"><table class="w-full">'+thead+tbody+'</table></div>';
-});
+}
+var tableRe=new RegExp('(\\|.+\\|\\s*\\n)+(\\|[-:\\s]+\\|\\s*\\n)(\\|.+\\|\\s*\\n?)*','g');
+out=out.replace(tableRe,renderTable);
+
+// Step 6: Math formulas (lightweight LaTeX -> HTML, no external lib)
+function renderMath(m:string, block:boolean):string{
+ var s=m;
+ // Subscripts / superscripts
+ s=s.replace(/_\{([^}]+)\}/g,'<sub>$1</sub>');
+ s=s.replace(/\^\{([^}]+)\}/g,'<sup>$1</sup>');
+ s=s.replace(/_(\w)/g,'<sub>$1</sub>');
+ s=s.replace(/\^(\w)/g,'<sup>$1</sup>');
+ // Greek letters
+ var greek={alpha:'α',beta:'β',gamma:'γ',delta:'δ',epsilon:'ε',zeta:'ζ',eta:'η',theta:'θ',lambda:'λ',mu:'μ',xi:'ξ',pi:'π',rho:'ρ',sigma:'σ',tau:'τ',phi:'φ',chi:'χ',psi:'ψ',omega:'ω',Gamma:'Γ',Delta:'Δ',Theta:'Θ',Lambda:'Λ',Xi:'Ξ',Pi:'Π',Sigma:'Σ',Phi:'Φ',Psi:'Ψ',Omega:'Ω'};
+ s=s.replace(/\\(alpha|beta|gamma|delta|epsilon|zeta|eta|theta|lambda|mu|xi|pi|rho|sigma|tau|phi|chi|psi|omega|Gamma|Delta|Theta|Lambda|Xi|Pi|Sigma|Phi|Psi|Omega)/g,function(_,g){return greek[g]||g});
+ // Operators
+ s=s.replace(/\\sum/g,'∑').replace(/\\prod/g,'∏').replace(/\\int/g,'∫');
+ s=s.replace(/\\times/g,'×').replace(/\\cdot/g,'·').replace(/\\pm/g,'±');
+ s=s.replace(/\\le/g,'≤').replace(/\\ge/g,'≥').replace(/\\leq/g,'≤').replace(/\\geq/g,'≥');
+ s=s.replace(/\\neq/g,'≠').replace(/\\approx/g,'≈').replace(/\\sim/g,'∼');
+ s=s.replace(/\\to/g,'→').replace(/\\rightarrow/g,'→').replace(/\\infty/g,'∞');
+ s=s.replace(/\\in/g,'∈').replace(/\\forall/g,'∀').replace(/\\exists/g,'∃');
+ s=s.replace(/\\cup/g,'∪').replace(/\\cap/g,'∩').replace(/\\subset/g,'⊂').replace(/\\subseteq/g,'⊆');
+ s=s.replace(/\\partial/g,'∂').replace(/\\nabla/g,'∇');
+ s=s.replace(/\\cdot/g,'·');
+ s=s.replace(/\\frac\{([^}]+)\}\{([^}]+)\}/g,'<span class="frac"><span>$1</span><span>$2</span></span>');
+ s=s.replace(/\\sqrt\{([^}]+)\}/g,'√($1)');
+ s=s.replace(/\\text\{([^}]+)\}/g,'$1');
+ s=s.replace(/\\min/g,'min').replace(/\\max/g,'max').replace(/\\sum/g,'∑');
+ return block ? '<div class="math-block">'+s+'</div>' : '<span class="math-inline">'+s+'</span>';
+}
+// Block math: $$ ... $$
+out=out.replace(/\$\$([\s\S]+?)\$\$/g,function(_,m){return renderMath(m,true)});
+// Inline math: $ ... $
+out=out.replace(/\$([^$\n]+?)\$/g,function(_,m){return renderMath(m,false)});
+
 out=out.replace(/`([^`]+)`/g,'<code class="bg-muted px-1.5 py-0.5 rounded text-xs font-mono text-primary">$1</code>');
 out=out.replace(/\*\*(.+?)\*\*/g,'<strong class="font-semibold">$1</strong>');
 out=out.replace(/\*(.+?)\*/g,'<em class="text-muted-foreground">$1</em>');
