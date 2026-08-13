@@ -12,7 +12,9 @@ const security = require('./services/security');
 security.setProductionMode();
 
 log.transports.file.level = 'info';
-const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
+// isDev only true when webpack dev server is running (npm run dev sets NODE_ENV=development).
+// npm start → production mode → loads build/index.html
+const isDev = process.env.NODE_ENV === 'development';
 const ROOT = path.join(__dirname, '..');
 const planner = new Planner();
 
@@ -133,12 +135,15 @@ ipcMain.handle('polaris:query', async (_e, { text, strategy, systemPrompt, image
   }
 });
 ipcMain.handle('polaris:queryStream', async (event, { text, strategy, systemPrompt, images, apiKeys, language }) => {
+  console.log('[queryStream] received:', (text||'').slice(0,60), '| strategy:', strategy);
   var key = getKey();
   if (!key) {
+    console.log('[queryStream] NO KEY — returning locked');
     var locked = { routing:{strategy:'locked',top_intent:'locked',selected_models:[],rationale:'auth required'}, responses:[{model_id:'locked',model_display:'Locked',content:'<div style="text-align:center;padding:20px"><div style="font-size:48px;margin-bottom:12px">🔐</div><p style="font-size:14px;color:hsl(var(--foreground));margin-bottom:8px">Polaris 需要登录才能使用</p><p style="font-size:12px;color:hsl(var(--muted-foreground));margin-bottom:16px">登录 BitWool 账号后解锁全部 AI 功能。点击左侧栏底部的<b style="color:hsl(var(--primary))">登录 BitWool</b>按钮。</p></div>'}], total_latency_ms:0 };
     if (win && !win.isDestroyed()) win.webContents.send('polaris:stream-end', locked);
     return locked;
   }
+  console.log('[queryStream] key OK, executing...');
   var oc = function(data) { if (win && !win.isDestroyed()) win.webContents.send('polaris:stream-chunk', data); };
   // Notify Git panel when Agent performs git operations
   var onGitOp = function(data) { if (win && !win.isDestroyed()) win.webContents.send('polaris:git-update', data); };

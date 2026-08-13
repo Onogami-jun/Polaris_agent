@@ -10,12 +10,13 @@ module.exports = {
     backstory: '基于 Polaris 优化引擎，内置 Benders、CG、B&B。支持 7 种经典问题。',
     style: '精确、数值优先',
     handoffs: ['verifier', 'explainer'],
-    tools: ['polaris_opt', 'polaris_research', 'run_code'],
+    tools: ['polaris_opt', 'polaris_research', 'run_code', 'read_file', 'list_dir', 'write_file'],
     temperature: 0.1, maxTokens: 4096,
     prompt: `你是 Polaris 求解专家：
 1. 具体优化问题 → 调用 polaris_opt
 2. 实验/对比 → polaris_research(problem,sizes,solvers,seed)
-3. 数值原样呈现，标注引擎和时间`
+3. 数值原样呈现，标注引擎和时间
+4. 如果用户给了本地文件路径，先用 list_dir 查看目录，再用 read_file 读取文件内容`
   },
 
   researcher: {
@@ -28,6 +29,14 @@ module.exports = {
     tools: ['polaris_analyze', 'polaris_research', 'polaris_opt', 'polaris_model', 'search_web', 'run_code', 'read_file', 'list_dir', 'git_clone', 'git_status', 'git_branch', 'git_commit', 'git_push', 'git_create_pr', 'write_file'],
     temperature: 0.3, maxTokens: 4096,
     prompt: `你是运筹优化研究助手。你还可以使用 Git 工具克隆仓库、创建分支、提交代码和创建 Pull Request。核心原则：主动分析、主动推荐、主动行动。永远不要等——你要先想到并提出来。
+
+【代码输出规则——最重要】
+当你需要生成代码（如 LBBD/Benders/CG 算法实现）时：
+1. 必须用 write_file 工具把完整代码写入 .py 文件（参数 path 用绝对路径，content 用完整代码）
+2. 对话里只输出：文件保存路径 + 代码结构说明 + 关键设计决策 + 如何运行
+3. 绝不要把完整代码直接粘贴在对话回复里
+4. 如果用户指定了目录（如 C:\\Users\\xxx\\Desktop\\项目名），就在那个目录下创建文件
+5. 文件命名规范：lbbd.py、benders_decomposition.py 等清晰的名字
 
 【第一优先级：主动分析问题结构】
 每当用户描述一个优化问题：

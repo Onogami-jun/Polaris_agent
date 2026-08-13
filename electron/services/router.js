@@ -49,6 +49,16 @@ function buildToolDeclarations(skillTools) {
     polaris_model:     { name: 'polaris_model',     description: '自动识别并求解非标准优化问题。', parameters: { type: 'object', properties: { prompt: { type: 'string' } }, required: ['prompt'] } },
     polaris_literature:{ name: 'polaris_literature', description: '搜索运筹优化相关文献。', parameters: { type: 'object', properties: { query: { type: 'string' } } } },
     search_web:        { name: 'search_web',        description: '搜索互联网。', parameters: { type: 'object', properties: { query: { type: 'string' } } } },
+    run_code:          { name: 'run_code',          description: '在沙箱中执行 Python 代码。', parameters: { type: 'object', properties: { code: { type: 'string' } }, required: ['code'] } },
+    read_file:         { name: 'read_file',         description: '读取本地文件的文本内容（绝对路径）。支持 .py/.txt/.md/.json 等文本文件。', parameters: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] } },
+    list_dir:          { name: 'list_dir',          description: '列出本地目录的内容（绝对路径）。', parameters: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] } },
+    write_file:        { name: 'write_file',        description: '写入内容到本地文件（绝对路径）。', parameters: { type: 'object', properties: { path: { type: 'string' }, content: { type: 'string' } }, required: ['path', 'content'] } },
+    git_clone:         { name: 'git_clone',         description: '克隆 GitHub 仓库。参数: url, branch(可选)。', parameters: { type: 'object', properties: { url: { type: 'string' }, branch: { type: 'string' } }, required: ['url'] } },
+    git_status:        { name: 'git_status',        description: '查看仓库状态。参数: dir。', parameters: { type: 'object', properties: { dir: { type: 'string' } }, required: ['dir'] } },
+    git_branch:        { name: 'git_branch',        description: '创建并切换分支。参数: dir, name。', parameters: { type: 'object', properties: { dir: { type: 'string' }, name: { type: 'string' } }, required: ['dir', 'name'] } },
+    git_commit:        { name: 'git_commit',        description: '提交更改。参数: dir, message。', parameters: { type: 'object', properties: { dir: { type: 'string' }, message: { type: 'string' } }, required: ['dir', 'message'] } },
+    git_push:          { name: 'git_push',          description: '推送分支。参数: dir。', parameters: { type: 'object', properties: { dir: { type: 'string' } }, required: ['dir'] } },
+    git_create_pr:     { name: 'git_create_pr',     description: '创建 Pull Request。参数: dir, title, body(可选)。', parameters: { type: 'object', properties: { dir: { type: 'string' }, title: { type: 'string' }, body: { type: 'string' } }, required: ['dir', 'title'] } },
   };
   const all = [];
   for (const toolName of (skillTools || [])) {
@@ -343,14 +353,14 @@ async function runAgentLoop(userMessage, apiKey, onExec, onTodo, onStreamChunk, 
   const hcResults = await healthCheckCache();
   const envNote = buildAgentCapabilityNote(hcResults);
 
-  // ── Chat / Discuss: streaming (routed by LLM intent, not hardcoded) ──
-  if (skillName === '对话模式' || skillName === '讨论模式' || skillName === 'chat' || skillName === 'discuss') {
+  // ── Chat only: pure streaming (no tools). Discuss goes to agent loop with tools. ──
+  if (skillName === '对话模式' || skillName === 'chat') {
     if (onExec) onExec({ tool: skillName, status: 'running', detail: '正在思考...' });
     if (onStreamChunk) onStreamChunk({ type: 'thinking', text: '正在分析你的问题...' });
     const agentPrompt = buildAgentPrompt(lang,'chat', effectivePrompt, envNote);
     var content = '';
     try {
-      // Use the router's chosen model (LLM decided local_ok; chat/discuss → local_ok false → DeepSeek)
+      // Use the router's chosen model (LLM decided local_ok; chat → local_ok false → DeepSeek)
       var resp = await callLLMUnified(
         [{ role: 'system', content: agentPrompt }, { role: 'user', content: userMessage }],
         [], apiKey, activeSkill.temperature || temp, maxTok, onStreamChunk, (strategyConfig && strategyConfig.routedModel));

@@ -107,7 +107,11 @@ const ROUTING_PROMPT = `你是 Polaris 的语义路由器。读用户消息后�
 
 async function classifyForRouting(userMessage) {
   return new Promise((resolve) => {
-    const fallback = { intent: /\d+/.test(userMessage) ? 'solve' : 'discuss', problem_type: 'custom', local_ok: false };
+    // Fallback only if LLM call fails. Detect solve intent by presence of
+    // optimization data (numbers + optimization keywords), not bare digits
+    // (paths like C:\Users\D0gSXG contain digits but are NOT solve requests).
+    var hasOptKeywords = /背包|knapsack|容量|capacity|价值|values|重量|weights|排产|调度|schedule|指派|assignment|成本矩阵|cost matrix|选址|facility|VRP|车辆|vehicle|处理时间|processing|time/i.test(userMessage);
+    var fallback = { intent: hasOptKeywords ? 'solve' : 'discuss', problem_type: 'custom', local_ok: false };
     try {
       const body = JSON.stringify({
         model: 'deepseek-v4-flash',

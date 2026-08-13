@@ -677,22 +677,25 @@ const App:React.FC=()=>{
     }} />
     {/* Drag & drop overlay */}
     {dragOver&&<div className="dov" style={{zIndex:9999}}><div className="doz" style={{padding:'48px 64px',borderRadius:20,fontSize:15}}><div style={{fontSize:32,marginBottom:8,opacity:.6}}>+</div>Drop files to attach</div></div>}
-    {/* ── Claude Code-style Permission Dialog ── */}
+    {/* ── Permission Dialog (Claude Code-style, redesigned) ── */}
     {permReq&&<div className="perm-dialog" onClick={()=>{var api=window.electronAPI;if(api)api.rejectPermission(permReq.id);setPermReq(null)}}>
       <div className="perm-card" onClick={e=>e.stopPropagation()}>
         <div className="perm-header">
-          <div className="perm-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg></div>
-          <div><div className="perm-title">Polaris requests permission</div><div className="perm-subtitle">Agent wants to perform this action</div></div>
+          <div className="perm-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg></div>
+          <div className="perm-header-text">
+            <div className="perm-title">{permReq.displayName || permReq.tool}</div>
+            <div className="perm-subtitle">Polaris 请求以下操作权限</div>
+          </div>
         </div>
         <div className="perm-body">
-          <div className="perm-tool-name">{permReq.tool}{permReq.displayName?' — '+permReq.displayName:''}</div>
+          <div className="perm-tool-badge">{permReq.tool}</div>
           {permReq.params&&Object.keys(permReq.params).length>0&&<div className="perm-params">
-            {Object.keys(permReq.params).map(function(k){return<div key={k} className="perm-param-row"><span className="perm-param-key">{k}</span><span className="perm-param-val">{String(permReq.params[k]).slice(0,200)}</span></div>})}
+            {Object.keys(permReq.params).map(function(k){return<div key={k} className="perm-param-row"><span className="perm-param-key">{k}</span><span className="perm-param-val" title={String(permReq.params[k])}>{String(permReq.params[k]).slice(0,300)}</span></div>})}
           </div>}
         </div>
         <div className="perm-footer">
-          <button className="perm-btn" onClick={()=>{var api=window.electronAPI;if(api)api.rejectPermission(permReq.id);setPermReq(null)}}>Deny</button>
-          <button className="perm-btn approve" onClick={()=>{var api=window.electronAPI;if(api)api.approvePermission(permReq.id);setPermReq(null)}}>Allow</button>
+          <button className="perm-btn deny" onClick={()=>{var api=window.electronAPI;if(api)api.rejectPermission(permReq.id);setPermReq(null)}}>拒绝</button>
+          <button className="perm-btn approve" onClick={()=>{var api=window.electronAPI;if(api)api.approvePermission(permReq.id);setPermReq(null)}}>允许</button>
         </div>
       </div>
     </div>}
