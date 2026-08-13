@@ -266,7 +266,13 @@ async function callLLMUnified(messages, tools, apiKey, temperature, maxTokens, o
       }
       prompt += '<|assistant|>\n';
       var result = await callLocalModel(prompt, { maxTokens: maxTokens || 512, temperature: temperature || 0.1 });
-      return { choices: [{ message: { content: result.content || '' } }] };
+      var localContent = (result.content || '').trim();
+      // ★ Only use local output if it's substantive; otherwise fall back to DeepSeek
+      if (localContent.length > 10) {
+        return { choices: [{ message: { content: localContent } }] };
+      }
+      logger.info('Local model returned empty/short output, falling back to DeepSeek', { len: localContent.length });
+      modelName = 'deepseek-v4-flash';
     } catch(e) {
       // Fallback to DeepSeek flash if local model fails
       modelName = 'deepseek-v4-flash';
@@ -346,9 +352,10 @@ async function runAgentLoop(userMessage, apiKey, onExec, onTodo, onStreamChunk, 
     const agentPrompt = buildAgentPrompt(lang,'chat', effectivePrompt, envNote);
     var content = '';
     try {
+      // Chat mode always uses DeepSeek — local model is optimization-specialized only
       var resp = await callLLMUnified(
         [{ role: 'system', content: agentPrompt }, { role: 'user', content: userMessage }],
-        [], apiKey, activeSkill.temperature || temp, maxTok, onStreamChunk, (strategyConfig && strategyConfig.routedModel));
+        [], apiKey, activeSkill.temperature || temp, maxTok, onStreamChunk, 'deepseek-v4-flash');
       content = resp.choices?.[0]?.message?.content || '';
     } catch(e) { logger.warn('Streaming failed', { error: e.message }); }
     if (!content || content.trim().length < 5) {
