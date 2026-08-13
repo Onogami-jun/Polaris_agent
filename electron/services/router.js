@@ -335,7 +335,7 @@ async function runAgentLoop(userMessage, apiKey, onExec, onTodo, onStreamChunk, 
   var maxTok = (strategyConfig && strategyConfig.maxTokens) || 4096;
   var temp = (strategyConfig && strategyConfig.temperature != null) ? strategyConfig.temperature : 0.3;
   var lang = (strategyConfig && strategyConfig.language) || 'zh-CN'; // ★ Language from frontend
-  const effectivePrompt = await skillManager.getEffectivePrompt(userMessage);
+  const effectivePrompt = await skillManager.getEffectivePrompt(userMessage, (strategyConfig && strategyConfig.intent));
   const activeSkill = skillManager.getActive();
   const skillName = activeSkill.name;
   logger.info('Skill active', { skill: skillName, lang: lang });
@@ -355,6 +355,7 @@ async function runAgentLoop(userMessage, apiKey, onExec, onTodo, onStreamChunk, 
         [{ role: 'system', content: agentPrompt }, { role: 'user', content: userMessage }],
         [], apiKey, activeSkill.temperature || temp, maxTok, onStreamChunk, (strategyConfig && strategyConfig.routedModel));
       content = resp.choices?.[0]?.message?.content || '';
+      logger.info('Chat stream response', { hasContent: !!content, len: content.length, routedModel: strategyConfig && strategyConfig.routedModel });
     } catch(e) { logger.warn('Streaming failed', { error: e.message }); }
     if (!content || content.trim().length < 5) {
       if (onStreamChunk) onStreamChunk({ type: 'thinking', text: '正在生成回复...' });
@@ -362,6 +363,7 @@ async function runAgentLoop(userMessage, apiKey, onExec, onTodo, onStreamChunk, 
         [{ role: 'system', content: agentPrompt }, { role: 'user', content: userMessage }],
         [], apiKey, activeSkill.temperature || temp, maxTok);
       content = fallback.choices?.[0]?.message?.content || '';
+      logger.info('Chat fallback response', { hasContent: !!content, len: content.length });
       if (content && onStreamChunk) onStreamChunk({ type: 'content', text: content, full: content });
     }
     if (onExec) onExec({ tool: skillName, status: 'done', detail: '回答完成' });

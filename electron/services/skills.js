@@ -140,21 +140,30 @@ class SkillManager {
   }
 
   /**
-   * Run intent classification and auto-switch skill.
-   * Returns the effective system prompt for the active skill.
+   * Get effective prompt for the active skill.
+   * When preClassifiedIntent is provided (from classifyForRouting), skip the
+   * redundant LLM classification call — one classification per message only.
    */
-  async getEffectivePrompt(userMessage) {
+  async getEffectivePrompt(userMessage, preClassifiedIntent) {
     this.conversationTurn++;
 
-    // Run the LLM classifier every turn
-    try {
-      const intent = await classifyIntent(userMessage);
-      if (intent && SKILLS[intent] && intent !== this.currentSkill) {
-        this.switchTo(intent);
+    if (preClassifiedIntent) {
+      // Intent already decided by classifyForRouting in executeQuery
+      if (SKILLS[preClassifiedIntent] && preClassifiedIntent !== this.currentSkill) {
+        this.switchTo(preClassifiedIntent);
       }
-      this.lastIntent = intent;
-    } catch {
-      // classification failed — stay on current skill
+      this.lastIntent = preClassifiedIntent;
+    } else {
+      // Fallback: run the LLM classifier (only if no pre-classified intent)
+      try {
+        const intent = await classifyIntent(userMessage);
+        if (intent && SKILLS[intent] && intent !== this.currentSkill) {
+          this.switchTo(intent);
+        }
+        this.lastIntent = intent;
+      } catch {
+        // classification failed — stay on current skill
+      }
     }
 
     const skill = this.getActive();
