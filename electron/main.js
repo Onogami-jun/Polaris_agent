@@ -629,6 +629,14 @@ const SUPABASE_ANON_KEY = 'sb_publishable_hY1a3BqHfPvUNPQwkV6AEg_Nz-b2bgY';
 const POLARIS_MODEL_DIR = path.join(os.homedir(), '.polaris', 'models');
 const POLARIS_MODEL_PATH = 'models/chunks'; // Supabase Storage prefix
 
+/* Notify the model router about local model availability */
+function notifyLocalModel(available) {
+  try {
+    var mr = require('./services/model_router');
+    if (mr.setLocalModelAvailable) mr.setLocalModelAvailable(available);
+  } catch {}
+}
+
 function startPolarisServe() {
   try {
     const fs = require('fs');
@@ -689,11 +697,14 @@ function startPolarisServe() {
     });
     polarisServeProc.stdout?.on('data', (d) => console.log('[polaris-serve]', d.toString().trim()));
     polarisServeProc.stderr?.on('data', (d) => console.log('[polaris-serve]', d.toString().trim()));
-    polarisServeProc.on('error', () => { polarisServeProc = null; });
+    polarisServeProc.on('error', () => { polarisServeProc = null; notifyLocalModel(false); });
     polarisServeProc.on('exit', (code) => {
       console.log('[polaris-serve] Exited with code', code);
       polarisServeProc = null;
+      notifyLocalModel(false);
     });
+    // Notify model router that local model is coming up (it probes /health itself)
+    setTimeout(function() { notifyLocalModel(true); }, 5000);
     console.log('[polaris-serve] Local inference server started (pid:', polarisServeProc.pid, ')');
   } catch (e) {
     console.log('[polaris-serve] Failed to start:', e.message);

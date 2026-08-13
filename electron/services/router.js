@@ -286,20 +286,18 @@ async function callLLMUnified(messages, tools, apiKey, temperature, maxTokens, o
   return callDeepSeek(messages, tools, apiKey, temperature, maxTokens, modelName);
 }
 
-/* ── Resolve routed model to available API model ─────────── */
+/* ── Resolve routed model to an actual API model ─────────── */
 function resolveModel(routeId) {
-  // If it's a local model, return as-is (caller handles local path)
-  if (ROUTER_MODELS[routeId] && ROUTER_MODELS[routeId].local) return routeId;
-  // If the router picks a model we have API access to, use it directly
+  // Local model → handled by callLLMUnified's local path
+  if (routeId === 'polaris-opt-local') return routeId;
+  // DeepSeek models → use directly
   if (routeId === 'deepseek-v4-flash' || routeId === 'deepseek-v4') return routeId;
-  // For non-DeepSeek models, map to the closest DeepSeek equivalent
-  if (routeId === 'claude-opus-4' || routeId === 'gpt-4o') return 'deepseek-v4';
-  // Default: fast/cheap
+  // Anything else (claude/gpt/unknown) → always fall back to DeepSeek Flash
   return 'deepseek-v4-flash';
 }
 
 function isLocalModel(modelName) {
-  return ROUTER_MODELS[modelName] && ROUTER_MODELS[modelName].local;
+  return modelName === 'polaris-opt-local';
 }
 
 /* ══════════════════════════════════════════════════════════
@@ -345,29 +343,50 @@ async function runAgentLoop(userMessage, apiKey, onExec, onTodo, onStreamChunk, 
   const hcResults = await healthCheckCache();
   const envNote = buildAgentCapabilityNote(hcResults);
 
-  // ── Chat / Discuss: streaming ──
+  // ── Chat / Discuss: streaming (routed by LLM intent, not hardcoded) ──
   if (skillName === '对话模式' || skillName === '讨论模式' || skillName === 'chat' || skillName === 'discuss') {
     if (onExec) onExec({ tool: skillName, status: 'running', detail: '正在思考...' });
     if (onStreamChunk) onStreamChunk({ type: 'thinking', text: '正在分析你的问题...' });
     const agentPrompt = buildAgentPrompt(lang,'chat', effectivePrompt, envNote);
     var content = '';
     try {
-      // Chat mode always uses DeepSeek — local model is optimization-specialized only
+      // Use the router's chosen model (LLM decided local_ok; chat/discuss → local_ok false → DeepSeek)
       var resp = await callLLMUnified(
         [{ role: 'system', content: agentPrompt }, { role: 'user', content: userMessage }],
-        [], apiKey, activeSkill.temperature || temp, maxTok, onStreamChunk, 'deepseek-v4-flash');
+        [], apiKey, activeSkill.temperature || temp, maxTok, onStreamChunk, (strategyConfig && strategyConfig.routedModel));
       content = resp.choices?.[0]?.message?.content || '';
     } catch(e) { logger.warn('Streaming failed', { error: e.message }); }
     if (!content || content.trim().length < 5) {
       if (onStreamChunk) onStreamChunk({ type: 'thinking', text: '正在生成回复...' });
       var fallback = await callDeepSeek(
         [{ role: 'system', content: agentPrompt }, { role: 'user', content: userMessage }],
-        [], apiKey, activeSkill.temperature || temp, maxTok, (strategyConfig && strategyConfig.routedModel));
+        [], apiKey, activeSkill.temperature || temp, maxTok);
       content = fallback.choices?.[0]?.message?.content || '';
       if (content && onStreamChunk) onStreamChunk({ type: 'content', text: content, full: content });
     }
     if (onExec) onExec({ tool: skillName, status: 'done', detail: '回答完成' });
     return content.trim().length > 10 ? content : '嗯，让我再想想... 你想聊什么方向？';
+  }
+
+  // ═══════════════════════════════════════════════════════
+  // ★ Fast path: LLM said local_ok + router picked local model
+  //   → single-shot local inference, no tool loop needed
+  // ═══════════════════════════════════════════════════════
+  if ((strategyConfig && strategyConfig.localOk === true) && (strategyConfig.routedModel === 'polaris-opt-local')) {
+    if (onStreamChunk) onStreamChunk({ type: 'thinking', text: '本地模型求解中...' });
+    const localPrompt = userMessage; // local model is trained on raw optimization text
+    try {
+      var localResp = await callLLMUnified(
+        [{ role: 'system', content: '你是优化求解器。输出最优解和数值。' }, { role: 'user', content: localPrompt }],
+        [], apiKey, 0.1, 512, onStreamChunk, 'polaris-opt-local');
+      var localContent = (localResp.choices?.[0]?.message?.content || '').trim();
+      if (localContent.length > 10) {
+        if (onExec) onExec({ tool: 'local_model', status: 'done', detail: '本地模型求解完成' });
+        return localContent;
+      }
+      // Fall through to DeepSeek agent loop if local output is empty
+      logger.info('Local model empty, falling back to agent loop');
+    } catch(e) { logger.warn('Local fast path failed', { error: e.message }); }
   }
 
   // ═══════════════════════════════════════════════════════
@@ -400,7 +419,8 @@ async function runAgentLoop(userMessage, apiKey, onExec, onTodo, onStreamChunk, 
     var thinkingText = round <= 1 ? '分析问题...' : round <= 3 ? `执行第${round}步...` : `继续处理 (${round}/${MAX_ROUNDS})...`;
     if (onStreamChunk) onStreamChunk({ type: 'thinking', text: thinkingText });
 
-    const resp = await callDeepSeek(messages, tools, apiKey, agentTemp, maxTok, (strategyConfig && strategyConfig.routedModel));
+    // Agent loop needs tool-call support — resolve via model registry (local maps back to DeepSeek)
+    const resp = await callDeepSeek(messages, tools, apiKey, agentTemp, maxTok, resolveModel((strategyConfig && strategyConfig.routedModel)));
     if (resp.error) break;
 
     const choice = resp.choices?.[0];
@@ -539,7 +559,8 @@ async function runAgentLoop(userMessage, apiKey, onExec, onTodo, onStreamChunk, 
 
       // ★ BARRIER 9: Model Router — update routing stats with verification signal
       try {
-        problemType = detectProblemType(dslInstance || userMessage);
+        // Reuse LLM-decided problem type (fallback to regex only if not set)
+        problemType = (strategyConfig && strategyConfig.problemType) || detectProblemType(dslInstance || userMessage);
         routedModelId = (strategyConfig && strategyConfig.routedModel) || 'deepseek-v4-flash';
         recordRoute(problemType, routedModelId, verification);
       } catch(rtErr) { logger.warn('Route record failed', { error: rtErr.message }); }
@@ -685,12 +706,20 @@ async function executeQuery(text, strategy, systemPrompt, images, onStreamChunk,
     var stratCfg = strategyConfig[strategy] || strategyConfig.best_quality;
     stratCfg.language = apiKeys.language || 'zh-CN'; // ★ Thread language through
 
-    // ★ BARRIER 9: Model Router — select best model for this problem type
-    var problemType = detectProblemType(text);
-    var routed = routeModel(problemType, strategy);
+    // ★ BARRIER 9: Model Router — LLM decides intent + problem type + local suitability
+    var routingDecision = { intent: 'discuss', problem_type: 'custom', local_ok: false };
+    try {
+      var { classifyForRouting } = require('./intent');
+      routingDecision = await classifyForRouting(text);
+    } catch (e) { logger.warn('Routing classifier failed', { error: e.message }); }
+    var problemType = routingDecision.problem_type || 'custom';
+    var routed = routeModel(problemType, strategy, routingDecision.local_ok);
     stratCfg.routedModel = routed.id;
     stratCfg.routedScore = routed.score;
-    if (onExec) onExec({ tool: 'model_router', status: 'running', detail: 'Routing: ' + routed.id + ' (score ' + routed.score + ', ' + (routed.detail || '') + ')' });
+    stratCfg.problemType = problemType;
+    stratCfg.intent = routingDecision.intent;
+    stratCfg.localOk = routingDecision.local_ok;
+    if (onExec) onExec({ tool: 'model_router', status: 'running', detail: 'Intent: ' + routingDecision.intent + ' | type: ' + problemType + ' | local_ok: ' + routingDecision.local_ok + ' → ' + routed.id + ' (score ' + routed.score + ')' });
 
     // ── ★ Workflow planning: detect multi-step goals ──
     var needsPlan = /(?:clone|克隆).*(?:fix|修复|code|代码|write|commit|push|pr|pull request|review|审查|experiment|实验).*|(?:analyze|分析).*(?:solve|求解).*(?:push|commit|pr)/i.test(text);
