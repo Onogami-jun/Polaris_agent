@@ -78,6 +78,8 @@ for(var i=0;i<t.length;i++){
   continue;}
  if(inB){bc+=t[i];}else{out+=t[i];}
 }
+// ★ Unclosed code block: flush remaining as code (not swallow it)
+if(inB){blocks.push({l:lang,c:bc.trim()});out+=BL+(blocks.length-1)+BE;}
 // Step 1: Protect known HTML tags (inline buttons, locked messages)
 var htmlTags=[];
 out=out.replace(/(<\/?(?:div|button|b|p|span|strong|em|h[1-6]|li|ul|ol|br|hr|table|thead|tbody|tr|th|td|pre|code|a|img|input|label|form|select|option|textarea|svg|path|circle|line|polygon|polyline|rect|g|defs|use|clipPath|mask|filter)(?:\s[^>]*)?\/?>)/gi,function(m){htmlTags.push(m);return"<!--HTAG"+(htmlTags.length-1)+"-->";});
@@ -85,20 +87,21 @@ out=out.replace(/(<\/?(?:div|button|b|p|span|strong|em|h[1-6]|li|ul|ol|br|hr|tab
 out=out.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
 // Step 3: Restore protected HTML tags
 out=out.replace(/<!--HTAG(\d+)-->/g,function(_,idx){return htmlTags[parseInt(idx)];});
+// Step 4: Replace code block placeholders
 out=out.replace(new RegExp(BL+"(\\d+)"+BE,"g"),function(_,idx){
  var b=blocks[parseInt(idx)];
  var ec=b.c.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
  return "<div class=\"code-block my-3 rounded-lg border border-border overflow-hidden\"><div class=\"flex items-center justify-between px-3 py-1.5 bg-muted border-b border-border\"><span class=\"text-[10px] font-mono text-muted-foreground\">"+(b.l||"plaintext")+"</span><button onclick=\"copyCode(this)\" class=\"text-[10px] text-muted-foreground hover:text-foreground font-mono transition-colors\">复制</button></div><pre class=\"p-4 overflow-x-auto text-xs font-mono leading-relaxed\"><code>"+hl(ec,b.l)+"</code></pre></div>";
-	// -- Markdown Tables -> HTML --
-	var tableRe=new RegExp('(\\|.+\\|\\n)+(\\|[-:\\s]+\\|\\n)+(\\|.+\\|\\n?)+','g');
-	out=out.replace(tableRe,function(tb){
-	 var rows=tb.trim().split(/\n/);if(rows.length<3)return tb;
-	 var thead='<thead><tr>'+rows[0].replace(/^\|/,'').replace(/\|$/,'').split('|').map(function(c){return'<th class="px-3 py-2 text-left text-xs font-semibold border-b border-border">'+c.trim()+'</th>'}).join('')+'</tr></thead>';
-	 var tbody='<tbody>';
-	 for(var ri=2;ri<rows.length;ri++){tbody+='<tr>'+rows[ri].replace(/^\|/,'').replace(/\|$/,'').split('|').map(function(c){return'<td class="px-3 py-2 text-xs border-b border-border/50">'+c.trim()+'</td>'}).join('')+'</tr>';}
-	 tbody+='</tbody>';
-	 return'<div class="my-3 overflow-x-auto rounded-lg border border-border"><table class="w-full">'+thead+tbody+'</table></div>';
-	});
+});
+// Step 5: Markdown tables -> HTML (moved out of the code block callback)
+var tableRe=new RegExp('(\\|.+\\|\\n)+(\\|[-:\\s]+\\|\\n)+(\\|.+\\|\\n?)+','g');
+out=out.replace(tableRe,function(tb){
+ var rows=tb.trim().split(/\n/);if(rows.length<3)return tb;
+ var thead='<thead><tr>'+rows[0].replace(/^\|/,'').replace(/\|$/,'').split('|').map(function(c){return'<th class="px-3 py-2 text-left text-xs font-semibold border-b border-border">'+c.trim()+'</th>'}).join('')+'</tr></thead>';
+ var tbody='<tbody>';
+ for(var ri=2;ri<rows.length;ri++){tbody+='<tr>'+rows[ri].replace(/^\|/,'').replace(/\|$/,'').split('|').map(function(c){return'<td class="px-3 py-2 text-xs border-b border-border/50">'+c.trim()+'</td>'}).join('')+'</tr>';}
+ tbody+='</tbody>';
+ return'<div class="my-3 overflow-x-auto rounded-lg border border-border"><table class="w-full">'+thead+tbody+'</table></div>';
 });
 out=out.replace(/`([^`]+)`/g,'<code class="bg-muted px-1.5 py-0.5 rounded text-xs font-mono text-primary">$1</code>');
 out=out.replace(/\*\*(.+?)\*\*/g,'<strong class="font-semibold">$1</strong>');
