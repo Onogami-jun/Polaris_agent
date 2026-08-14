@@ -14,8 +14,11 @@ let _seq = 0;
 const _pending = new Map();
 
 /* ── Session-scoped approval whitelist ──
- * When user clicks "始终允许", the tool + path prefix is remembered.
- * Subsequent requests for the same path (or sub-paths) auto-approve. */
+ * 1) _approvedTools — 工具级全局白名单："始终允许"一次后，该工具全会话不再询问
+ *    （对没有 path 参数的工具，如 git_clone/run_code/terminal，同样生效）
+ * 2) _approvedPrefixes — 路径前缀白名单，供同类文件工具共享
+ *    （read_file/list_dir/write_file 之间互相继承目录授权） */
+const _approvedTools = new Set();
 const _approvedPrefixes = [];
 
 function _extractPath(params) {
@@ -23,15 +26,20 @@ function _extractPath(params) {
   return String(params.path || params.dir || params.filepath || '');
 }
 
+function _normalize(p) {
+  return String(p || '').replace(/\//g, '\\').toLowerCase();
+}
+
 function _isApproved(tool, params) {
-  const p = _extractPath(params);
+  if (_approvedTools.has(tool)) return true;
+  const p = _normalize(_extractPath(params));
   if (!p) return false;
   // Check if p is under (or equal to) any approved prefix for the same tool category
   for (const a of _approvedPrefixes) {
-    if (a.tool === tool && p.toLowerCase().startsWith(a.path.toLowerCase())) return true;
+    if (a.tool === tool && p.startsWith(a.path)) return true;
     // Cross-tool filesystem approval: read_file/list_dir/write_file share paths
     const fsTools = ['read_file', 'list_dir', 'write_file'];
-    if (fsTools.includes(a.tool) && fsTools.includes(tool) && p.toLowerCase().startsWith(a.path.toLowerCase())) return true;
+    if (fsTools.includes(a.tool) && fsTools.includes(tool) && p.startsWith(a.path)) return true;
   }
   return false;
 }
@@ -69,16 +77,19 @@ function requestPermission(tool, params, displayName) {
   });
 }
 
-/** Approve and remember for the whole session (whitelist by path prefix) */
+/** Approve and remember for the whole session
+ *  → 工具级全局生效：同一工具（无论参数/路径）本次会话内不再询问 */
 function approveAlwaysPermission(id) {
   const entry = _pending.get(id);
   if (entry) {
-    const p = _extractPath(entry.params);
+    // 全局工具级白名单
+    _approvedTools.add(entry.tool);
+    // 额外记录路径前缀，供同类文件工具共享目录授权
+    const p = _normalize(_extractPath(entry.params));
     if (p) {
-      // If it's a file, whitelist its parent directory; if it's a dir, whitelist it
       const hasExt = /\.[a-zA-Z0-9]{1,6}$/.test(p);
       const prefix = hasExt ? p.slice(0, p.lastIndexOf('\\')) : p;
-      _approvedPrefixes.push({ tool: entry.tool, path: prefix || p });
+      if (prefix) _approvedPrefixes.push({ tool: entry.tool, path: prefix });
     }
     if (entry.timer) clearTimeout(entry.timer);
     _pending.delete(id);
@@ -112,4 +123,4 @@ function rejectPermission(id) {
   return false;
 }
 
-module.exports = { initPermissionBridge, requestPermission, approvePermission, rejectPermission };
+module.exports = { initPermissionBridge, requestPermission, approvePermission, rejectPermission, approveAlwaysPermission };

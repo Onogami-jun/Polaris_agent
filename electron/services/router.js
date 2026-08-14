@@ -252,7 +252,13 @@ function callDeepSeek(messages, tools, apiKey, temperature, maxTokens, modelOver
       timeout: 30000,
     }, resp => {
       let d = ''; resp.on('data', c => d += c.toString());
-      resp.on('end', () => { try { resolve(JSON.parse(d)); } catch { resolve({ error: 'Parse' }); } });
+      resp.on('end', () => {
+        try {
+          var parsed = JSON.parse(d);
+          if (parsed.error) parsed.error.httpStatus = resp.statusCode;
+          resolve(parsed);
+        } catch { resolve({ error: 'Parse (HTTP ' + resp.statusCode + ')' }); }
+      });
     });
     req.on('error', e => resolve({ error: e.message }));
     req.on('timeout', () => { req.destroy(); resolve({ error: 'Timeout' }); });
@@ -422,6 +428,7 @@ async function runAgentLoop(userMessage, apiKey, onExec, onTodo, onStreamChunk, 
   var bestResponse = '';
   var toolsUsed = false;
   var allToolCalls = []; // ★ Collect all tool calls across rounds for BARRIER 5
+  var lastLLMError = null; // ★ Surface real LLM failure instead of generic fallback
   const MAX_ROUNDS = 10;
   var round = 0;
 
@@ -433,7 +440,11 @@ async function runAgentLoop(userMessage, apiKey, onExec, onTodo, onStreamChunk, 
 
     // Agent loop needs tool-call support — resolve via model registry (local maps back to DeepSeek)
     const resp = await callDeepSeek(messages, tools, apiKey, agentTemp, maxTok, resolveModel((strategyConfig && strategyConfig.routedModel)));
-    if (resp.error) break;
+    if (resp.error) {
+      lastLLMError = resp.error;
+      logger.error('LLM call failed', { round, error: typeof resp.error === 'string' ? resp.error : (resp.error.message || JSON.stringify(resp.error)) });
+      break;
+    }
 
     const choice = resp.choices?.[0];
     if (!choice) break;
@@ -633,6 +644,10 @@ async function runAgentLoop(userMessage, apiKey, onExec, onTodo, onStreamChunk, 
   }
 
   if (bestResponse) return bestResponse;
+  if (lastLLMError) {
+    var _emsg = typeof lastLLMError === 'string' ? lastLLMError : (lastLLMError.message || JSON.stringify(lastLLMError));
+    return '⚠️ LLM 调用失败：' + _emsg + '\n\n请检查：1) DeepSeek API Key 是否有效、余额是否充足；2) 模型名是否正确（当前 deepseek-v4-flash）。';
+  }
   return 'Polaris engine could not solve this problem. Please provide more details.';
 }
 

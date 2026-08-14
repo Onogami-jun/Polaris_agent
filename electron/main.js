@@ -147,9 +147,12 @@ ipcMain.handle('polaris:queryStream', async (event, { text, strategy, systemProm
   var oc = function(data) { if (win && !win.isDestroyed()) win.webContents.send('polaris:stream-chunk', data); };
   // Notify Git panel when Agent performs git operations
   var onGitOp = function(data) { if (win && !win.isDestroyed()) win.webContents.send('polaris:git-update', data); };
+  // ★ 实时推送工具执行日志 + 工作流步骤到右侧栏（TaskBoard）
+  var onExec = function(evt) { if (win && !win.isDestroyed()) win.webContents.send('polaris:exec-log', evt); };
+  var onTodo = function(evt) { if (win && !win.isDestroyed()) win.webContents.send('polaris:todo-update', evt); };
   try {
     _mainGhToken = (apiKeys && apiKeys.github) || '';
-    var r = await executeQuery(text, strategy, systemPrompt, images, oc, { deepseek:key, language:language || 'zh-CN', github:(apiKeys && apiKeys.github) || '', onGitOp:onGitOp });
+    var r = await executeQuery(text, strategy, systemPrompt, images, oc, { deepseek:key, language:language || 'zh-CN', github:(apiKeys && apiKeys.github) || '', onGitOp:onGitOp, onExec:onExec, onTodo:onTodo });
     if (win && !win.isDestroyed()) win.webContents.send('polaris:stream-end', r);
     return r;
   } catch (e) {

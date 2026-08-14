@@ -32,7 +32,7 @@ interface PolarisAPI {
   onSandboxProgress(cb: (data: any) => void): void;
   onGitUpdate(cb: (data: any) => void): void;
   onToolConfirm(cb: (data: any) => void): void; onToolConfirmDismiss(cb: (data: any) => void): void;
-  approvePermission(id: string): Promise<any>; rejectPermission(id: string): Promise<any>;
+  approvePermission(id: string): Promise<any>; rejectPermission(id: string): Promise<any>; approveAlwaysPermission(id: string): Promise<any>;
   emailSendCode(email: string): Promise<any>; emailSendWelcome(email: string, displayName: string): Promise<any>;
   emailForgotPassword(email: string): Promise<any>;
   authUnlock(userId: string): Promise<any>; authLock(): Promise<any>;
