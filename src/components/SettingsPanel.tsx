@@ -192,13 +192,14 @@ const SettingsPanel: React.FC = () => {
                   { id: 'openai', label: 'OpenAI', noteK: 'openaiNote' },
                   { id: 'serper', label: 'Serper', noteK: 'serperNote' },
                   { id: 'github', label: 'GitHub', noteK: 'githubNote' },
+                  { id: 'doubao', label: '豆包（视觉）', noteK: 'doubaoNote' },
                 ].map(p => (
                   <div key={p.id} className="space-y-1">
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-medium text-foreground">{p.label}</span>
                       <span className="text-[10px] text-muted-foreground">{t(s.language,'settings.models.'+p.noteK)}</span>
                     </div>
-                    <Input type="password" value={(s.apiKeys as any)[p.id]} onChange={e => dispatch(setApiKey({ provider: p.id, key: e.target.value }))} placeholder={p.id==='deepseek'?t(s.language,'settings.models.deepseekPlaceholder'):p.id==='github'?'ghp_...':'sk-...'} className="h-9 text-xs font-mono"/>
+                    <Input type="password" value={(s.apiKeys as any)[p.id]} onChange={e => dispatch(setApiKey({ provider: p.id, key: e.target.value }))} placeholder={p.id==='deepseek'?t(s.language,'settings.models.deepseekPlaceholder'):p.id==='doubao'?'Ark API Key (火山引擎)':p.id==='github'?'ghp_...':'sk-...'} className="h-9 text-xs font-mono"/>
                   </div>
                 ))}
               </div>

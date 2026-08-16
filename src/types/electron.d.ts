@@ -11,7 +11,7 @@ interface PolarisAPI {
   desktopDoubleClick(x: number, y: number): Promise<any>; desktopScrollMouse(d: string, a: number): Promise<any>;
   desktopGetClipboard(): Promise<string>; desktopSetClipboard(t: string): Promise<boolean>; desktopSystemInfo(): Promise<any>;
   desktopListFiles(d: string): Promise<any[]>; desktopReadFile(p: string): Promise<string|null>; desktopWriteFile(p: string, c: string): Promise<any>;
-  desktopRunCommand(c: string): Promise<string>; desktopAgentStep(p: { goal: string; screenshot?: string; history?: string }): Promise<{ action: any; raw: string }>;
+  desktopRunCommand(c: string): Promise<string>; desktopAgentStep(p: { goal: string; screenshot?: string; history?: string }): Promise<{ action: any; raw: string }>; desktopVisionStep(p: { goal: string; history?: any[]; visionKey?: string; visionModel?: string }): Promise<{ screenshot: string | null; action: any; raw: string; error?: string }>;
   mcpStart(p: { id: string; command: string; args: string[]; env?: Record<string,string> }): Promise<{ success: boolean; pid?: number; message?: string }>;
   mcpStop(id: string): Promise<{ success: boolean }>; mcpList(): Promise<{ id: string; pid: number; running: boolean }[]>;
   notify(p: { title: string; body: string }): Promise<boolean>;

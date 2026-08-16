@@ -19,6 +19,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   desktopListFiles: (d) => ipcRenderer.invoke('desktop:listFiles', d), desktopReadFile: (f) => ipcRenderer.invoke('desktop:readFile', f),
   desktopWriteFile: (f,c) => ipcRenderer.invoke('desktop:writeFile', f, c), desktopRunCommand: (c) => ipcRenderer.invoke('desktop:runCommand', c),
   desktopAgentStep: (p) => ipcRenderer.invoke('desktop:agentStep', p),
+  desktopVisionStep: (p) => ipcRenderer.invoke('desktop:visionStep', p),
   mcpStart: (p) => ipcRenderer.invoke('mcp:start', p), mcpStop: (id) => ipcRenderer.invoke('mcp:stop', id), mcpList: () => ipcRenderer.invoke('mcp:list'),
   notify: (p) => ipcRenderer.invoke('notify', p),
   toolsList: () => ipcRenderer.invoke('tools:list'), toolsExecute: (p) => ipcRenderer.invoke('tools:execute', p), toolsConfirm: (id) => ipcRenderer.invoke('tools:confirm', { confirmId: id }), toolsReject: (id) => ipcRenderer.invoke('tools:reject', { confirmId: id }),

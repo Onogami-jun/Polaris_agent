@@ -566,6 +566,8 @@ function DesktopSection({ lang }: any) {
   const [taskGoal, setTaskGoal] = useState('');
   const [taskRunning, setTaskRunning] = useState(false);
   const [taskLog, setTaskLog] = useState<any[]>([]);
+  const [taskShot, setTaskShot] = useState('');
+  const chatSettings = useAppSelector((st: any) => st.chat.settings);
   const zh = lang === 'zh-CN';
   const api = () => (window as any).electronAPI;
 
@@ -581,24 +583,30 @@ function DesktopSection({ lang }: any) {
     if (!taskGoal.trim() || taskRunning) return;
     const a = api(); if (!a) return;
     setTaskRunning(true); setTaskLog([]);
+    const vk = chatSettings?.apiKeys?.doubao || '';
     const history: any[] = [];
     for (let i = 0; i < 8; i++) {
       try {
-        const r = await a.desktopAgentStep?.({ goal: taskGoal.trim(), history });
+        const r = await a.desktopVisionStep?.({ goal: taskGoal.trim(), history, visionKey: vk });
+        if (r?.error) { setTaskLog(p => [...p, { action: 'error', result: (zh ? '视觉模型错误：' : 'Vision error: ') + r.error }]); break; }
+        if (r?.screenshot) setTaskShot(r.screenshot); // 每步显示当前屏幕
         const action = r?.action || { action: 'done', summary: 'no action' };
         if (action.action === 'done') { setTaskLog(p => [...p, { action: 'done', result: action.summary || '完成' }]); break; }
         let result = 'OK';
         switch (action.action) {
-          case 'open_browser': if (action.url) { await a.desktopOpenBrowser?.(action.url); result = '打开浏览器 ' + action.url; } else result = '缺少 url'; break;
-          case 'open_app': if (action.app) { await a.desktopOpenApp?.(action.app); result = '打开应用 ' + action.app; } else result = '缺少 app'; break;
-          case 'open_explorer': if (action.dir) { await a.desktopOpenExplorer?.(action.dir); result = '打开文件夹 ' + action.dir; } else result = '缺少 dir'; break;
-          case 'run_command': if (action.command && confirm(zh ? '执行命令：' : 'Run: ' + action.command + '?')) { await a.desktopRunCommand?.(action.command); result = '执行 ' + action.command; } else result = '命令已取消'; break;
+          case 'click': if (action.x != null && action.y != null) { await a.desktopClickMouse?.(action.x, action.y); result = '点击 (' + action.x + ',' + action.y + ')'; } else result = '缺少坐标'; break;
+          case 'double_click': if (action.x != null && action.y != null) { await a.desktopDoubleClick?.(action.x, action.y); result = '双击 (' + action.x + ',' + action.y + ')'; } else result = '缺少坐标'; break;
           case 'type': if (action.text) { await a.desktopTypeText?.(action.text); result = '输入 ' + action.text; } else result = '缺少 text'; break;
           case 'hotkey': if (action.combo) { await a.desktopHotkey?.(action.combo); result = '快捷键 ' + action.combo; } else result = '缺少 combo'; break;
+          case 'scroll': await a.desktopScrollMouse?.(action.direction || 'down', action.amount || 3); result = '滚动 ' + (action.direction || 'down'); break;
+          case 'open_browser': if (action.url) { await a.desktopOpenBrowser?.(action.url); result = '打开浏览器 ' + action.url; } else result = '缺少 url'; break;
+          case 'open_app': if (action.app) { await a.desktopOpenApp?.(action.app); result = '打开应用 ' + action.app; } else result = '缺少 app'; break;
+          case 'run_command': if (action.command && confirm(zh ? '执行命令：' : 'Run: ' + action.command + '?')) { await a.desktopRunCommand?.(action.command); result = '执行 ' + action.command; } else result = '命令已取消'; break;
           default: result = '未知动作: ' + action.action; break;
         }
         history.push({ action: action.action, result });
         setTaskLog(p => [...p, { action: action.action, result }]);
+        await new Promise(res => setTimeout(res, 400)); // 动作后稍等，让 UI 稳定
       } catch (e: any) { setTaskLog(p => [...p, { action: 'error', result: e.message }]); break; }
     }
     setTaskRunning(false);
@@ -635,14 +643,15 @@ function DesktopSection({ lang }: any) {
       </div>
       {fileContent && <pre className="rounded-xl bg-muted/20 border border-border/50 p-3 text-[10px] font-mono text-muted-foreground overflow-auto max-h-[240px] whitespace-pre-wrap">{fileContent.slice(0, 4000)}</pre>}
 
-      {/* ── 桌面任务代理 ── */}
+      {/* ── 桌面任务代理（视觉） ── */}
       <div className="pt-4 border-t border-border/50">
-        <h4 className="text-sm font-semibold text-foreground mb-2">{zh ? '桌面任务代理' : 'Desktop Task Agent'}</h4>
-        <p className="text-[10px] text-muted-foreground -mt-1 mb-3">{zh ? '输入目标，Polaris 自动循环：决策 → 执行 → 观察（最多 8 步，危险操作会确认）' : 'Give a goal; Polaris loops: decide → act (max 8 steps, dangerous ops confirm)'}</p>
+        <h4 className="text-sm font-semibold text-foreground mb-2">{zh ? '桌面任务代理（视觉）' : 'Desktop Task Agent (Vision)'}</h4>
+        <p className="text-[10px] text-muted-foreground -mt-1 mb-3">{zh ? '输入目标，Polaris 截图→豆包看图→决策→执行，自动循环（最多 8 步，危险操作会确认）' : 'Goal → screenshot → vision model → act, auto-loop (max 8 steps, dangerous ops confirm)'}</p>
         <div className="flex gap-2 mb-2">
           <Input placeholder={zh ? '例如：打开浏览器访问 GitHub' : 'e.g. Open browser to github.com'} value={taskGoal} onChange={e => setTaskGoal(e.target.value)} className="h-8 text-xs flex-1" />
           <Button size="sm" className="h-8 text-xs" onClick={runTask} disabled={taskRunning}>{taskRunning ? (zh ? '执行中…' : 'Running…') : (zh ? '执行' : 'Run')}</Button>
         </div>
+        {taskShot && taskRunning && <img src={taskShot} alt="screen" className="w-full rounded-xl border border-border mb-2" />}
         {taskLog.length > 0 && (
           <div className="rounded-xl bg-black/40 border border-border/50 p-3 font-mono text-[10px] text-muted-foreground space-y-0.5 max-h-[180px] overflow-y-auto">
             {taskLog.map((l, i) => (

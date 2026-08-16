@@ -7,6 +7,7 @@ const { spawn } = require('child_process');
 const systemMonitor = require('./services/system-monitor');
 const { Planner } = require('./services/planner');
 const security = require('./services/security');
+const vision = require('./services/vision');
 
 // ── Production security lockdown ──
 security.setProductionMode();
@@ -116,6 +117,12 @@ async function refreshApiKey(userId) {
       if (builtinKey) { _authUserId = userId; setKey(builtinKey); }
     } catch {}
   }
+  // 视觉模型 key（豆包 Ark）— vault 内置，前端可覆盖
+  try {
+    var { get: vg } = require('./services/secrets');
+    var vk = vg('doubao_api_key');
+    if (vk) vision.setVisionKey(vk);
+  } catch {}
 }
 
 // IPC: AI (auth-gated)
@@ -494,6 +501,15 @@ ipcMain.handle('desktop:agentStep', async (_e, { goal, history }) => {
   if (m) { try { action = JSON.parse(m[0]); } catch {} }
   if (!action || !action.action) action = { action: 'done', summary: 'no action' };
   return { action: action, raw: content };
+});
+
+// ── 视觉 computer-use：截图 → 豆包看图 → 决策动作 ──
+ipcMain.handle('desktop:visionStep', async (_e, { goal, history, visionKey, visionModel }) => {
+  if (visionModel) vision.setVisionModel(visionModel);
+  var shot = await desktop.takeScreenshot();
+  if (!shot) return { screenshot: null, action: { action: 'done', summary: '截图失败' }, raw: '' };
+  var r = await vision.analyzeScreen({ imageBase64: shot, goal: goal, history: history, visionKey: visionKey });
+  return { screenshot: shot, action: r.action, raw: r.raw, error: r.error };
 });
 
 // IPC: MCP
