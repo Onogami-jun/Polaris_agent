@@ -33,6 +33,8 @@ export function StandaloneLab({ onClose }: { onClose: () => void }) {
   const [flywheelStats, setFlywheelStats] = useState<Record<string,number>|null>(null);
   const [routerStats, setRouterStats] = useState<any[]>([]);
   const [skillEdges, setSkillEdges] = useState<any[]>([]);
+  const [skills, setSkills] = useState<any[]>([]);
+  const [auditLog, setAuditLog] = useState<any[]>([]);
   const [selectedProblemType, setSelectedProblemType] = useState('knapsack');
 
   const labLabels: any = {
@@ -59,6 +61,7 @@ export function StandaloneLab({ onClose }: { onClose: () => void }) {
     refreshSandbox();
     loadExperimentHistory();
     loadTrainingStats();
+    loadAuditLog();
     setUsageStats({
       calls: auth.tokenUsageCount || 0,
       tokens: chat.contextTokens?.used || 0,
@@ -91,6 +94,12 @@ export function StandaloneLab({ onClose }: { onClose: () => void }) {
     api.flywheelStats?.().then((s: any) => setFlywheelStats(s)).catch(() => {});
     loadRouterStats('knapsack');
     api.skillgraphEdges?.(10).then((e: any) => setSkillEdges(e || [])).catch(() => {});
+    api.skillsRegistry?.().then((s: any) => setSkills(s || [])).catch(() => {});
+  };
+
+  const loadAuditLog = () => {
+    const api = window.electronAPI; if (!api) return;
+    api.securityAuditLog?.().then((a: any) => setAuditLog(Array.isArray(a) ? a : [])).catch(() => {});
   };
 
   const loadRouterStats = (problemType: string) => {
@@ -150,8 +159,8 @@ export function StandaloneLab({ onClose }: { onClose: () => void }) {
           {activeSection === 'experiments' && <ExperimentsSection lang={lang} expHistory={expHistory} onRefresh={loadExperimentHistory} />}
           {activeSection === 'sandbox' && <SandboxSection lang={lang} health={sandboxHealth} pkgs={pkgs} onRefresh={refreshSandbox} />}
           {activeSection === 'memory' && <MemorySection lang={lang} memEntries={chat.settings.memory.entries} />}
-          {activeSection === 'training' && <TrainingSection lang={lang} flywheelStats={flywheelStats} routerStats={routerStats} skillEdges={skillEdges} selectedProblemType={selectedProblemType} onSelectType={(t: string) => { setSelectedProblemType(t); loadRouterStats(t); }} onRefresh={loadTrainingStats} />}
-          {activeSection === 'logs' && <LogsSection lang={lang} />}
+          {activeSection === 'training' && <TrainingSection lang={lang} flywheelStats={flywheelStats} routerStats={routerStats} skillEdges={skillEdges} skills={skills} selectedProblemType={selectedProblemType} onSelectType={(t: string) => { setSelectedProblemType(t); loadRouterStats(t); }} onRefresh={loadTrainingStats} />}
+          {activeSection === 'logs' && <LogsSection lang={lang} auditLog={auditLog} onRefresh={loadAuditLog} />}
         </div>
       </div>
     </div>
@@ -368,14 +377,56 @@ function MemorySection({ lang, memEntries }: any) {
   );
 }
 
+/* ── Skill Graph (SVG visualization) ── */
+function SkillGraphView({ edges, skills, emptyText }: any) {
+  var nodeSet = new Set<string>();
+  (edges || []).forEach(function(e: any) { if (e.from) nodeSet.add(e.from); if (e.to) nodeSet.add(e.to); });
+  if (nodeSet.size === 0) { (skills || []).forEach(function(s: any) { nodeSet.add(s.name); }); }
+  var nodeArr = Array.from(nodeSet);
+  var n = nodeArr.length;
+  if (n === 0) return <p className="text-xs text-muted-foreground py-4 text-center">{emptyText}</p>;
+
+  var W = 560, H = 300, cx = W / 2, cy = H / 2 - 8;
+  var R = Math.min(120, Math.max(70, n * 20));
+  var pos: Record<string, { x: number; y: number }> = {};
+  nodeArr.forEach(function(name, i) {
+    var angle = (i / n) * 2 * Math.PI - Math.PI / 2;
+    pos[name] = { x: cx + R * Math.cos(angle), y: cy + R * Math.sin(angle) };
+  });
+
+  var maxCount = 1;
+  (edges || []).forEach(function(e: any) { if (e.count > maxCount) maxCount = e.count; });
+
+  return (
+    <svg viewBox={'0 0 ' + W + ' ' + H} className="w-full h-auto rounded-xl border border-border/50 bg-muted/10">
+      {(edges || []).map(function(e: any, i: number) {
+        var a = pos[e.from], b = pos[e.to];
+        if (!a || !b) return null;
+        var w = Math.max(1, (e.count / maxCount) * 4);
+        return <line key={'e' + i} x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="#c8a96e" strokeWidth={w} opacity={0.55} />;
+      })}
+      {nodeArr.map(function(name, i) {
+        var p = pos[name];
+        var short = name.length > 10 ? name.slice(0, 9) + '…' : name;
+        return (
+          <g key={'n' + i}>
+            <circle cx={p.x} cy={p.y} r={15} fill="#0d0d12" stroke="#c8a96e" strokeWidth={1.5} />
+            <text x={p.x} y={p.y + 3} textAnchor="middle" fontSize={6.5} fill="#e8e6e1" fontFamily="monospace">{short}</text>
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
 /* ── Training ── */
 const PROBLEM_TYPES = ['knapsack','scheduling','assignment','facility','vrp','multi_knapsack','set_covering','custom'];
-function TrainingSection({ lang, flywheelStats, routerStats, skillEdges, selectedProblemType, onSelectType, onRefresh }: any) {
+function TrainingSection({ lang, flywheelStats, routerStats, skillEdges, skills, selectedProblemType, onSelectType, onRefresh }: any) {
   const labels: any = {
-    'zh-CN': { title:'训练数据看板', desc:'每次求解自动积累训练样本，用于DPO微调小模型', dpoPairs:'DPO偏好对', verifLabels:'验证标签', routeRecs:'路由记录', hallucSamples:'幻觉样本', routerTitle:'模型路由表现', routerDesc:'各模型在不同问题类型上的成功率', edgesTitle:'技能编排图', edgesDesc:'高频技能转换（越常用越靠前）', noData:'暂无数据 — 运行一次求解后自动产生', refresh:'刷新', total:'总计' },
-    'en':     { title:'Training Dashboard', desc:'Each solve auto-produces labeled samples for DPO fine-tuning', dpoPairs:'DPO Pairs', verifLabels:'Verif. Labels', routeRecs:'Route Records', hallucSamples:'Hallucination', routerTitle:'Model Router Performance', routerDesc:'Success rates per problem type', edgesTitle:'Skill Graph', edgesDesc:'Frequent skill transitions', noData:'No data yet — run a solve to start accumulating', refresh:'Refresh', total:'Total' },
-    'ja':     { title:'訓練データ', desc:'各求解が自動的にDPO微調整用サンプルを生成します', dpoPairs:'DPOペア', verifLabels:'検証ラベル', routeRecs:'ルート記録', hallucSamples:'幻覚', routerTitle:'ルーター性能', routerDesc:'問題タイプ別成功率', edgesTitle:'スキルグラフ', edgesDesc:'頻繁なスキル遷移', noData:'データなし — 求解を実行してください', refresh:'更新', total:'合計' },
-    'fr':     { title:'Tableau entraînement', desc:'Chaque résolution produit des échantillons étiquetés', dpoPairs:'Paires DPO', verifLabels:'Étiquettes', routeRecs:'Routage', hallucSamples:'Hallucination', routerTitle:'Performance routeur', routerDesc:'Taux de réussite par type', edgesTitle:'Graphe compétences', edgesDesc:'Transitions fréquentes', noData:'Pas de données — lancez une résolution', refresh:'Actualiser', total:'Total' },
+    'zh-CN': { title:'训练数据看板', desc:'每次求解自动积累训练样本，用于DPO微调小模型', dpoPairs:'DPO偏好对', verifLabels:'验证标签', routeRecs:'路由记录', hallucSamples:'幻觉样本', routerTitle:'模型路由表现', routerDesc:'各模型在不同问题类型上的成功率', edgesTitle:'技能编排图', edgesDesc:'高频技能转换（越常用越靠前）', registryTitle:'技能注册表', registryDesc:'已注册的 Agent 技能与能力', noData:'暂无数据 — 运行一次求解后自动产生', refresh:'刷新', total:'总计' },
+    'en':     { title:'Training Dashboard', desc:'Each solve auto-produces labeled samples for DPO fine-tuning', dpoPairs:'DPO Pairs', verifLabels:'Verif. Labels', routeRecs:'Route Records', hallucSamples:'Hallucination', routerTitle:'Model Router Performance', routerDesc:'Success rates per problem type', edgesTitle:'Skill Graph', edgesDesc:'Frequent skill transitions', registryTitle:'Skill Registry', registryDesc:'Registered agent skills and capabilities', noData:'No data yet — run a solve to start accumulating', refresh:'Refresh', total:'Total' },
+    'ja':     { title:'訓練データ', desc:'各求解が自動的にDPO微調整用サンプルを生成します', dpoPairs:'DPOペア', verifLabels:'検証ラベル', routeRecs:'ルート記録', hallucSamples:'幻覚', routerTitle:'ルーター性能', routerDesc:'問題タイプ別成功率', edgesTitle:'スキルグラフ', edgesDesc:'頻繁なスキル遷移', registryTitle:'スキルレジストリ', registryDesc:'登録済みスキル一覧', noData:'データなし — 求解を実行してください', refresh:'更新', total:'合計' },
+    'fr':     { title:'Tableau entraînement', desc:'Chaque résolution produit des échantillons étiquetés', dpoPairs:'Paires DPO', verifLabels:'Étiquettes', routeRecs:'Routage', hallucSamples:'Hallucination', routerTitle:'Performance routeur', routerDesc:'Taux de réussite par type', edgesTitle:'Graphe compétences', edgesDesc:'Transitions fréquentes', registryTitle:'Registre compétences', registryDesc:'Compétences enregistrées', noData:'Pas de données — lancez une résolution', refresh:'Actualiser', total:'Total' },
   };
   const L = labels[lang] || labels['zh-CN'];
   const statCards = [
@@ -462,18 +513,24 @@ function TrainingSection({ lang, flywheelStats, routerStats, skillEdges, selecte
         )}
       </div>
 
-      {/* ── Skill graph edges ── */}
+      {/* ── 技能注册表 ── */}
       <div>
-        <h4 className="text-sm font-semibold text-foreground mb-2">{L.edgesTitle}</h4>
-        <p className="text-[10px] text-muted-foreground -mt-1 mb-3">{L.edgesDesc}</p>
-        {skillEdges.length > 0 ? (
-          <div className="space-y-1.5">
-            {skillEdges.map((e: any, i: number) => (
-              <div key={i} className="flex items-center gap-3 px-3 py-2 rounded-lg bg-muted/20 border border-border/50">
-                <span className="text-xs font-mono text-amber-400">{e.from}</span>
-                <span className="text-[10px] text-muted-foreground">→</span>
-                <span className="text-xs font-mono text-emerald-400">{e.to}</span>
-                <span className="ml-auto text-[10px] font-mono font-bold text-muted-foreground">×{e.count}</span>
+        <h4 className="text-sm font-semibold text-foreground mb-2">{L.registryTitle}</h4>
+        <p className="text-[10px] text-muted-foreground -mt-1 mb-3">{L.registryDesc}</p>
+        {skills.length > 0 ? (
+          <div className="grid grid-cols-2 gap-2">
+            {skills.map((sk: any, i: number) => (
+              <div key={i} className="p-3 rounded-xl bg-muted/20 border border-border/50">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-semibold text-foreground">{sk.name}</span>
+                  <span className="text-[9px] font-mono text-muted-foreground">{sk.id}</span>
+                </div>
+                <p className="text-[10px] text-muted-foreground mt-1 leading-relaxed">{sk.description}</p>
+                <div className="flex items-center gap-2 mt-2 flex-wrap">
+                  <span className="text-[9px] font-mono text-blue-400">{sk.tools.length} tools</span>
+                  <span className="text-[9px] font-mono text-amber-400">T={sk.temperature}</span>
+                  <span className="text-[9px] font-mono text-muted-foreground truncate max-w-[200px]">{sk.tools.slice(0, 3).join(', ')}{sk.tools.length > 3 ? '…' : ''}</span>
+                </div>
               </div>
             ))}
           </div>
@@ -481,25 +538,43 @@ function TrainingSection({ lang, flywheelStats, routerStats, skillEdges, selecte
           <p className="text-xs text-muted-foreground py-4 text-center">{L.noData}</p>
         )}
       </div>
+
+      {/* ── Skill graph (SVG) ── */}
+      <div>
+        <h4 className="text-sm font-semibold text-foreground mb-2">{L.edgesTitle}</h4>
+        <p className="text-[10px] text-muted-foreground -mt-1 mb-3">{L.edgesDesc}</p>
+        <SkillGraphView edges={skillEdges} skills={skills} emptyText={L.noData} />
+      </div>
     </div>
   );
 }
 
-/* ── Logs ── */
-function LogsSection({ lang }: any) {
-  const [logs] = useState<string[]>([
-    '[08:00:01] Agent engine initialized',
-    '[08:00:03] Python sandbox: Python 3.11.9 detected',
-    '[08:00:04] DeepSeek API: connection verified',
-    '[08:00:05] HiGHS Solver: ready',
-    '[08:00:06] All systems nominal. Polaris Solver ready.',
-  ]);
+/* ── Logs (real audit log from security.js) ── */
+function LogsSection({ lang, auditLog, onRefresh }: any) {
+  const title = lang === 'zh-CN' ? '审计日志' : 'Audit Log';
+  const empty = lang === 'zh-CN' ? '暂无审计记录 — 登录或执行文件操作后自动产生' : 'No audit entries yet';
+  const refresh = lang === 'zh-CN' ? '刷新' : 'Refresh';
   return (
     <div className="space-y-6">
-      <h3 className="text-lg font-bold text-foreground">{t(lang,'lab.logTitle')}</h3>
-      <div className="rounded-xl bg-muted/20 border border-border/50 p-4 font-mono text-xs text-muted-foreground space-y-0.5 max-h-[500px] overflow-y-auto">
-        {logs.map((l, i) => <div key={i} className="hover:text-foreground transition-colors">{l}</div>)}
+      <div className="flex items-center justify-between">
+        <h3 className="text-lg font-bold text-foreground">{title}</h3>
+        <Button size="sm" className="h-7 text-[10px]" onClick={onRefresh}>{refresh}</Button>
       </div>
+      {auditLog && auditLog.length > 0 ? (
+        <div className="rounded-xl bg-muted/20 border border-border/50 p-4 font-mono text-xs text-muted-foreground space-y-0.5 max-h-[500px] overflow-y-auto">
+          {auditLog.slice().reverse().map((l: any, i: number) => (
+            <div key={i} className="hover:text-foreground transition-colors">
+              <span className="text-muted-foreground/50">[{l.ts ? new Date(l.ts).toLocaleTimeString() : '--:--:--'}]</span>{' '}
+              <span className="text-amber-400">[{l.category}/{l.action}]</span>{' '}
+              <span>{l.detail}</span>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="text-center py-12 text-muted-foreground bg-muted/10 rounded-xl border border-border/50">
+          <p className="text-sm">{empty}</p>
+        </div>
+      )}
     </div>
   );
 }

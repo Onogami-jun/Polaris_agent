@@ -23,6 +23,7 @@ const Icons: Record<string, React.ReactNode> = {
   sandbox: <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="1" y="5" width="14" height="8" rx="1.5"/><path d="M5 5V3a2 2 0 012-2h2a2 2 0 012 2v2"/><line x1="5" y1="9" x2="11" y2="9"/><line x1="5" y1="11" x2="7" y2="11"/></svg>,
   lab: <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M5 2v6l-3 4h12l-3-4V2"/><line x1="8" y1="11" x2="8" y2="14"/><line x1="3" y1="12" x2="13" y2="12"/></svg>,
   about: <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="8" cy="8" r="6"/><line x1="8" y1="7.5" x2="8" y2="11.5"/><circle cx="8" cy="5" r="0.5" fill="currentColor"/></svg>,
+  security: <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M8 1.5l5 2v4.5c0 3.5-2.2 5.9-5 7-2.8-1.1-5-3.5-5-7V3.5l5-2z"/><path d="M6 8l1.5 1.5L10 7"/></svg>,
 };
 
 /* ── Tab config ── */
@@ -34,6 +35,7 @@ const TABS = [
   { id: 'data', label: '数据', icon: Icons.data },
   { id: 'account', label: '账号', icon: Icons.account },
   { id: 'sandbox', label: '沙箱', icon: Icons.sandbox },
+  { id: 'security', label: '安全', icon: Icons.security },
   { id: 'about', label: '关于', icon: Icons.about },
 ];
 
@@ -310,6 +312,9 @@ const SettingsPanel: React.FC = () => {
             {/* ── Sandbox ── */}
             {tab === 'sandbox' && <SandboxSettings />}
 
+            {/* ── Security ── */}
+            {tab === 'security' && <SecuritySection />}
+
             {/* ── About ── */}
             {tab === 'about' && (
               <div className="space-y-6">
@@ -346,6 +351,83 @@ const SettingsPanel: React.FC = () => {
     </div>
   );
 };
+
+/* ── Security Settings Tab (密钥保险库) ── */
+const VAULT_NAME_LABELS: Record<string, string> = {
+  deepseek_api_key: 'DeepSeek API 密钥',
+  supabase_service_role: 'Supabase Service Role',
+  smtp_password: 'SMTP 邮件密码',
+  github_client_secret: 'GitHub OAuth Secret',
+};
+
+function SecuritySection() {
+  const s = useAppSelector(st => st.chat.settings);
+  const [vault, setVault] = useState<any>(null);
+  const [audit, setAudit] = useState<any[]>([]);
+
+  const refresh = () => {
+    const api = (window as any).electronAPI;
+    if (!api) return;
+    api.securityVaultStatus?.().then((v: any) => setVault(v)).catch(() => {});
+    api.securityAuditLog?.().then((a: any) => setAudit(Array.isArray(a) ? a : [])).catch(() => {});
+  };
+
+  useEffect(() => { refresh(); }, []);
+
+  const entries: any[] = vault?.entries || [];
+  const configuredCount = entries.filter((e: any) => e.configured).length;
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <h3 className="text-base font-semibold text-foreground pb-3 border-b border-border flex-1">安全设置</h3>
+        <Button variant="outline" size="sm" className="h-7 text-[10px] ml-3" onClick={refresh}>刷新</Button>
+      </div>
+
+      {/* ── 保险库状态 ── */}
+      <div className="p-4 rounded-xl border border-primary/20 bg-primary/5 space-y-3">
+        <div className="flex items-center gap-2">
+          <span className="text-lg">🔐</span>
+          <div>
+            <h4 className="text-sm font-semibold text-foreground">加密保险库</h4>
+            <p className="text-[10px] text-muted-foreground font-mono">{vault?.cipher || 'AES-256-GCM'} · {configuredCount}/{entries.length || 4} 已配置 · 会话{vault?.sessionActive ? '已鉴权' : '未鉴权'}</p>
+          </div>
+        </div>
+        <div className="space-y-1">
+          {entries.length > 0 ? entries.map((e: any, i: number) => (
+            <div key={i} className="flex items-center gap-3 px-3 py-2 rounded-lg bg-muted/20 border border-border/50">
+              <span className={e.configured ? 'text-emerald-500 text-xs' : 'text-muted-foreground/40 text-xs'}>{e.configured ? '✓' : '✗'}</span>
+              <span className="flex-1 text-xs font-mono text-muted-foreground">{VAULT_NAME_LABELS[e.name] || e.name}</span>
+              <span className="text-[10px] font-mono text-muted-foreground">{e.name}</span>
+              <span className={'text-[10px] font-semibold ' + (e.configured ? 'text-emerald-500' : 'text-red-400')}>{e.configured ? '已加密存储' : '未配置'}</span>
+            </div>
+          )) : (
+            <p className="text-xs text-muted-foreground">保险库未加载</p>
+          )}
+        </div>
+      </div>
+
+      {/* ── 审计日志 ── */}
+      <div>
+        <h4 className="text-sm font-semibold text-foreground mb-2">审计日志</h4>
+        <p className="text-[10px] text-muted-foreground -mt-1 mb-3">登录、鉴权、文件操作与系统命令的实时记录</p>
+        {audit.length > 0 ? (
+          <div className="rounded-xl bg-muted/20 border border-border/50 p-3 font-mono text-[11px] text-muted-foreground space-y-1 max-h-[240px] overflow-y-auto">
+            {audit.slice().reverse().map((l: any, i: number) => (
+              <div key={i} className="flex gap-2 hover:text-foreground transition-colors">
+                <span className="text-muted-foreground/50 shrink-0">[{l.ts ? new Date(l.ts).toLocaleTimeString() : '--:--:--'}]</span>
+                <span className="text-amber-400 shrink-0">[{l.category}/{l.action}]</span>
+                <span className="truncate">{l.detail}</span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-xs text-muted-foreground py-4 text-center">暂无审计记录 — 登录或执行文件操作后自动产生</p>
+        )}
+      </div>
+    </div>
+  );
+}
 
 /* ── Sandbox Settings Tab ── */
 function SandboxSettings() {
@@ -463,10 +545,26 @@ function SandboxSettings() {
 }
 
 /* ── Local Model Install Section ── */
+function fmtSize(bytes: number): string {
+  if (!bytes) return '0 B';
+  if (bytes >= 1024 * 1024 * 1024) return (bytes / 1024 / 1024 / 1024).toFixed(2) + ' GB';
+  if (bytes >= 1024 * 1024) return (bytes / 1024 / 1024).toFixed(1) + ' MB';
+  if (bytes >= 1024) return (bytes / 1024).toFixed(1) + ' KB';
+  return bytes + ' B';
+}
+
 function LocalModelSection({ lang }: { lang: string }) {
   const [status, setStatus] = useState<'idle'|'checking'|'installing'|'done'|'error'>('idle');
   const [msg, setMsg] = useState('');
   const [running, setRunning] = useState(false);
+  const [progress, setProgress] = useState<any>(null);
+  const [models, setModels] = useState<any[]>([]);
+
+  const refreshModels = () => {
+    const api = (window as any).electronAPI;
+    if (!api?.polarisModelList) return;
+    api.polarisModelList().then((r: any) => setModels(r?.models || [])).catch(() => {});
+  };
 
   useEffect(() => {
     const api = (window as any).electronAPI;
@@ -478,21 +576,30 @@ function LocalModelSection({ lang }: { lang: string }) {
       else if (s?.modelInstalled) { setStatus('done'); setMsg('已安装，推理服务未启动'); }
       else setStatus('idle');
     }).catch(() => setStatus('idle'));
+    refreshModels();
   }, []);
 
   const install = async () => {
     setStatus('installing');
-    setMsg('Downloading model chunks from Supabase...');
+    setMsg('准备下载...');
+    setProgress({ phase: 'manifest', percent: 0, message: '准备下载...' });
     try {
       const api = (window as any).electronAPI;
       if (!api?.polarisModelInstall) { setStatus('error'); setMsg('IPC not available'); return; }
+      api.onModelInstallProgress?.((d: any) => {
+        setProgress(d);
+        if (d?.phase === 'done') { setStatus('done'); setMsg('安装完成！请重启 Polaris 激活。'); refreshModels(); }
+        else if (d?.phase === 'error') { setStatus('error'); setMsg(d.message || '安装失败'); }
+        else if (d?.message) setMsg(d.message);
+      });
       const r = await api.polarisModelInstall();
       if (r?.success) {
         setStatus('done');
-        setMsg(r.alreadyInstalled ? 'Already installed' : 'Installed! Please restart Polaris to activate.');
+        setMsg(r.alreadyInstalled ? '已安装' : '安装完成！请重启 Polaris 激活。');
+        refreshModels();
       } else {
         setStatus('error');
-        setMsg(r?.error || 'Installation failed');
+        setMsg(r?.error || '安装失败');
       }
     } catch (e: any) {
       setStatus('error');
@@ -501,10 +608,10 @@ function LocalModelSection({ lang }: { lang: string }) {
   };
 
   const labels: any = {
-    'zh-CN': { title:'本地推理模型', desc:'Polaris 内置轻量模型，安装后离线求解，零 API 费用', install:'安装模型', installing:'下载中...', done:'已安装', runningStatus:'运行中', notRunning:'未启动', check:'检查中...', err:'安装失败' },
-    'en':     { title:'Local Inference Model', desc:'Built-in lightweight model for offline solving, zero API cost', install:'Install Model', installing:'Installing...', done:'Installed', runningStatus:'Running', notRunning:'Not running', check:'Checking...', err:'Failed' },
-    'ja':     { title:'ローカル推論モデル', desc:'軽量モデルでオフライン解決', install:'インストール', installing:'インストール中...', done:'完了', runningStatus:'実行中', notRunning:'停止', check:'確認中...', err:'失敗' },
-    'fr':     { title:'Modele local', desc:'Modele leger integre pour resolution hors ligne', install:'Installer', installing:'Installation...', done:'Installe', runningStatus:'En cours', notRunning:'Arrete', check:'Verification...', err:'Echec' },
+    'zh-CN': { title:'本地推理模型', desc:'Polaris 内置轻量模型，安装后离线求解，零 API 费用', install:'安装模型', installing:'下载中...', done:'已安装', runningStatus:'运行中', notRunning:'未启动', check:'检查中...', err:'安装失败', modelList:'本地模型列表', modelEmpty:'暂无本地模型 — 点击上方「安装模型」' },
+    'en':     { title:'Local Inference Model', desc:'Built-in lightweight model for offline solving, zero API cost', install:'Install Model', installing:'Installing...', done:'Installed', runningStatus:'Running', notRunning:'Not running', check:'Checking...', err:'Failed', modelList:'Local Models', modelEmpty:'No local model — click "Install Model" above' },
+    'ja':     { title:'ローカル推論モデル', desc:'軽量モデルでオフライン解決', install:'インストール', installing:'インストール中...', done:'完了', runningStatus:'実行中', notRunning:'停止', check:'確認中...', err:'失敗', modelList:'ローカルモデル', modelEmpty:'モデルなし' },
+    'fr':     { title:'Modele local', desc:'Modele leger integre pour resolution hors ligne', install:'Installer', installing:'Installation...', done:'Installe', runningStatus:'En cours', notRunning:'Arrete', check:'Verification...', err:'Echec', modelList:'Modeles locaux', modelEmpty:'Aucun modele local' },
   };
   const L = labels[lang] || labels['zh-CN'];
 
@@ -525,6 +632,19 @@ function LocalModelSection({ lang }: { lang: string }) {
         </span>
       </div>
 
+      {/* ── 安装进度条 ── */}
+      {status === 'installing' && progress && (
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between text-[10px] text-muted-foreground font-mono">
+            <span>{progress.message || progress.phase || '安装中'}</span>
+            <span className="font-semibold text-foreground">{progress.percent || 0}%</span>
+          </div>
+          <div className="h-2 bg-muted rounded-full overflow-hidden">
+            <div className="h-full bg-primary rounded-full transition-all duration-300" style={{ width: `${progress.percent || 0}%` }} />
+          </div>
+        </div>
+      )}
+
       {status === 'error' && <p className="text-[10px] text-destructive">{L.err}: {msg}</p>}
       {status === 'done' && !running && <p className="text-[10px] text-emerald-500">{msg}</p>}
 
@@ -537,6 +657,28 @@ function LocalModelSection({ lang }: { lang: string }) {
       {status === 'done' && !running && (
         <p className="text-[10px] text-amber-400 font-medium">⚠ 已安装，但推理服务未启动。请重启 App 激活。</p>
       )}
+
+      {/* ── 本地模型列表 ── */}
+      <div className="pt-2 border-t border-border/50">
+        <div className="flex items-center justify-between mb-2">
+          <h5 className="text-[11px] font-semibold text-foreground">{L.modelList}</h5>
+          <button onClick={refreshModels} className="text-[10px] text-muted-foreground hover:text-foreground font-mono transition-colors">↻</button>
+        </div>
+        {models.length > 0 ? (
+          <div className="space-y-1">
+            {models.map((m: any, i: number) => (
+              <div key={i} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-muted/20 border border-border/50">
+                <span className="text-emerald-500 text-xs">🧠</span>
+                <span className="flex-1 text-xs font-mono text-foreground truncate">{m.name}</span>
+                <span className="text-[10px] font-mono text-muted-foreground">{fmtSize(m.size)}</span>
+                <span className="text-[9px] font-mono text-muted-foreground/60">{m.location}</span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-[10px] text-muted-foreground text-center py-2">{L.modelEmpty}</p>
+        )}
+      </div>
     </div>
   );
 }

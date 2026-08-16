@@ -523,6 +523,34 @@ ipcMain.handle('skillgraph:edges', (_e, limit) => getEdgeStats(limit || 10));
 ipcMain.handle('skillgraph:similar', (_e, goalText, limit) => querySimilar(goalText, limit || 5));
 ipcMain.handle('skillgraph:context', (_e, goalText) => buildPlanningContext(goalText));
 
+// ── Security: 审计日志 + 保险库状态（密钥保险库系统） ──
+ipcMain.handle('security:audit-log', () => security.getAuditLog());
+ipcMain.handle('security:vault-status', () => {
+  var vault = require('./services/secrets');
+  var names = [];
+  try { names = vault.list ? vault.list() : []; } catch {}
+  if (!names || names.length === 0) names = ['deepseek_api_key', 'supabase_service_role', 'smtp_password', 'github_client_secret'];
+  var entries = names.map(function(n) {
+    var configured = false;
+    try { configured = !!vault.get(n); } catch {}
+    return { name: n, configured: configured };
+  });
+  return {
+    cipher: 'AES-256-GCM',
+    sessionActive: security.getAuthToken() !== null,
+    entries: entries,
+  };
+});
+
+// ── Skills registry (技能注册表) ──
+ipcMain.handle('skills:registry', () => {
+  var { SKILLS } = require('./services/skills');
+  return Object.keys(SKILLS).map(function(id) {
+    var s = SKILLS[id];
+    return { id: id, name: s.name, description: s.description, tools: s.tools || [], temperature: s.temperature, maxTokens: s.maxTokens };
+  });
+});
+
 // IPC: System Monitor
 ipcMain.handle('monitor:start', () => {
   systemMonitor.startMonitoring((card) => {
@@ -738,6 +766,52 @@ ipcMain.handle('polaris-serve:status', () => {
   return { running: running, modelInstalled: modelExists };
 });
 
+/* Notify renderer of model install progress (percentage) */
+function sendModelProgress(phase, percent, message) {
+  try { if (win && !win.isDestroyed()) win.webContents.send('polaris-model:progress', { phase, percent, message }); } catch {}
+}
+
+/* Recursive directory size (for local model list) */
+function dirSize(dir) {
+  var fs = require('fs');
+  var total = 0;
+  try {
+    var entries = fs.readdirSync(dir, { withFileTypes: true });
+    for (var i = 0; i < entries.length; i++) {
+      var p = path.join(dir, entries[i].name);
+      try {
+        if (entries[i].isDirectory()) total += dirSize(p);
+        else total += fs.statSync(p).size;
+      } catch {}
+    }
+  } catch {}
+  return total;
+}
+
+ipcMain.handle('polaris-model:list', () => {
+  var fs = require('fs');
+  var models = [];
+  try {
+    if (!fs.existsSync(POLARIS_MODEL_DIR)) return { models: [] };
+    // Flat model: config.json directly in POLARIS_MODEL_DIR
+    if (fs.existsSync(path.join(POLARIS_MODEL_DIR, 'config.json'))) {
+      models.push({ name: 'polaris-opt-local', location: 'flat', size: dirSize(POLARIS_MODEL_DIR) });
+    }
+    // Nested models: each subdir with config.json
+    var entries = fs.readdirSync(POLARIS_MODEL_DIR, { withFileTypes: true });
+    for (var ei = 0; ei < entries.length; ei++) {
+      var e = entries[ei];
+      if (!e.isDirectory()) continue;
+      if (e.name.startsWith('.')) continue;
+      var cfg = path.join(POLARIS_MODEL_DIR, e.name, 'config.json');
+      if (fs.existsSync(cfg)) {
+        models.push({ name: e.name, location: e.name, size: dirSize(path.join(POLARIS_MODEL_DIR, e.name)) });
+      }
+    }
+  } catch (err) {}
+  return { models: models };
+});
+
 ipcMain.handle('polaris-model:install', async () => {
   try {
     var fs = require('fs');
@@ -745,6 +819,7 @@ ipcMain.handle('polaris-model:install', async () => {
 
     // Check if already installed
     if (fs.existsSync(path.join(POLARIS_MODEL_DIR, 'config.json'))) {
+      sendModelProgress('done', 100, '已安装');
       return { success: true, alreadyInstalled: true };
     }
 
@@ -769,26 +844,29 @@ ipcMain.handle('polaris-model:install', async () => {
     }
 
     // Step 1: Download manifest
+    sendModelProgress('manifest', 2, '下载 manifest.json...');
     var manifestUrl = chunksUrl + '/manifest.json';
     var manifestResult = await electronDownload(manifestUrl, path.join(POLARIS_MODEL_DIR, 'manifest.json'));
-    if (!manifestResult.success) return { success: false, error: 'Manifest: ' + manifestResult.error };
+    if (!manifestResult.success) { sendModelProgress('error', 2, 'Manifest: ' + manifestResult.error); return { success: false, error: 'Manifest: ' + manifestResult.error }; }
 
     var manifest = JSON.parse(fs.readFileSync(path.join(POLARIS_MODEL_DIR, 'manifest.json'), 'utf8'));
     var nChunks = manifest.chunks || 0;
-    if (nChunks === 0) return { success: false, error: 'Invalid manifest' };
+    if (nChunks === 0) { sendModelProgress('error', 2, 'Invalid manifest'); return { success: false, error: 'Invalid manifest' }; }
 
     // Step 2: Download each chunk
     var combined = Buffer.alloc(0);
     for (var ci = 0; ci < nChunks; ci++) {
       var chunkName = 'chunk_' + String(ci).padStart(3, '0');
+      sendModelProgress('chunks', Math.round(5 + ((ci + 1) / nChunks) * 75), '下载分片 ' + (ci + 1) + '/' + nChunks);
       var cr = await electronDownload(chunksUrl + '/' + chunkName, path.join(POLARIS_MODEL_DIR, chunkName));
-      if (!cr.success) return { success: false, error: 'Chunk ' + chunkName + ': ' + cr.error };
+      if (!cr.success) { sendModelProgress('error', 0, 'Chunk ' + chunkName + ': ' + cr.error); return { success: false, error: 'Chunk ' + chunkName + ': ' + cr.error }; }
       combined = Buffer.concat([combined, fs.readFileSync(path.join(POLARIS_MODEL_DIR, chunkName))]);
       fs.unlinkSync(path.join(POLARIS_MODEL_DIR, chunkName));
     }
 
     // Step 3: Write zip + unzip
     fs.writeFileSync(zipPath, combined);
+    sendModelProgress('unzip', 82, '解压模型文件...');
     require('child_process').execSync(
       'powershell -Command "Expand-Archive -Path \'' + zipPath + '\' -DestinationPath \'' + POLARIS_MODEL_DIR + '\' -Force"',
       { timeout: 300000 }
@@ -804,12 +882,15 @@ ipcMain.handle('polaris-model:install', async () => {
     if (fs.existsSync(serveSrc)) fs.copyFileSync(serveSrc, path.join(POLARIS_MODEL_DIR, 'polaris_serve.py'));
 
     // Try pip install deps
+    sendModelProgress('deps', 90, '安装依赖 (transformers/torch/peft)...');
     try {
       require('child_process').execSync('pip install transformers torch peft --quiet', { timeout: 300000, windowsHide: true });
     } catch {}
 
+    sendModelProgress('done', 100, '安装完成');
     return { success: true, path: POLARIS_MODEL_DIR };
   } catch (e) {
+    sendModelProgress('error', 0, e.message);
     return { success: false, error: e.message };
   }
 });

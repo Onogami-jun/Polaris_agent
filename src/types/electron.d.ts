@@ -47,6 +47,11 @@ interface PolarisAPI {
   routerStats(problemType: string): Promise<any[]>;
   skillgraphEdges(limit: number): Promise<any[]>;
   skillgraphSimilar(goalText: string, limit: number): Promise<any[]>;
+  skillsRegistry(): Promise<any[]>;
+  securityAuditLog(): Promise<any[]>;
+  securityVaultStatus(): Promise<any>;
+  polarisModelList(): Promise<{ models: { name: string; location: string; size: number }[] }>;
+  onModelInstallProgress(cb: (data: any) => void): void;
   skillgraphContext(goalText: string): Promise<string>;
 }
 interface Window { electronAPI?: PolarisAPI; }

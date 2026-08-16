@@ -70,7 +70,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   skillgraphEdges: (limit) => ipcRenderer.invoke('skillgraph:edges', limit),
   skillgraphSimilar: (goalText, limit) => ipcRenderer.invoke('skillgraph:similar', goalText, limit),
   skillgraphContext: (goalText) => ipcRenderer.invoke('skillgraph:context', goalText),
+  skillsRegistry: () => ipcRenderer.invoke('skills:registry'),
+  securityAuditLog: () => ipcRenderer.invoke('security:audit-log'),
+  securityVaultStatus: () => ipcRenderer.invoke('security:vault-status'),
   polarisServeStatus: () => ipcRenderer.invoke('polaris-serve:status'),
   polarisModelInstall: () => ipcRenderer.invoke('polaris-model:install'),
+  polarisModelList: () => ipcRenderer.invoke('polaris-model:list'),
+  onModelInstallProgress: (cb) => { ipcRenderer.on('polaris-model:progress', (_, d) => cb(d)); },
   debugState: () => ipcRenderer.invoke('debug:state'),
 });

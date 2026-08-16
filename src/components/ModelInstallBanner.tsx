@@ -18,6 +18,7 @@ export function ModelInstallBanner({ lang, labels }: Props) {
   const [installed, setInstalled] = useState(false);
   const [dismissed, setDismissed] = useState(false);
   const [progress, setProgress] = useState('');
+  const [percent, setPercent] = useState(0);
 
   // Check server status + dismissal
   const check = useCallback(async () => {
@@ -44,6 +45,7 @@ export function ModelInstallBanner({ lang, labels }: Props) {
   const handleInstall = async () => {
     setInstalling(true);
     setProgress(L.installing);
+    setPercent(0);
     try {
       const api = (window as any).electronAPI;
       if (!api?.polarisModelInstall) {
@@ -51,11 +53,19 @@ export function ModelInstallBanner({ lang, labels }: Props) {
         setInstalling(false);
         return;
       }
+      api.onModelInstallProgress?.((d: any) => {
+        setPercent(d?.percent || 0);
+        if (d?.message) setProgress(d.message);
+        if (d?.phase === 'done') { setPercent(100); setProgress(L.done); setInstalling(false); setTimeout(() => setVisible(false), 4000); }
+        else if (d?.phase === 'error') { setProgress('Failed: ' + (d.message || 'unknown')); setInstalling(false); }
+      });
       const r = await api.polarisModelInstall();
       if (r?.success) {
         if (r.alreadyInstalled) {
+          setPercent(100);
           setProgress(L.done);
         } else {
+          setPercent(100);
           setProgress(L.done + ' (restart to activate)');
         }
         setTimeout(() => setVisible(false), 4000);
@@ -95,8 +105,16 @@ export function ModelInstallBanner({ lang, labels }: Props) {
 
         {/* Progress / Actions */}
         {progress ? (
-          <div className="text-xs text-muted-foreground font-mono bg-muted/50 rounded-lg px-3 py-2">
-            {progress}
+          <div className="space-y-2">
+            {installing && percent > 0 && (
+              <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+                <div className="h-full bg-primary rounded-full transition-all duration-300" style={{ width: `${percent}%` }} />
+              </div>
+            )}
+            <div className="flex items-center justify-between text-xs text-muted-foreground font-mono bg-muted/50 rounded-lg px-3 py-2">
+              <span>{progress}</span>
+              {installing && <span className="font-semibold text-foreground">{percent}%</span>}
+            </div>
           </div>
         ) : (
           <div className="flex gap-2">
