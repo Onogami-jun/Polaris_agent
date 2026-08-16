@@ -35,13 +35,18 @@ export function StandaloneLab({ onClose }: { onClose: () => void }) {
   const [skillEdges, setSkillEdges] = useState<any[]>([]);
   const [skills, setSkills] = useState<any[]>([]);
   const [auditLog, setAuditLog] = useState<any[]>([]);
+  const [agents, setAgents] = useState<any[]>([]);
+  const [activeAgent, setActiveAgent] = useState<any>(null);
+  const [toolsList, setToolsList] = useState<any[]>([]);
+  const [skillRegistry, setSkillRegistry] = useState<any>(null);
+  const [debugState, setDebugState] = useState<any>(null);
   const [selectedProblemType, setSelectedProblemType] = useState('knapsack');
 
   const labLabels: any = {
-    'zh-CN': { dashboard:'仪表盘', diagnostics:'自诊断', benchmark:'跑分台', experiments:'实验历史', sandbox:'沙箱', memory:'记忆库', training:'训练数据', logs:'日志' },
-    'en':     { dashboard:'Dashboard', diagnostics:'Diagnostics', benchmark:'Benchmark', experiments:'Experiments', sandbox:'Sandbox', memory:'Memory', training:'Training', logs:'Logs' },
-    'ja':     { dashboard:'ダッシュボード', diagnostics:'診断', benchmark:'ベンチマーク', experiments:'実験履歴', sandbox:'サンドボックス', memory:'メモリ', training:'訓練', logs:'ログ' },
-    'fr':     { dashboard:'Tableau', diagnostics:'Diagnostic', benchmark:'Benchmark', experiments:'Experiences', sandbox:'Sandbox', memory:'Memoire', training:'Entrainement', logs:'Journaux' },
+    'zh-CN': { dashboard:'仪表盘', diagnostics:'自诊断', benchmark:'跑分台', experiments:'实验历史', sandbox:'沙箱', memory:'记忆库', agents:'多代理', tools:'工具库', training:'训练数据', desktop:'桌面助手', logs:'日志' },
+    'en':     { dashboard:'Dashboard', diagnostics:'Diagnostics', benchmark:'Benchmark', experiments:'Experiments', sandbox:'Sandbox', memory:'Memory', agents:'Agents', tools:'Tools', training:'Training', desktop:'Desktop', logs:'Logs' },
+    'ja':     { dashboard:'ダッシュボード', diagnostics:'診断', benchmark:'ベンチマーク', experiments:'実験履歴', sandbox:'サンドボックス', memory:'メモリ', agents:'エージェント', tools:'ツール', training:'訓練', desktop:'デスクトップ', logs:'ログ' },
+    'fr':     { dashboard:'Tableau', diagnostics:'Diagnostic', benchmark:'Benchmark', experiments:'Experiences', sandbox:'Sandbox', memory:'Memoire', agents:'Agents', tools:'Outils', training:'Entrainement', desktop:'Bureau', logs:'Journaux' },
   };
   const labL = labLabels[lang] || labLabels['zh-CN'];
   const sections = [
@@ -51,7 +56,10 @@ export function StandaloneLab({ onClose }: { onClose: () => void }) {
     { id: 'experiments', label: labL.experiments },
     { id: 'sandbox',     label: labL.sandbox },
     { id: 'memory',      label: labL.memory },
+    { id: 'agents',      label: labL.agents },
+    { id: 'tools',       label: labL.tools },
     { id: 'training',    label: labL.training },
+    { id: 'desktop',     label: labL.desktop },
     { id: 'logs',        label: labL.logs },
   ];
 
@@ -62,6 +70,10 @@ export function StandaloneLab({ onClose }: { onClose: () => void }) {
     loadExperimentHistory();
     loadTrainingStats();
     loadAuditLog();
+    loadAgents();
+    loadTools();
+    const dapi = window.electronAPI;
+    if (dapi?.debugState) dapi.debugState().then((d: any) => setDebugState(d)).catch(() => {});
     setUsageStats({
       calls: auth.tokenUsageCount || 0,
       tokens: chat.contextTokens?.used || 0,
@@ -101,6 +113,23 @@ export function StandaloneLab({ onClose }: { onClose: () => void }) {
     const api = window.electronAPI; if (!api) return;
     api.securityAuditLog?.().then((a: any) => setAuditLog(Array.isArray(a) ? a : [])).catch(() => {});
   };
+
+  const loadAgents = () => {
+    const api = window.electronAPI; if (!api) return;
+    api.agentsList?.().then((a: any) => setAgents(Array.isArray(a) ? a : [])).catch(() => {});
+  };
+
+  const loadTools = () => {
+    const api = window.electronAPI; if (!api) return;
+    api.toolsList?.().then((t: any) => setToolsList(Array.isArray(t) ? t : [])).catch(() => {});
+    api.skillRegistryList?.().then((r: any) => setSkillRegistry(r)).catch(() => {});
+  };
+
+  // 订阅 agent 切换事件（多 Agent 面板实时指示）
+  useEffect(() => {
+    const api = window.electronAPI; if (!api) return;
+    api.onAgentSwitch?.((a: any) => setActiveAgent(a));
+  }, []);
 
   const loadRouterStats = (problemType: string) => {
     const api = window.electronAPI; if (!api) return;
@@ -153,13 +182,16 @@ export function StandaloneLab({ onClose }: { onClose: () => void }) {
 
         {/* ── Content ── */}
         <div className="flex-1 overflow-y-auto p-8">
-          {activeSection === 'dashboard' && <DashboardSection lang={lang} usageStats={usageStats} engine={engine} chat={chat} diag={diag} />}
+          {activeSection === 'dashboard' && <DashboardSection lang={lang} usageStats={usageStats} engine={engine} chat={chat} diag={diag} debugState={debugState} />}
           {activeSection === 'diagnostics' && <DiagnosticsSection lang={lang} diag={diag} onRefresh={runDiagnostics} />}
           {activeSection === 'benchmark' && <BenchmarkSection lang={lang} benchResults={benchResults} benchRunning={benchRunning} onRun={runBenchmark} />}
           {activeSection === 'experiments' && <ExperimentsSection lang={lang} expHistory={expHistory} onRefresh={loadExperimentHistory} />}
           {activeSection === 'sandbox' && <SandboxSection lang={lang} health={sandboxHealth} pkgs={pkgs} onRefresh={refreshSandbox} />}
           {activeSection === 'memory' && <MemorySection lang={lang} memEntries={chat.settings.memory.entries} />}
+          {activeSection === 'agents' && <AgentsSection lang={lang} agents={agents} activeAgent={activeAgent} />}
+          {activeSection === 'tools' && <ToolsSection lang={lang} tools={toolsList} skillRegistry={skillRegistry} />}
           {activeSection === 'training' && <TrainingSection lang={lang} flywheelStats={flywheelStats} routerStats={routerStats} skillEdges={skillEdges} skills={skills} selectedProblemType={selectedProblemType} onSelectType={(t: string) => { setSelectedProblemType(t); loadRouterStats(t); }} onRefresh={loadTrainingStats} />}
+          {activeSection === 'desktop' && <DesktopSection lang={lang} />}
           {activeSection === 'logs' && <LogsSection lang={lang} auditLog={auditLog} onRefresh={loadAuditLog} />}
         </div>
       </div>
@@ -168,7 +200,7 @@ export function StandaloneLab({ onClose }: { onClose: () => void }) {
 }
 
 /* ── Dashboard ── */
-function DashboardSection({ lang, usageStats, engine, chat, diag }: any) {
+function DashboardSection({ lang, usageStats, engine, chat, diag, debugState }: any) {
   const passCount = (diag || []).filter((d: any) => d.ok).length;
   const totalCount = (diag || []).length;
   return (
@@ -203,6 +235,14 @@ function DashboardSection({ lang, usageStats, engine, chat, diag }: any) {
           </div>
         ))}
       </div>
+      {debugState && (
+        <div className="rounded-xl bg-muted/20 border border-border/50 p-4 font-mono text-[10px] text-muted-foreground space-y-1">
+          <div className="text-[10px] uppercase tracking-wider text-muted-foreground/60 mb-2">{lang === 'zh-CN' ? '调试状态' : 'Debug State'}</div>
+          <div>version: <span className="text-foreground">{debugState.version}</span> · electron {debugState.electron} · node {debugState.node}</div>
+          <div>platform: <span className="text-foreground">{debugState.platform}/{debugState.arch}</span></div>
+          <div>keyLoaded: <span className={debugState.keyLoaded ? 'text-emerald-500' : 'text-red-400'}>{String(debugState.keyLoaded)}</span> · localModel: <span className={debugState.localModelAvailable ? 'text-emerald-500' : 'text-muted-foreground'}>{String(debugState.localModelAvailable)}</span> · serve: <span className={debugState.serveRunning ? 'text-emerald-500' : 'text-muted-foreground'}>{String(debugState.serveRunning)}</span> · uptime {debugState.uptimeSec}s</div>
+        </div>
+      )}
     </div>
   );
 }
@@ -305,10 +345,18 @@ function ExperimentsSection({ lang, expHistory, onRefresh }: any) {
 function SandboxSection({ lang, health, pkgs, onRefresh }: any) {
   const [pkgInput, setPkgInput] = useState('');
   const [installing, setInstalling] = useState(false);
+  const [code, setCode] = useState('');
+  const [codeOut, setCodeOut] = useState('');
+  const [running, setRunning] = useState(false);
   const installPkg = () => {
     if (!pkgInput.trim()) return; const api = window.electronAPI; if (!api) return;
     setInstalling(true);
     api.sandboxInstallPackage(pkgInput.trim()).then(() => { setInstalling(false); setPkgInput(''); setTimeout(onRefresh, 2000); }).catch(() => setInstalling(false));
+  };
+  const runCode = () => {
+    if (!code.trim()) return; const api = window.electronAPI; if (!api) return;
+    setRunning(true); setCodeOut('');
+    api.sandboxRunCode(code).then((r: any) => { setRunning(false); setCodeOut((r?.stdout || r?.result || r?.error || '') + (r?.stderr ? '\n[stderr] ' + r.stderr : '')); }).catch((e: any) => { setRunning(false); setCodeOut(e.message); });
   };
 
   return (
@@ -345,6 +393,16 @@ function SandboxSection({ lang, health, pkgs, onRefresh }: any) {
           </table>
         </div>
       )}
+
+      {/* ── 沙箱跑代码 ── */}
+      <div>
+        <h4 className="text-sm font-semibold text-foreground mb-2">{lang === 'zh-CN' ? '沙箱代码执行' : 'Run Code in Sandbox'}</h4>
+        <textarea value={code} onChange={e => setCode(e.target.value)} placeholder={lang === 'zh-CN' ? 'print("hello from sandbox")' : 'print("hello from sandbox")'} className="w-full h-24 rounded-lg border border-border bg-muted p-3 text-xs font-mono outline-none focus:ring-2 focus:ring-ring resize-y" />
+        <div className="flex gap-2 mt-2">
+          <Button size="sm" className="h-7 text-[10px]" onClick={runCode} disabled={running}>{running ? (lang === 'zh-CN' ? '运行中…' : 'Running…') : (lang === 'zh-CN' ? '运行' : 'Run')}</Button>
+        </div>
+        {codeOut && <pre className="mt-2 rounded-xl bg-black/40 border border-border/50 p-3 text-[10px] font-mono text-muted-foreground overflow-auto max-h-[200px] whitespace-pre-wrap">{codeOut}</pre>}
+      </div>
     </div>
   );
 }
@@ -373,6 +431,150 @@ function MemorySection({ lang, memEntries }: any) {
       ) : (
         <div className="text-center py-8 text-muted-foreground text-sm">{t(lang,'lab.memEmpty')}</div>
       )}
+    </div>
+  );
+}
+
+/* ── Agents (multi-agent system) ── */
+function AgentsSection({ lang, agents, activeAgent }: any) {
+  const zh = lang === 'zh-CN';
+  return (
+    <div className="space-y-6">
+      <h3 className="text-lg font-bold text-foreground">{zh ? '多代理系统' : 'Agent System'}</h3>
+      <div className="flex items-center gap-3 p-3 rounded-xl border border-primary/20 bg-primary/5">
+        <div className={'w-3 h-3 rounded-full ' + (activeAgent ? 'bg-emerald-500 animate-pulse' : 'bg-muted-foreground/30')} />
+        <div className="flex-1">
+          <span className="text-[10px] text-muted-foreground uppercase tracking-wider">{zh ? '当前活跃' : 'Active'}</span>
+          <span className="text-sm font-semibold text-foreground ml-2">{activeAgent ? activeAgent.name : '—'}</span>
+          {activeAgent && <span className="text-[10px] text-muted-foreground font-mono ml-2">{activeAgent.role}</span>}
+        </div>
+      </div>
+      <div className="grid grid-cols-1 gap-2">
+        {agents.map((a: any, i: number) => (
+          <div key={i} className={'p-4 rounded-xl border ' + (activeAgent && activeAgent.id === a.id ? 'border-primary/50 bg-primary/5' : 'border-border/50 bg-muted/20')}>
+            <div className="flex items-center gap-2">
+              <div className={'w-2 h-2 rounded-full ' + (activeAgent && activeAgent.id === a.id ? 'bg-emerald-500' : 'bg-muted-foreground/30')} />
+              <span className="text-sm font-semibold text-foreground">{a.name}</span>
+              <span className="text-[10px] text-muted-foreground font-mono">{a.id}</span>
+            </div>
+            <p className="text-[11px] text-muted-foreground mt-1">{a.role}</p>
+            <p className="text-[10px] text-muted-foreground mt-1 leading-relaxed">{a.goal}</p>
+            <div className="flex items-center gap-2 mt-2 flex-wrap">
+              {a.handoffs && a.handoffs.length > 0 && <span className="text-[9px] font-mono text-amber-400">handoffs: {a.handoffs.join(', ')}</span>}
+              <span className="text-[9px] font-mono text-blue-400">{a.tools?.length || 0} tools</span>
+              <span className="text-[9px] font-mono text-muted-foreground">T={a.temperature}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+      {agents.length === 0 && <p className="text-sm text-muted-foreground text-center py-8">{zh ? '暂无代理数据' : 'No agents'}</p>}
+    </div>
+  );
+}
+
+/* ── Tools + Skill Registry ── */
+function ToolsSection({ lang, tools, skillRegistry }: any) {
+  const zh = lang === 'zh-CN';
+  const cats = skillRegistry?.categories || {};
+  const skills = skillRegistry?.skills || [];
+  return (
+    <div className="space-y-8">
+      <div>
+        <h3 className="text-lg font-bold text-foreground">{zh ? '工具注册表' : 'Tool Registry'}</h3>
+        <p className="text-xs text-muted-foreground mt-1 mb-3">{tools.length} {zh ? '个工具' : 'tools'}</p>
+        <div className="grid grid-cols-2 gap-2">
+          {tools.map((t: any, i: number) => (
+            <div key={i} className="p-3 rounded-xl bg-muted/20 border border-border/50">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-semibold text-foreground">{t.name}</span>
+                <span className="text-[9px] font-mono text-muted-foreground">{t.id}</span>
+                {t.requires_confirm && <span className="ml-auto text-[9px] font-mono text-amber-400">{zh ? '确认' : 'confirm'}</span>}
+              </div>
+              <p className="text-[10px] text-muted-foreground mt-1">{t.description}</p>
+              <span className="text-[9px] font-mono text-blue-400">{t.category}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div>
+        <h3 className="text-lg font-bold text-foreground">{zh ? '技能注册表（工作流规划）' : 'Skill Registry (workflow)'}</h3>
+        {Object.keys(cats).length > 0 && (
+          <div className="flex gap-2 mt-2 mb-3 flex-wrap">
+            {Object.keys(cats).map((k: string) => (
+              <span key={k} className="px-2 py-0.5 rounded-full text-[9px] font-mono" style={{ color: cats[k].color, background: cats[k].color + '18' }}>{cats[k].icon} {cats[k].label}</span>
+            ))}
+          </div>
+        )}
+        <div className="grid grid-cols-2 gap-2">
+          {skills.map((s: any, i: number) => (
+            <div key={i} className="p-3 rounded-xl bg-muted/20 border border-border/50">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-semibold text-foreground">{s.name}</span>
+                <span className="text-[9px] font-mono text-muted-foreground">{s.id}</span>
+                {s.requiresConfirm && <span className="ml-auto text-[9px] font-mono text-amber-400">{zh ? '确认' : 'confirm'}</span>}
+              </div>
+              <p className="text-[10px] text-muted-foreground mt-1">{s.description}</p>
+              <div className="flex gap-2 mt-1.5 text-[9px] font-mono text-muted-foreground">
+                <span className="text-blue-400">in: {s.inputs.join(', ') || '—'}</span>
+                <span className="text-emerald-400">out: {s.outputs.join(', ') || '—'}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── Desktop (computer-use lite) ── */
+function DesktopSection({ lang }: any) {
+  const [shot, setShot] = useState('');
+  const [windows, setWindows] = useState<any[]>([]);
+  const [info, setInfo] = useState<any>(null);
+  const [clip, setClip] = useState('');
+  const [path, setPath] = useState('');
+  const [fileContent, setFileContent] = useState('');
+  const zh = lang === 'zh-CN';
+  const api = () => (window as any).electronAPI;
+
+  const doScreenshot = async () => { const a = api(); if (!a) return; setShot((await a.desktopScreenshot?.()) || ''); };
+  const doListWindows = async () => { const a = api(); if (!a) return; setWindows((await a.desktopListWindows?.()) || []); };
+  const doSystemInfo = async () => { const a = api(); if (!a) return; setInfo(await a.desktopSystemInfo?.()); };
+  const doClipboard = async () => { const a = api(); if (!a) return; setClip((await a.desktopGetClipboard?.()) || ''); };
+  const doReadFile = async () => { const a = api(); if (!a || !path) return; setFileContent((await a.desktopReadFile?.(path)) || '(空或读取失败)'); };
+  const doOpenApp = async () => { const a = api(); if (!a) return; const p = prompt('应用路径或名称？'); if (p) a.desktopOpenApp?.(p); };
+  const doRun = async () => { const a = api(); if (!a) return; const c = prompt(zh ? '要执行的命令？' : 'Command to run?'); if (c && confirm(zh ? '确认执行该命令？' : 'Confirm running this command?')) { const r = await a.desktopRunCommand?.(c); setClip(typeof r === 'string' ? r : JSON.stringify(r)); } };
+
+  return (
+    <div className="space-y-6">
+      <h3 className="text-lg font-bold text-foreground">{zh ? '桌面助手' : 'Desktop Assistant'}</h3>
+      <p className="text-xs text-muted-foreground -mt-4">{zh ? '让 Polaris 观察并辅助操作你的电脑（危险操作需确认）' : 'Let Polaris observe and assist (dangerous ops require confirm)'}</p>
+      <div className="flex gap-2 flex-wrap">
+        <Button size="sm" className="h-7 text-[10px]" onClick={doScreenshot}>📷 {zh ? '截图' : 'Shot'}</Button>
+        <Button size="sm" className="h-7 text-[10px]" onClick={doListWindows}>🪟 {zh ? '列窗口' : 'Windows'}</Button>
+        <Button size="sm" className="h-7 text-[10px]" onClick={doSystemInfo}>💻 {zh ? '系统' : 'System'}</Button>
+        <Button size="sm" className="h-7 text-[10px]" onClick={doClipboard}>📋 {zh ? '剪贴板' : 'Clipboard'}</Button>
+        <Button size="sm" className="h-7 text-[10px]" onClick={() => { if (confirm(zh ? '打开默认浏览器？' : 'Open browser?')) api()?.desktopOpenBrowser?.('https://bitwool.cn'); }}>🌐 {zh ? '浏览器' : 'Browser'}</Button>
+        <Button size="sm" className="h-7 text-[10px]" onClick={doOpenApp}>🚀 {zh ? '开应用' : 'App'}</Button>
+        <Button size="sm" className="h-7 text-[10px]" onClick={doRun}>⌨️ {zh ? '跑命令' : 'Cmd'}</Button>
+      </div>
+      {shot && <img src={shot} alt="screenshot" className="w-full rounded-xl border border-border" />}
+      {windows.length > 0 && (
+        <div className="space-y-1">
+          {windows.slice(0, 12).map((w: any, i: number) => (
+            <div key={i} className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-muted/20 text-xs font-mono text-muted-foreground">
+              <span className="flex-1 truncate">{typeof w === 'string' ? w : (w.title || w.name || '')}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      {info && <pre className="rounded-xl bg-muted/20 border border-border/50 p-3 text-[10px] font-mono text-muted-foreground overflow-auto max-h-[200px]">{typeof info === 'string' ? info : JSON.stringify(info, null, 2)}</pre>}
+      {clip && <div className="rounded-xl bg-muted/20 border border-border/50 p-3 text-xs font-mono text-muted-foreground max-h-[120px] overflow-auto whitespace-pre-wrap">{clip.slice(0, 2000)}</div>}
+      <div className="flex gap-2">
+        <Input placeholder={zh ? '文件路径（绝对路径）' : 'File path (absolute)'} value={path} onChange={e => setPath(e.target.value)} className="h-8 text-xs flex-1" />
+        <Button size="sm" className="h-8 text-xs" onClick={doReadFile}>{zh ? '读文件' : 'Read'}</Button>
+      </div>
+      {fileContent && <pre className="rounded-xl bg-muted/20 border border-border/50 p-3 text-[10px] font-mono text-muted-foreground overflow-auto max-h-[240px] whitespace-pre-wrap">{fileContent.slice(0, 4000)}</pre>}
     </div>
   );
 }
@@ -461,6 +663,7 @@ function TrainingSection({ lang, flywheelStats, routerStats, skillEdges, skills,
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <span className="font-semibold text-foreground">{L.total}: {total}</span>
             <span>records</span>
+            <button onClick={() => { const api = window.electronAPI; if (api) api.flywheelExport?.('jsonl').then((r: any) => { const blob = new Blob([JSON.stringify(r, null, 2)], { type: 'application/json' }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'flywheel-export.json'; a.click(); }).catch(() => {}); }} className="ml-auto text-[10px] font-mono text-blue-400 hover:text-blue-300 transition-colors">{L.export || '导出'}</button>
           </div>
         </>
       ) : (
@@ -545,6 +748,113 @@ function TrainingSection({ lang, flywheelStats, routerStats, skillEdges, skills,
         <p className="text-[10px] text-muted-foreground -mt-1 mb-3">{L.edgesDesc}</p>
         <SkillGraphView edges={skillEdges} skills={skills} emptyText={L.noData} />
       </div>
+
+      {/* ── 技能图检索 + 训练操作台 ── */}
+      <SkillSearch lang={lang} />
+      <TrainingOps lang={lang} />
+    </div>
+  );
+}
+
+/* ── Skill graph similarity search (BARRIER 5) ── */
+function SkillSearch({ lang }: any) {
+  const [q, setQ] = useState('');
+  const [results, setResults] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const zh = lang === 'zh-CN';
+  const doSearch = async () => {
+    if (!q.trim()) return;
+    setLoading(true);
+    const api = window.electronAPI; if (!api) { setLoading(false); return; }
+    try { setResults((await api.skillgraphSimilar?.(q.trim(), 5)) || []); } catch { setResults([]); }
+    setLoading(false);
+  };
+  return (
+    <div>
+      <h4 className="text-sm font-semibold text-foreground mb-2">{zh ? '相似工作流检索' : 'Similar Workflow Search'}</h4>
+      <div className="flex gap-2 mb-3">
+        <Input placeholder={zh ? '描述目标，检索可复用的工作流…' : 'Describe a goal to find reusable workflows…'} value={q} onChange={e => setQ(e.target.value)} className="h-8 text-xs flex-1" />
+        <Button size="sm" className="h-8 text-xs" onClick={doSearch} disabled={loading}>{loading ? '…' : (zh ? '检索' : 'Search')}</Button>
+      </div>
+      {results.length > 0 && (
+        <div className="space-y-1.5">
+          {results.map((r: any, i: number) => (
+            <div key={i} className="px-3 py-2 rounded-lg bg-muted/20 border border-border/50">
+              <div className="text-xs text-foreground">{r.goal}</div>
+              <div className="text-[10px] font-mono text-muted-foreground mt-1">
+                <span className="text-amber-400">{r.similarity}</span> · {(r.skillChain || []).map((s: any) => s.skill).join(' → ')}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── Training console (触发内部训练脚本) ── */
+function TrainingOps({ lang }: any) {
+  const [scripts, setScripts] = useState<any[]>([]);
+  const [logs, setLogs] = useState<{ id: string; type: string; line: string }[]>([]);
+  const [running, setRunning] = useState<string | null>(null);
+  const zh = lang === 'zh-CN';
+
+  useEffect(() => {
+    const api = window.electronAPI; if (!api) return;
+    api.trainingList?.().then((s: any) => setScripts(s || [])).catch(() => {});
+    api.onTrainingLog?.((d: any) => {
+      setLogs(p => [...p.slice(-300), { id: d.id, type: d.type, line: d.line }]);
+      if (d.type === 'exit') setRunning(null);
+    });
+  }, []);
+
+  const run = async (id: string) => {
+    const api = window.electronAPI; if (!api) return;
+    setRunning(id); setLogs([]);
+    const r = await api.trainingRun?.(id);
+    if (r && !r.success) { setRunning(null); setLogs([{ id, type: 'err', line: r.error }]); }
+  };
+
+  const labels: any = {
+    'zh-CN': { title:'训练操作台', desc:'触发数据生成 / 蒸馏 / 训练 / 分片上传（内部脚本，长任务）', run:'运行', running:'运行中…', unavailable:'脚本不存在（仅 dev 模式）', log:'实时日志', clear:'清空' },
+    'en': { title:'Training Console', desc:'Trigger data generation / distillation / training / upload (internal scripts)', run:'Run', running:'Running…', unavailable:'Script missing (dev mode only)', log:'Logs', clear:'Clear' },
+  };
+  const L = labels[lang] || labels['zh-CN'];
+
+  return (
+    <div>
+      <h4 className="text-sm font-semibold text-foreground mb-2">{L.title}</h4>
+      <p className="text-[10px] text-muted-foreground -mt-1 mb-3">{L.desc}</p>
+      <div className="space-y-1.5 mb-3">
+        {scripts.map((s: any, i: number) => (
+          <div key={i} className="flex items-center gap-3 px-3 py-2 rounded-lg bg-muted/20 border border-border/50">
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-mono font-semibold text-foreground">{s.script}</span>
+                <span className="text-[9px] font-mono text-muted-foreground">{s.kind}</span>
+                {!s.available && <span className="text-[9px] font-mono text-red-400">{L.unavailable}</span>}
+              </div>
+              <p className="text-[10px] text-muted-foreground mt-0.5">{s.desc}</p>
+            </div>
+            <Button size="sm" className="h-7 text-[10px]" disabled={!s.available || running === s.id} onClick={() => run(s.id)}>
+              {running === s.id ? L.running : L.run}
+            </Button>
+          </div>
+        ))}
+      </div>
+      {logs.length > 0 && (
+        <div>
+          <div className="flex items-center justify-between mb-1">
+            <h5 className="text-[10px] font-semibold text-muted-foreground">{L.log}</h5>
+            <button onClick={() => setLogs([])} className="text-[9px] font-mono text-muted-foreground hover:text-foreground">{L.clear}</button>
+          </div>
+          <div className="rounded-xl bg-black/40 border border-border/50 p-3 font-mono text-[10px] text-muted-foreground space-y-0.5 max-h-[200px] overflow-y-auto whitespace-pre-wrap">
+            {logs.map((l, i) => (
+              <div key={i} className={l.type === 'err' ? 'text-red-400' : l.type === 'exit' ? 'text-amber-400' : 'text-muted-foreground'}>{l.line}</div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

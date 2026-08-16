@@ -9,8 +9,8 @@
     "dev": "concurrently \"webpack serve --mode development --config config/webpack.config.js\" \"wait-on http://localhost:3000 && electron .\"",
     "decrypt:verify": "node scripts/protect_verify.js decrypt",
     "encrypt:verify": "node scripts/protect_verify.js encrypt",
-    "build:renderer": "npm run decrypt:verify && npx cross-env NODE_ENV=production webpack --mode production --config config/webpack.config.js",
-    "build": "npm run decrypt:verify && npm run build:renderer && electron-builder build --publish=never",
+    "build:renderer": "npx cross-env NODE_ENV=production webpack --mode production --config config/webpack.config.js",
+    "build": "npm run build:renderer && electron-builder build --publish=never",
     "postinstall": "electron-builder install-app-deps"
   },
   "build": {
@@ -22,6 +22,7 @@
     },
     "files": [
       "electron/**/*",
+      "internal/**/*",
       "build/**/*",
       "icon.png",
       "package.json"

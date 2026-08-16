@@ -5,6 +5,7 @@ import { loginUser, logoutUser } from '../store/authSlice';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { t } from '../i18n';
+import MCPSettings from './MCPSettings';
 
 /* ── i18n labels ── */
 const LANG_LABELS: Record<Language, string> = {
@@ -67,6 +68,12 @@ const SettingsPanel: React.FC = () => {
   const s = chat.settings;
   const auth = useAppSelector(st => st.auth);
   const [tab, setTab] = useState('general');
+  const [version, setVersion] = useState('4.0');
+
+  useEffect(() => {
+    const api = (window as any).electronAPI;
+    if (api?.getVersion) api.getVersion().then((v: any) => { if (v) setVersion(v); }).catch(() => {});
+  }, []);
 
   const exportData = () => {
     const activeSession = chat.sessions.find(x => x.id === chat.activeSessionId);
@@ -153,6 +160,9 @@ const SettingsPanel: React.FC = () => {
                 <Row label={t(s.language,'settings.general.showGuide')} hint={t(s.language,'settings.general.showGuideHint')}>
                   <Button variant="outline" size="sm" className="h-7 text-[10px]" onClick={() => {localStorage.removeItem('polaris_onboarding_done');try{localStorage.setItem('ps_set',JSON.stringify(s));}catch(e){}window.location.reload()}}>{t(s.language,'settings.general.showGuideBtn')}</Button>
                 </Row>
+                <Row label="系统通知" hint="发送一条测试通知">
+                  <Button variant="outline" size="sm" className="h-7 text-[10px]" onClick={() => { const api = (window as any).electronAPI; if (api?.notify) api.notify({ title: 'Polaris Solver', body: '这是一条测试通知 ✓' }); }}>测试通知</Button>
+                </Row>
                 <div className="pt-4 border-t border-border mt-4">
                   <h4 className="text-sm font-semibold text-foreground mb-3">Pola</h4>
                   <Row label={t(s.language,'settings.general.mascotShow')} hint={t(s.language,'settings.general.mascotShowHint')}>
@@ -233,6 +243,10 @@ const SettingsPanel: React.FC = () => {
                 ))}
                 <div className="flex items-center justify-center py-5 rounded-xl border-2 border-dashed border-border/50 cursor-pointer hover:border-primary/30 hover:bg-primary/5 transition-all">
                   <span className="text-xs text-muted-foreground">{t(s.language,'settings.plugins.empty')}</span>
+                </div>
+                <div className="pt-4 border-t border-border">
+                  <h4 className="text-sm font-semibold text-foreground mb-3">MCP 服务器</h4>
+                  <MCPSettings />
                 </div>
               </div>
             )}
@@ -321,7 +335,7 @@ const SettingsPanel: React.FC = () => {
                 <h3 className="text-base font-semibold text-foreground pb-3 border-b border-border">{t(s.language,'settings.about.title')}</h3>
                 <div className="text-center py-4 space-y-3">
                   <div className="text-3xl font-bold font-mono text-primary">POLARIS</div>
-                  <div className="text-sm text-muted-foreground">{t(s.language,'settings.about.subtitle')} · v4.0</div>
+                  <div className="text-sm text-muted-foreground">{t(s.language,'settings.about.subtitle')} · v{version}</div>
                   <div className="flex flex-wrap gap-2 justify-center pt-2">
                     <span className="rounded-full bg-muted px-3 py-1 text-[11px] text-muted-foreground font-mono">Electron 31</span>
                     <span className="rounded-full bg-muted px-3 py-1 text-[11px] text-muted-foreground font-mono">React 18</span>

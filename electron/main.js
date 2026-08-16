@@ -150,9 +150,10 @@ ipcMain.handle('polaris:queryStream', async (event, { text, strategy, systemProm
   // ★ 实时推送工具执行日志 + 工作流步骤到右侧栏（TaskBoard）
   var onExec = function(evt) { if (win && !win.isDestroyed()) win.webContents.send('polaris:exec-log', evt); };
   var onTodo = function(evt) { if (win && !win.isDestroyed()) win.webContents.send('polaris:todo-update', evt); };
+  var onAgent = function(evt) { if (win && !win.isDestroyed()) win.webContents.send('polaris:agent-switch', evt); };
   try {
     _mainGhToken = (apiKeys && apiKeys.github) || '';
-    var r = await executeQuery(text, strategy, systemPrompt, images, oc, { deepseek:key, language:language || 'zh-CN', github:(apiKeys && apiKeys.github) || '', onGitOp:onGitOp, onExec:onExec, onTodo:onTodo });
+    var r = await executeQuery(text, strategy, systemPrompt, images, oc, { deepseek:key, language:language || 'zh-CN', github:(apiKeys && apiKeys.github) || '', onGitOp:onGitOp, onExec:onExec, onTodo:onTodo, onAgent:onAgent });
     if (win && !win.isDestroyed()) win.webContents.send('polaris:stream-end', r);
     return r;
   } catch (e) {
@@ -420,6 +421,7 @@ ipcMain.handle('open-external', (_e, url) => { shell.openExternal(url); return t
 ipcMain.handle('window:minimize', function() { if (win) win.minimize(); });
 ipcMain.handle('window:maximize', function() { if (win) { if (win.isMaximized()) win.restore(); else win.maximize(); } });
 ipcMain.handle('window:close', function() { if (win) win.close(); });
+ipcMain.handle('get-version', () => { try { return app.getVersion(); } catch { return '1.0.0'; } });
 
 // IPC: Desktop
 ipcMain.handle('desktop:screenshot', async () => desktop.takeScreenshot());
@@ -542,6 +544,22 @@ ipcMain.handle('security:vault-status', () => {
   };
 });
 
+// ── Debug state（诊断面板汇总）──
+ipcMain.handle('debug:state', () => {
+  var mr = require('./services/model_router');
+  return {
+    version: (function() { try { return app.getVersion(); } catch { return '1.0.0'; } })(),
+    electron: process.versions.electron || '',
+    node: process.versions.node || '',
+    platform: process.platform,
+    arch: process.arch,
+    keyLoaded: !!getKey(),
+    localModelAvailable: (typeof mr.isLocalModelAvailable === 'function') ? mr.isLocalModelAvailable() : false,
+    serveRunning: polarisServeProc !== null,
+    uptimeSec: Math.round(process.uptime()),
+  };
+});
+
 // ── Skills registry (技能注册表) ──
 ipcMain.handle('skills:registry', () => {
   var { SKILLS } = require('./services/skills');
@@ -549,6 +567,63 @@ ipcMain.handle('skills:registry', () => {
     var s = SKILLS[id];
     return { id: id, name: s.name, description: s.description, tools: s.tools || [], temperature: s.temperature, maxTokens: s.maxTokens };
   });
+});
+
+// ── 真·技能注册表（skill_registry.js，工作流规划用）──
+ipcMain.handle('skillregistry:list', () => {
+  var { listSkills, CATEGORIES } = require('./services/skill_registry');
+  return { skills: listSkills(), categories: CATEGORIES };
+});
+
+// ── 结果分析（实验结论 / 收敛分析）──
+ipcMain.handle('result:analyze', async (_e, { text, type }) => {
+  var { analyzeResults, analyzeConvergence } = require('./services/result_analyzer');
+  var key = getKey();
+  try {
+    if (type === 'convergence') return { result: await analyzeConvergence(text, key) };
+    return { result: await analyzeResults(text, key) };
+  } catch (e) { return { error: e.message }; }
+});
+
+// ── 训练管道（内部脚本触发 + 实时日志）──
+const TRAINING_DEFS = {
+  generate:   { script: 'generate_training_data.js', kind: 'node',   args: '200 --offline', desc: '随机生成优化问题 + DPO对 + 验证标签（零API成本）' },
+  distill:    { script: 'distill_dataset.py',        kind: 'python', args: '',              desc: 'DeepSeek 蒸馏推理链（需 API key）' },
+  train_cpu:  { script: 'train_cpu.py',              kind: 'python', args: '',              desc: 'LoRA SFT 训练（CPU 可跑，约4小时）' },
+  train_gpu:  { script: 'train_polaris.py',          kind: 'python', args: '',              desc: 'unsloth 两阶段 SFT→DPO（GPU）' },
+  upload:     { script: 'split_upload.py',           kind: 'python', args: '',              desc: '50MB 分片上传 Supabase Storage' },
+};
+const trainingProcs = new Map();
+
+ipcMain.handle('training:list', () => {
+  var fs = require('fs'); var path = require('path');
+  var base = path.join(ROOT, 'internal', 'scripts');
+  return Object.keys(TRAINING_DEFS).map(function(id) {
+    var d = TRAINING_DEFS[id];
+    return { id: id, script: d.script, kind: d.kind, args: d.args, desc: d.desc, available: fs.existsSync(path.join(base, d.script)) };
+  });
+});
+
+ipcMain.handle('training:run', async (_e, { id }) => {
+  var fs = require('fs'); var path = require('path');
+  var d = TRAINING_DEFS[id];
+  if (!d) return { success: false, error: 'Unknown training script' };
+  var base = path.join(ROOT, 'internal', 'scripts');
+  var scriptPath = path.join(base, d.script);
+  if (!fs.existsSync(scriptPath)) return { success: false, error: 'Script not found: ' + d.script };
+  if (trainingProcs.has(id)) return { success: false, error: 'Already running' };
+
+  var cmd = d.kind === 'node' ? 'node' : 'python';
+  var argArr = [scriptPath].concat((d.args || '').split(/\s+/).filter(Boolean));
+  var child = spawn(cmd, argArr, { cwd: base, stdio: 'pipe', windowsHide: true });
+  trainingProcs.set(id, child);
+  var send = function(evt) { if (win && !win.isDestroyed()) win.webContents.send('training:log', Object.assign({ id: id }, evt)); };
+  send({ type: 'start', line: 'Started ' + d.script + ' ' + (d.args || '') });
+  child.stdout.on('data', function(b) { send({ type: 'out', line: b.toString() }); });
+  child.stderr.on('data', function(b) { send({ type: 'err', line: b.toString() }); });
+  child.on('exit', function(code) { trainingProcs.delete(id); send({ type: 'exit', line: 'Exited with code ' + code, code: code }); });
+  child.on('error', function(e) { trainingProcs.delete(id); send({ type: 'err', line: e.message }); });
+  return { success: true };
 });
 
 // IPC: System Monitor

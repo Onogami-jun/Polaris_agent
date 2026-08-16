@@ -16,12 +16,8 @@ npm-debug.log*
 .venv*/
 unsloth_compiled_cache/
 
-# ★ CLOSED-SOURCE PROTECTION ★
-# internal/ 包含全部独家核心技术 + 训练管线 + 测试数据
-# 公开仓库使用 electron/services/ 代理桩（运行时自动检测 internal/）
-# 有 internal/ → 全功能开发版
-# 无 internal/ → 桩降级商用版
-internal/
+# ★ 纯密钥文件不提交（代码全部提交，单一版本，不再区分商用/开发版）★
+.polaris_key
 
 # ★ MODEL FILES — 大文件不上传仓库 ★
 polaris-merged/

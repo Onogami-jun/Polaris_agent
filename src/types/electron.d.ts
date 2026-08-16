@@ -48,6 +48,12 @@ interface PolarisAPI {
   skillgraphEdges(limit: number): Promise<any[]>;
   skillgraphSimilar(goalText: string, limit: number): Promise<any[]>;
   skillsRegistry(): Promise<any[]>;
+  skillRegistryList(): Promise<{ skills: any[]; categories: Record<string, any> }>;
+  resultAnalyze(p: { text: string; type?: string }): Promise<any>;
+  trainingList(): Promise<any[]>;
+  trainingRun(id: string): Promise<any>;
+  onTrainingLog(cb: (data: any) => void): void;
+  onAgentSwitch(cb: (data: any) => void): void;
   securityAuditLog(): Promise<any[]>;
   securityVaultStatus(): Promise<any>;
   polarisModelList(): Promise<{ models: { name: string; location: string; size: number }[] }>;

@@ -416,6 +416,8 @@ async function runAgentLoop(userMessage, apiKey, onExec, onTodo, onStreamChunk, 
   // Start with the agent that best matches the skill
   var currentAgentId = mapSkillToAgent(skillName);
   var currentAgent = getAgentById(currentAgentId);
+  var onAgent = (strategyConfig && strategyConfig.onAgent) || null;
+  if (onAgent) onAgent({ id: currentAgentId, name: currentAgent.name, role: currentAgent.role });
   var agentPrompt = buildAgentPrompt(lang,currentAgentId, effectivePrompt, envNote);
   var tools = buildToolDeclarations([...new Set([...activeSkill.tools, ...currentAgent.tools])]); // union of skill+agent tools
   var agentTemp = currentAgent.temperature || activeSkill.temperature || temp;
@@ -460,6 +462,7 @@ async function runAgentLoop(userMessage, apiKey, onExec, onTodo, onStreamChunk, 
           if (nextAgent && nextAgent !== currentAgentId) {
             logger.info('Handoff triggered', { from: currentAgentId, to: nextAgent });
             currentAgentId = nextAgent; currentAgent = getAgentById(currentAgentId);
+            if (onAgent) onAgent({ id: currentAgentId, name: currentAgent.name, role: currentAgent.role });
             agentPrompt = buildAgentPrompt(lang,currentAgentId, effectivePrompt, envNote);
             agentTemp = currentAgent.temperature || activeSkill.temperature || temp;
             tools = buildToolDeclarations([...new Set([...activeSkill.tools, ...currentAgent.tools])]);
@@ -539,6 +542,7 @@ async function runAgentLoop(userMessage, apiKey, onExec, onTodo, onStreamChunk, 
     if (nextAgent && nextAgent !== currentAgentId) {
       logger.info('Handoff after tools', { from: currentAgentId, to: nextAgent });
       currentAgentId = nextAgent; currentAgent = getAgentById(currentAgentId);
+      if (onAgent) onAgent({ id: currentAgentId, name: currentAgent.name, role: currentAgent.role });
       agentPrompt = buildAgentPrompt(lang,currentAgentId, effectivePrompt, envNote);
       agentTemp = currentAgent.temperature || activeSkill.temperature || temp;
       tools = buildToolDeclarations([...new Set([...activeSkill.tools, ...currentAgent.tools])]);
@@ -746,6 +750,7 @@ async function executeQuery(text, strategy, systemPrompt, images, onStreamChunk,
     stratCfg.problemType = problemType;
     stratCfg.intent = routingDecision.intent;
     stratCfg.localOk = routingDecision.local_ok;
+    stratCfg.onAgent = apiKeys.onAgent || null;
     if (onExec) onExec({ tool: 'model_router', status: 'running', detail: 'Intent: ' + routingDecision.intent + ' | type: ' + problemType + ' | local_ok: ' + routingDecision.local_ok + ' → ' + routed.id + ' (score ' + routed.score + ')' });
 
     // ── ★ Workflow planning: detect multi-step goals ──
