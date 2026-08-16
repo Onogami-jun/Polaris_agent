@@ -466,7 +466,35 @@ ipcMain.handle('desktop:runCommand', (_e, c) => {
   if (!rl.allowed) return { success: false, error: '操作过于频繁' };
   return desktop.runCommand(c);
 });
-ipcMain.handle('desktop:agentStep', async (_e, { goal, screenshot, history }) => { const sys = 'Goal: ' + goal + '. Reply JSON: {"action":"open_browser","url":"..."}'; try { const r = await executeQuery(goal, 'best_quality', sys); const cnt = r.responses?.[0]?.content || ''; const m = cnt.match(/\{[\s\S]*"action"[\s\S]*\}/); return { action: m ? JSON.parse(m[0]) : { action: 'done', summary: 'no action' }, raw: cnt }; } catch (e) { return { action: { action: 'done', summary: 'error' }, raw: '' }; } });
+ipcMain.handle('desktop:agentStep', async (_e, { goal, history }) => {
+  var key = getKey();
+  if (!key) return { action: { action: 'done', summary: '未登录/无密钥' }, raw: '' };
+  var hist = (history || []).slice(-8).map(function(h) { return (h.action || '') + ': ' + (h.result || ''); }).join('\n');
+  var sys = '你是 Windows 桌面自动化助手。根据用户目标和已完成的历史动作，决定"下一步"单个动作。\n' +
+    '只输出一个 JSON 对象（不要其他文字、不要 markdown 代码块），action 字段必须是以下之一：\n' +
+    'open_browser(url) / open_app(app) / open_explorer(dir) / run_command(command) / type(text) / hotkey(combo) / done(summary)\n' +
+    '示例：{"action":"open_browser","url":"https://github.com"} 或 {"action":"done","summary":"已完成"}\n' +
+    '危险命令（删除/格式化/关机/杀进程）绝不要输出。如果任务已达成或无法继续，输出 done。';
+  var user = '目标：' + goal + '\n\n已完成历史：\n' + (hist || '(无)') + '\n\n下一步动作 JSON：';
+
+  var content = await new Promise(function(resolve) {
+    var https = require('https');
+    var body = JSON.stringify({ model: 'deepseek-v4-flash', messages: [{ role: 'system', content: sys }, { role: 'user', content: user }], max_tokens: 200, temperature: 0 });
+    var req = https.request({ hostname: 'api.deepseek.com', path: '/chat/completions', method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key, 'Content-Length': Buffer.byteLength(body) }, timeout: 20000 }, function(resp) {
+      var d = ''; resp.on('data', function(c) { d += c.toString(); });
+      resp.on('end', function() { try { resolve((JSON.parse(d).choices?.[0]?.message?.content) || ''); } catch { resolve(''); } });
+    });
+    req.on('error', function() { resolve(''); });
+    req.on('timeout', function() { req.destroy(); resolve(''); });
+    req.write(body); req.end();
+  });
+
+  var m = content.match(/\{[\s\S]*\}/);
+  var action = null;
+  if (m) { try { action = JSON.parse(m[0]); } catch {} }
+  if (!action || !action.action) action = { action: 'done', summary: 'no action' };
+  return { action: action, raw: content };
+});
 
 // IPC: MCP
 ipcMain.handle('mcp:start', (_e, { id, command, args, env }) => { if (mcpProcesses.has(id)) return { success: false, message: 'Running' }; try { const p = spawn(command, args, { env: { ...process.env, ...env }, stdio: 'pipe' }); mcpProcesses.set(id, p); p.on('exit', () => mcpProcesses.delete(id)); return { success: true, pid: p.pid }; } catch (e) { return { success: false, message: e.message }; } });

@@ -353,7 +353,7 @@ const App:React.FC=()=>{
   const[execLog,setExecLog]=useState<{id:string;time:string;tool:string;status:'running'|'done'|'error';detail:string}[]>([]);
   const[todoSteps,setTodoSteps]=useState<{id:string;status:'pending'|'running'|'done';label:string}[]>([]);
   const[interventions,setInterventions]=useState<any[]>([]);
-  const[plan,setPlan]=useState<any>(null);const[planProg,setPlanProg]=useState<any>(null);const[planId,setPlanId]=useState('');const[labOpen,setLabOpen]=useState(false);const[gitOpen,setGitOpen]=useState(false);const[termOpen,setTermOpen]=useState(false);
+  const[plan,setPlan]=useState<any>(null);const[planProg,setPlanProg]=useState<any>(null);const[planId,setPlanId]=useState('');const[labOpen,setLabOpen]=useState(false);const[gitOpen,setGitOpen]=useState(false);const[termOpen,setTermOpen]=useState(false);const[activeAgent,setActiveAgent]=useState<any>(null);
   const closeLab=useCallback(()=>setLabOpen(false),[]);
 
   // Panel widths (px) & visibility
@@ -444,7 +444,7 @@ const App:React.FC=()=>{
     else{parts.push('[File: '+f.name+' — binary/could not parse]');}}catch(e){parts.push('[File: '+f.name+']');}}
     var prefix=parts.join('\n\n')+'\n';
     var setter=Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype,'value')?.set;if(setter){setter.call(ta,prefix);ta.dispatchEvent(new Event('input',{bubbles:true}))}else{ta.value=prefix;ta.dispatchEvent(new Event('input',{bubbles:true}))}ta.focus();setInp(prefix);setDragFiles([])}
-  useEffect(()=>{const api=window.electronAPI;if(!api)return;api.monitorStart();api.onIntervention((card:any)=>{card.ts=Date.now();setInterventions(p=>[...p.slice(-4),card])});api.onPlanProgress((data:any)=>setPlanProg(data));api.onExecLog((data:any)=>{addExecLog(data.tool,data.status,data.detail||'')});api.onTodoUpdate((data:any)=>{if(data.steps)setTodoSteps(data.steps)});api.onStreamError((ed:any)=>{showToast('Stream Error: '+(ed?.message||'未知'),'error');dispatchRef.current(setStreaming(false));setThk('')});
+  useEffect(()=>{const api=window.electronAPI;if(!api)return;api.monitorStart();api.onIntervention((card:any)=>{card.ts=Date.now();setInterventions(p=>[...p.slice(-4),card])});api.onPlanProgress((data:any)=>setPlanProg(data));api.onExecLog((data:any)=>{addExecLog(data.tool,data.status,data.detail||'')});api.onTodoUpdate((data:any)=>{if(data.steps)setTodoSteps(data.steps)});api.onAgentSwitch((a:any)=>{setActiveAgent(a)});api.onStreamError((ed:any)=>{showToast('Stream Error: '+(ed?.message||'未知'),'error');dispatchRef.current(setStreaming(false));setThk('')});
   api.onToolConfirm((data:any)=>{setPermReq(data)});api.onToolConfirmDismiss((data:any)=>{setPermReq(function(p:any){return p&&p.id===data.id?null:p})});
   // Health check
   api.healthCheck().then((r:any)=>{if(Array.isArray(r)){const s={python:false,polaris:false,highs:false,deepseek:false};r.forEach((x:any)=>{if(x.service==='Python')s.python=x.ok;if(x.service==='Polaris Engine')s.polaris=x.ok;if(x.service==='HiGHS Solver')s.highs=x.ok;if(x.service==='DeepSeek API')s.deepseek=x.ok;});d(setEngineStatus(s))}}).catch(()=>{});
@@ -571,7 +571,7 @@ const App:React.FC=()=>{
     rightPanel = <div key="right" style={{display:'flex',flexShrink:0}}>
       <div onMouseDown={resizeRight} style={{width:4,cursor:'ew-resize',flexShrink:0}}/>
       <div style={{width:rightW}} className="shrink-0 bg-card border-l border-border h-full overflow-hidden">
-        <TaskBoard execLog={execLog} todoSteps={todoSteps} plan={plan} planProg={planProg}/>
+        <TaskBoard execLog={execLog} todoSteps={todoSteps} plan={plan} planProg={planProg} activeAgent={activeAgent}/>
         {plan && plan.steps && (
           <div className="flex gap-2 px-3 py-2 border-t border-border bg-muted/10 shrink-0">
             <button className="flex-1 py-1.5 rounded-md bg-primary/10 hover:bg-primary/20 text-[10px] text-primary font-mono font-medium transition-colors" onClick={confirmPlan}>Run</button>

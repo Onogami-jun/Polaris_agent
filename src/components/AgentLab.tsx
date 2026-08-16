@@ -310,12 +310,30 @@ function BenchmarkSection({ lang, benchResults, benchRunning, onRun }: any) {
 
 /* ── Experiments ── */
 function ExperimentsSection({ lang, expHistory, onRefresh }: any) {
+  const [analysis, setAnalysis] = useState('');
+  const [analyzing, setAnalyzing] = useState(false);
+  const zh = lang === 'zh-CN';
+  const doAnalyze = async () => {
+    if (expHistory.length === 0) return;
+    setAnalyzing(true); setAnalysis('');
+    const api = window.electronAPI; if (!api) { setAnalyzing(false); return; }
+    const text = expHistory.map((e: any, i: number) => (zh ? '实验' : 'Exp') + (i + 1) + ': ' + (e.problem || '') + ' size=' + (e.sizes || '') + ' solvers=' + (e.solvers || '') + '\n' + (e.summary || '')).join('\n\n');
+    try { const r = await api.resultAnalyze?.({ text, type: 'results' }); setAnalysis(r?.result || r?.error || (zh ? '分析失败' : 'Failed')); }
+    catch (e: any) { setAnalysis(e.message); }
+    setAnalyzing(false);
+  };
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h3 className="text-lg font-bold text-foreground">{t(lang,'lab.expTitle')}</h3>
-        <Button size="sm" className="h-7 text-[10px]" onClick={onRefresh}>{t(lang,'lab.expRefresh')}</Button>
+        <div className="flex gap-2">
+          <Button size="sm" className="h-7 text-[10px]" onClick={doAnalyze} disabled={analyzing || expHistory.length === 0}>{analyzing ? (zh ? '分析中…' : 'Analyzing…') : (zh ? 'AI 分析' : 'AI Analyze')}</Button>
+          <Button size="sm" className="h-7 text-[10px]" onClick={onRefresh}>{t(lang,'lab.expRefresh')}</Button>
+        </div>
       </div>
+      {analysis && (
+        <div className="rounded-xl bg-primary/5 border border-primary/20 p-4 text-xs text-foreground whitespace-pre-wrap leading-relaxed">{analysis}</div>
+      )}
       {expHistory.length > 0 ? (
         <div className="space-y-2">
           {expHistory.map((e: any, i: number) => (
@@ -355,8 +373,19 @@ function SandboxSection({ lang, health, pkgs, onRefresh }: any) {
   };
   const runCode = () => {
     if (!code.trim()) return; const api = window.electronAPI; if (!api) return;
-    setRunning(true); setCodeOut('');
-    api.sandboxRunCode(code).then((r: any) => { setRunning(false); setCodeOut((r?.stdout || r?.result || r?.error || '') + (r?.stderr ? '\n[stderr] ' + r.stderr : '')); }).catch((e: any) => { setRunning(false); setCodeOut(e.message); });
+    const doRun = () => {
+      setRunning(true); setCodeOut('');
+      api.sandboxRunCode(code).then((r: any) => { setRunning(false); setCodeOut((r?.stdout || r?.result || r?.error || '') + (r?.stderr ? '\n[stderr] ' + r.stderr : '')); }).catch((e: any) => { setRunning(false); setCodeOut(e.message); });
+    };
+    // 安全检查：危险操作需确认
+    if (api.sandboxCheckSafety) {
+      api.sandboxCheckSafety(code).then((risks: any[]) => {
+        if (risks && risks.length > 0) {
+          const labels = risks.map((r: any) => r.label).join('、');
+          if (confirm((lang === 'zh-CN' ? '代码含风险操作（' : 'Code contains risky ops (') + labels + ')，' + (lang === 'zh-CN' ? '确认执行？' : 'confirm?'))) doRun();
+        } else doRun();
+      }).catch(() => doRun());
+    } else doRun();
   };
 
   return (
@@ -534,6 +563,9 @@ function DesktopSection({ lang }: any) {
   const [clip, setClip] = useState('');
   const [path, setPath] = useState('');
   const [fileContent, setFileContent] = useState('');
+  const [taskGoal, setTaskGoal] = useState('');
+  const [taskRunning, setTaskRunning] = useState(false);
+  const [taskLog, setTaskLog] = useState<any[]>([]);
   const zh = lang === 'zh-CN';
   const api = () => (window as any).electronAPI;
 
@@ -544,6 +576,33 @@ function DesktopSection({ lang }: any) {
   const doReadFile = async () => { const a = api(); if (!a || !path) return; setFileContent((await a.desktopReadFile?.(path)) || '(空或读取失败)'); };
   const doOpenApp = async () => { const a = api(); if (!a) return; const p = prompt('应用路径或名称？'); if (p) a.desktopOpenApp?.(p); };
   const doRun = async () => { const a = api(); if (!a) return; const c = prompt(zh ? '要执行的命令？' : 'Command to run?'); if (c && confirm(zh ? '确认执行该命令？' : 'Confirm running this command?')) { const r = await a.desktopRunCommand?.(c); setClip(typeof r === 'string' ? r : JSON.stringify(r)); } };
+
+  const runTask = async () => {
+    if (!taskGoal.trim() || taskRunning) return;
+    const a = api(); if (!a) return;
+    setTaskRunning(true); setTaskLog([]);
+    const history: any[] = [];
+    for (let i = 0; i < 8; i++) {
+      try {
+        const r = await a.desktopAgentStep?.({ goal: taskGoal.trim(), history });
+        const action = r?.action || { action: 'done', summary: 'no action' };
+        if (action.action === 'done') { setTaskLog(p => [...p, { action: 'done', result: action.summary || '完成' }]); break; }
+        let result = 'OK';
+        switch (action.action) {
+          case 'open_browser': if (action.url) { await a.desktopOpenBrowser?.(action.url); result = '打开浏览器 ' + action.url; } else result = '缺少 url'; break;
+          case 'open_app': if (action.app) { await a.desktopOpenApp?.(action.app); result = '打开应用 ' + action.app; } else result = '缺少 app'; break;
+          case 'open_explorer': if (action.dir) { await a.desktopOpenExplorer?.(action.dir); result = '打开文件夹 ' + action.dir; } else result = '缺少 dir'; break;
+          case 'run_command': if (action.command && confirm(zh ? '执行命令：' : 'Run: ' + action.command + '?')) { await a.desktopRunCommand?.(action.command); result = '执行 ' + action.command; } else result = '命令已取消'; break;
+          case 'type': if (action.text) { await a.desktopTypeText?.(action.text); result = '输入 ' + action.text; } else result = '缺少 text'; break;
+          case 'hotkey': if (action.combo) { await a.desktopHotkey?.(action.combo); result = '快捷键 ' + action.combo; } else result = '缺少 combo'; break;
+          default: result = '未知动作: ' + action.action; break;
+        }
+        history.push({ action: action.action, result });
+        setTaskLog(p => [...p, { action: action.action, result }]);
+      } catch (e: any) { setTaskLog(p => [...p, { action: 'error', result: e.message }]); break; }
+    }
+    setTaskRunning(false);
+  };
 
   return (
     <div className="space-y-6">
@@ -575,6 +634,23 @@ function DesktopSection({ lang }: any) {
         <Button size="sm" className="h-8 text-xs" onClick={doReadFile}>{zh ? '读文件' : 'Read'}</Button>
       </div>
       {fileContent && <pre className="rounded-xl bg-muted/20 border border-border/50 p-3 text-[10px] font-mono text-muted-foreground overflow-auto max-h-[240px] whitespace-pre-wrap">{fileContent.slice(0, 4000)}</pre>}
+
+      {/* ── 桌面任务代理 ── */}
+      <div className="pt-4 border-t border-border/50">
+        <h4 className="text-sm font-semibold text-foreground mb-2">{zh ? '桌面任务代理' : 'Desktop Task Agent'}</h4>
+        <p className="text-[10px] text-muted-foreground -mt-1 mb-3">{zh ? '输入目标，Polaris 自动循环：决策 → 执行 → 观察（最多 8 步，危险操作会确认）' : 'Give a goal; Polaris loops: decide → act (max 8 steps, dangerous ops confirm)'}</p>
+        <div className="flex gap-2 mb-2">
+          <Input placeholder={zh ? '例如：打开浏览器访问 GitHub' : 'e.g. Open browser to github.com'} value={taskGoal} onChange={e => setTaskGoal(e.target.value)} className="h-8 text-xs flex-1" />
+          <Button size="sm" className="h-8 text-xs" onClick={runTask} disabled={taskRunning}>{taskRunning ? (zh ? '执行中…' : 'Running…') : (zh ? '执行' : 'Run')}</Button>
+        </div>
+        {taskLog.length > 0 && (
+          <div className="rounded-xl bg-black/40 border border-border/50 p-3 font-mono text-[10px] text-muted-foreground space-y-0.5 max-h-[180px] overflow-y-auto">
+            {taskLog.map((l, i) => (
+              <div key={i} className={l.action === 'error' ? 'text-red-400' : l.action === 'done' ? 'text-emerald-400' : ''}>{l.action}: {l.result}</div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

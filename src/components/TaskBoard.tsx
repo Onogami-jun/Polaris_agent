@@ -6,8 +6,8 @@ var CAT_COLORS:any = {
   git:'#3ba88e', filesystem:'#5a8ad4', optimize:'#c8a96e', research:'#d4a85a', agent:'#a088c8', system:'#8a8794',
 };
 
-export function TaskBoard({ execLog, todoSteps, plan, planProg }: {
-  execLog: any[], todoSteps: any[], plan: any, planProg: any,
+export function TaskBoard({ execLog, todoSteps, plan, planProg, activeAgent }: {
+  execLog: any[], todoSteps: any[], plan: any, planProg: any, activeAgent?: any,
 }) {
   var lang = useAppSelector(function(s:any){ return s.chat.settings.language; });
   var streaming = useAppSelector(function(s:any){ return s.chat.streaming; });
@@ -42,6 +42,9 @@ export function TaskBoard({ execLog, todoSteps, plan, planProg }: {
       <div className="flex items-center gap-1.5 px-3 py-2.5 border-b border-border shrink-0">
         <span className="w-1.5 h-1.5 rounded-full" style={{background:streaming?'var(--p-gold, hsl(var(--primary)))':'var(--p-text-muted, hsl(var(--muted-foreground)))',animation:streaming?'pulse 2s ease-in-out infinite':''}}/>
         <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider font-mono">Workflow</span>
+        {activeAgent && (
+          <span className="text-[9px] font-mono px-1.5 py-0.5 rounded-md" style={{color:'var(--p-gold, hsl(var(--primary)))',background:'hsla(var(--primary),.1)'}}>@{activeAgent.name}</span>
+        )}
         <span className="ml-auto text-[9px] font-mono px-1.5 py-0.5 rounded-md" style={{color:streaming?'var(--p-gold,hsl(var(--primary)))':'var(--p-text-muted,hsl(var(--muted-foreground)))',background:streaming?'hsla(var(--primary),.1)':'hsl(var(--muted))'}}>{statusText}</span>
       </div>
 
