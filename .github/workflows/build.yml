@@ -19,6 +19,13 @@ jobs:
 
       - run: npm install
 
+      - name: Syntax check (main process)
+        run: |
+          node --check electron/main.js
+          node --check electron/preload.js
+          node --check electron/services/router.js
+          node --check electron/services/permission_bridge.js
+
       - name: Build Renderer
         run: npm run build:renderer
 
