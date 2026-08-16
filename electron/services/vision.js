@@ -12,13 +12,16 @@
  */
 const https = require('https');
 
+// 内置豆包视觉 key（来自启文项目，用户授权复用；设置面板可覆盖）
+const BUILTIN_VISION_KEY = 'ark-0f0fd51c-1395-45bd-9df0-29a195257d96-5ab55';
+
 let _visionKey = null;
 let _visionModel = process.env.POLARIS_VISION_MODEL || 'doubao-seed-2-0-pro-260215';
 let _visionEndpoint = process.env.POLARIS_VISION_ENDPOINT || 'ark.cn-beijing.volces.com';
 
 function setVisionKey(k) { if (k) _visionKey = k; }
 function setVisionModel(m) { if (m) _visionModel = m; }
-function getVisionKey() { return _visionKey || process.env.POLARIS_VISION_KEY || ''; }
+function getVisionKey() { return _visionKey || process.env.POLARIS_VISION_KEY || BUILTIN_VISION_KEY; }
 
 /**
  * 分析屏幕截图，返回下一步动作 JSON（视觉 computer-use 决策核心）。
