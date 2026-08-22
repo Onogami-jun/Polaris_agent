@@ -503,13 +503,19 @@ ipcMain.handle('desktop:agentStep', async (_e, { goal, history }) => {
   return { action: action, raw: content };
 });
 
-// ── 视觉 computer-use：截图 → 豆包看图 → 决策动作 ──
+// ── 视觉 computer-use：截图 → 豆包看图 → 决策动作（坐标自动换算） ──
 ipcMain.handle('desktop:visionStep', async (_e, { goal, history, visionKey, visionModel }) => {
   if (visionModel) vision.setVisionModel(visionModel);
-  var shot = await desktop.takeScreenshot();
+  var shot = await desktop.takeScreenshotDetailed();
   if (!shot) return { screenshot: null, action: { action: 'done', summary: '截图失败' }, raw: '' };
-  var r = await vision.analyzeScreen({ imageBase64: shot, goal: goal, history: history, visionKey: visionKey });
-  return { screenshot: shot, action: r.action, raw: r.raw, error: r.error };
+  var r = await vision.analyzeScreen({ imageBase64: shot.dataUrl, goal: goal, history: history, visionKey: visionKey });
+  var action = r.action;
+  // 坐标换算：豆包给的是截图内坐标 → 换算成物理屏幕坐标（自适应不同分辨率/缩放）
+  if (action && (action.action === 'click' || action.action === 'double_click')) {
+    if (action.x != null) action.x = Math.round(action.x * (shot.physicalWidth / shot.width));
+    if (action.y != null) action.y = Math.round(action.y * (shot.physicalHeight / shot.height));
+  }
+  return { screenshot: shot.dataUrl, action: action, raw: r.raw, error: r.error, metrics: { width: shot.physicalWidth, height: shot.physicalHeight, scaleFactor: shot.scaleFactor } };
 });
 
 // IPC: MCP

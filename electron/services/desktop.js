@@ -4,7 +4,7 @@
  * Uses PowerShell/Win32 APIs through child_process — no native deps.
  */
 const { execSync, exec } = require('child_process');
-const { desktopCapturer } = require('electron');
+const { desktopCapturer, screen } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
@@ -23,6 +23,21 @@ function safePSNum(n) {
 
 // ── Screenshot ──────────────────────────────────────────────
 
+/* 读取主显示器物理分辨率 + DPI 缩放（用于坐标换算） */
+function getScreenMetrics() {
+  try {
+    const d = screen.getPrimaryDisplay();
+    return {
+      width: d.size.width,
+      height: d.size.height,
+      scaleFactor: d.scaleFactor || 1,
+      workArea: d.workArea ? { x: d.workArea.x, y: d.workArea.y, width: d.workArea.width, height: d.workArea.height } : null,
+    };
+  } catch {
+    return { width: 1920, height: 1080, scaleFactor: 1, workArea: null };
+  }
+}
+
 async function takeScreenshot() {
   const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 1920, height: 1080 } });
   if (sources.length === 0) return null;
@@ -30,6 +45,34 @@ async function takeScreenshot() {
   const buf = img.toPNG();
   const base64 = buf.toString('base64');
   return 'data:image/png;base64,' + base64;
+}
+
+/* 带尺寸信息的截图：等比缩放到最大宽 1920（豆包图像大小限制），
+ * 返回实际截图尺寸 + 物理分辨率，供坐标换算（图内坐标 → 物理坐标）。 */
+async function takeScreenshotDetailed() {
+  const metrics = getScreenMetrics();
+  var targetW = metrics.width;
+  var targetH = metrics.height;
+  var maxW = 1920;
+  if (targetW > maxW) {
+    var ratio = maxW / targetW;
+    targetW = maxW;
+    targetH = Math.round(targetH * ratio);
+  }
+  if (targetH < 1) targetH = 1;
+  const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: targetW, height: targetH } });
+  if (sources.length === 0) return null;
+  const img = sources[0].thumbnail;
+  const size = img.getSize();
+  const buf = img.toPNG();
+  return {
+    dataUrl: 'data:image/png;base64,' + buf.toString('base64'),
+    width: size.width,
+    height: size.height,
+    physicalWidth: metrics.width,
+    physicalHeight: metrics.height,
+    scaleFactor: metrics.scaleFactor,
+  };
 }
 
 // ── Window Management ───────────────────────────────────────
@@ -193,7 +236,8 @@ function runCommand(command) {
 }
 
 module.exports = {
-  takeScreenshot, listWindows, focusWindow, openApplication, openWebBrowser, openFileExplorer,
+  takeScreenshot, takeScreenshotDetailed, getScreenMetrics,
+  listWindows, focusWindow, openApplication, openWebBrowser, openFileExplorer,
   sendKeys, typeText, pressKey, hotkey,
   moveMouse, clickMouse, doubleClick, scrollMouse,
   getClipboard, setClipboard, getSystemInfo,
